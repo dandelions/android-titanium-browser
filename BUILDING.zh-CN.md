@@ -1,6 +1,6 @@
 # Android Helium Browser 编译说明
 
-当前源码基于 Chromium `150.0.7871.124`，版本号由 `vanadium/args.gn` 自动读取。
+当前源码基于 Chromium `151.0.7922.137`，版本号由 `vanadium/args.gn` 自动读取。
 
 ## 1. 环境要求
 
@@ -46,7 +46,7 @@ NINJA_JOBS=14 ./build.sh
 产物位于：
 
 ```text
-chromium/src/out/release/150.0.7871.124-arm64-v8a.apk
+chromium/src/out/release/151.0.7922.137-arm64-v8a.apk
 ```
 
 ## 3. 可选构建参数
@@ -137,9 +137,9 @@ awk -F= '
 ' chromium/src/chrome/VERSION
 ```
 
-两边都应显示 `150.0.7871.124`。`hotfix_existing_src.sh` 负责把新的下游补丁应用到已有源码，但不会把 Chromium `150.0.7871.63` 升级成 `150.0.7871.124`。版本不一致时必须执行完整构建，让 `build.sh` 重新获取目标 Chromium 标签并应用 Vanadium 补丁。
+两边都应显示 `151.0.7922.137`。`hotfix_existing_src.sh` 负责把新的下游补丁应用到已有源码，但不会把 Chromium `151.0.7922.108` 升级成 `151.0.7922.137`。版本不一致时必须执行完整构建，让 `build.sh` 重新获取目标 Chromium 标签并应用 Vanadium 补丁。
 
-如果现有源码是 `150.0.7871.114`，不要继续 Localbuild。`.124` 启用了依赖 Vanadium V8 子项目补丁的 DrumBrake；旧源码缺少该补丁时会在 `v8/BUILD.gn` 报 `DrumBrake is only available`。清理子模块后直接执行一次完整构建：
+如果现有源码是 `151.0.7922.71`，不要继续 Localbuild。`.137` 启用了依赖 Vanadium V8 子项目补丁的 DrumBrake；旧源码缺少该补丁时会在 `v8/BUILD.gn` 报 `DrumBrake is only available`。清理子模块后直接执行一次完整构建：
 
 ```bash
 BUILD_PROXY=http://192.168.2.1:37896 \
@@ -150,7 +150,7 @@ NINJA_JOBS=14 \
 ./build.sh
 ```
 
-新版 `build.sh` 和 `hotfix_existing_src.sh` 会在子模块提交、Chromium 版本或 DrumBrake 子项目补丁不匹配时提前停止，避免生成文件名为 `.124`、实际源码却仍是 `.114` 的 APK。
+新版 `build.sh` 和 `hotfix_existing_src.sh` 会在子模块提交、Chromium 版本或 DrumBrake 子项目补丁不匹配时提前停止，避免生成文件名为 `.137`、实际源码却仍是 `.71` 的 APK。
 
 如果只修改了本地补丁脚本，也可以单独执行：
 
@@ -199,5 +199,5 @@ grep android_default_version_name vanadium/args.gn
 版本行应显示：
 
 ```text
-android_default_version_name = "150.0.7871.124"
+android_default_version_name = "151.0.7922.137"
 ```
