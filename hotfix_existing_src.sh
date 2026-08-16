@@ -148,10 +148,9 @@ python3 "$SCRIPT_DIR/patch_extension_popup_width.py" \
 perl -0pi -e 's|\n        android:padding="12dp"||g; s|(android:id="\@\+id/extensions_menu_close_button"\n)(?!        android:visibility="gone"\n)|$1        android:visibility="gone"\n|' "$EXTENSIONS_MENU_HEADER"
 
 # Titanium compatibility fixes adapted to the Helium-renamed Vanadium source
-# tree. Every insertion is guarded because this script is
-# intentionally run repeatedly before FAST_LOCAL_BUILD.
-grep -q 'if (!isEligible()) { return; }' "$HELIUM_CONF_PARSER" || \
-    sed -i 's|private static void init(Context ctx, SpecType specType) {|private static void init(Context ctx, SpecType specType) { if (!isEligible()) { return; }|' "$HELIUM_CONF_PARSER"
+# tree. Chromium 151.0.7922.137 no longer provides HeliumConfParser.isEligible().
+# Undo the compatibility injection left by older hotfix revisions before reruns.
+sed -i 's|private static void init(Context ctx, SpecType specType) { if (!isEligible()) { return; }|private static void init(Context ctx, SpecType specType) {|' "$HELIUM_CONF_PARSER"
 sed -i '/safelyRemovePreference(prefFragment/d' "$LANGUAGE_SETTINGS_EXT"
 sed -i '/removeEntryForKey(fragmentName, "translate_switch")/d' "$SETTINGS_SEARCH_COORDINATOR"
 sed -i '/BASE_FEATURE(kFallbackToSWIfGLES3NotSupported,/,/#endif/ s/base::FEATURE_ENABLED_BY_DEFAULT/base::FEATURE_DISABLED_BY_DEFAULT/' "$GL_FEATURES"
