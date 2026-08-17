@@ -471,6 +471,9 @@ import android.content.pm.ResolveInfo;
 import android.net.Uri;
 import android.os.Build;
 
+import java.util.ArrayList;
+import java.util.List;
+
 '''
 chromium_import = 'import org.chromium.build.annotations.NullMarked;\n'
 context_import = 'import org.chromium.base.ContextUtils;\n'
