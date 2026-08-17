@@ -90,6 +90,8 @@ SETTINGS_SEARCH_COORDINATOR=chrome/android/java/src/org/chromium/chrome/browser/
 GL_FEATURES=ui/gl/gl_features.cc
 DOWNLOAD_CRX_UTIL=chrome/browser/download/download_crx_util.cc
 DOWNLOAD_CONTROLLER=chrome/android/java/src/org/chromium/chrome/browser/download/DownloadController.java
+DOWNLOAD_SETTINGS=chrome/browser/download/android/java/src/org/chromium/chrome/browser/download/settings/DownloadSettings.java
+DOWNLOAD_PREFERENCES=chrome/browser/download/android/java/res/xml/download_preferences.xml
 ACTION_LIST_COORDINATOR=chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionActionListCoordinator.java
 EXTENSION_POPUP_CONTENTS=chrome/browser/ui/android/extensions/java/src/org/chromium/chrome/browser/ui/extensions/ExtensionActionPopupContents.java
 EXTENSION_INSTALL_DIALOG=chrome/browser/ui/android/extensions/java/src/org/chromium/chrome/browser/ui/extensions/ExtensionInstallDialogBridge.java
@@ -112,7 +114,7 @@ FEED_SURFACE_COORDINATOR=chrome/android/feed/core/java/src/org/chromium/chrome/b
 ZERO_SUGGEST_VERBATIM_MATCH_PROVIDER=components/omnibox/browser/zero_suggest_verbatim_match_provider.cc
 AUTOCOMPLETE_RESULT=components/omnibox/browser/autocomplete_result.cc
 
-for file in "$BRIDGE" "$TOOLBAR_BRIDGE" "$MENU_MEDIATOR" "$TOOLBAR" "$CTA" "$VERIFIER" "$PROFILE_INFO" "$DEV_PRIVATE_FUNCTIONS" "$TIMESTAMP_GNI" "$CONTENT_SETTINGS_FEATURES" "$APP_MENU_DELEGATE" "$MENU_DELEGATE_CC" "$MENU_DELEGATE_H" "$TOOLBAR_ANDROID_CC" "$TOOLBAR_ANDROID_H" "$ACTION_DELEGATE_CC" "$ACTION_DELEGATE_H" "$ACTION_LIST_MEDIATOR" "$EXTENSION_ACTION_POPUP" "$EXTENSION_POPUP_CONTENTS_CC" "$EXTENSION_POPUP_CONTENTS_H" "$MENU_COORDINATOR" "$MENU_VIEW_MODEL" "$EXTENSION_ACTION_VIEW_MODEL" "$TABS_EVENT_ROUTER_CC" "$ZIP_INSTALLER" "$WEB_REQUEST_ROUTER" "$EXTENSION_PREFS" "$CHROME_EXTENSIONS_BROWSER_CLIENT" "$EXTENSION_TAB_UTIL_CC" "$TAB_STORE" "$ANDROID_MANIFEST" "$CUSTOM_TAB_MINIMIZATION_MANAGER" "$MINIMIZED_FEATURE_UTILS" "$DEVTOOLS_INTENT_DATA_PROVIDER" "$BASE_CUSTOM_TAB_ROOT_UI_COORDINATOR" "$DEVTOOLS_ACTIVITY" "$DEVTOOLS_WINDOW_ANDROID_JAVA" "$DEVTOOLS_WINDOW_ANDROID_CC" "$DEVTOOLS_WINDOW_CC" "$JS_DIALOG_MANAGER" "$UNDO_BAR" "$ABOUT_FLAGS" "$NAV_POLICY" "$WINDOW_OPEN_TRAITS" "$WEB_CONTENTS_IMPL" "$TABS_API_CC" "$HUB_LAYOUT" "$HELIUM_CONF_PARSER" "$LANGUAGE_SETTINGS_EXT" "$SETTINGS_SEARCH_COORDINATOR" "$GL_FEATURES" "$DOWNLOAD_CRX_UTIL" "$DOWNLOAD_CONTROLLER" "$ACTION_LIST_COORDINATOR" "$EXTENSION_POPUP_CONTENTS" "$EXTENSION_INSTALL_DIALOG" "$DEFAULT_LOCALE_HANDLER" "$EXTENSION_L10N_UTIL" "$UNPACKED_INSTALLER" "$VIRTUAL_DOCUMENT_PATH" "$SWIPE_REFRESH_HANDLER" "$INCOGNITO_BACK_HANDLER" "$CHROME_VERSION_FILE" "$EXTENSIONS_MENU_HEADER" "$TOOLBAR_POSITION_CONTROLLER" "$NEW_TAB_PAGE" "$NEW_TAB_PAGE_COORDINATOR" "$OMNIBOX_SUGGESTIONS_DROPDOWN" "$OMNIBOX_SUGGESTIONS_CONTAINER" "$OMNIBOX_DROPDOWN_EMBEDDER" "$OMNIBOX_DROPDOWN_EMBEDDER_INTERFACE" "$FEED_SURFACE_COORDINATOR" "$ZERO_SUGGEST_VERBATIM_MATCH_PROVIDER" "$AUTOCOMPLETE_RESULT"; do
+for file in "$BRIDGE" "$TOOLBAR_BRIDGE" "$MENU_MEDIATOR" "$TOOLBAR" "$CTA" "$VERIFIER" "$PROFILE_INFO" "$DEV_PRIVATE_FUNCTIONS" "$TIMESTAMP_GNI" "$CONTENT_SETTINGS_FEATURES" "$APP_MENU_DELEGATE" "$MENU_DELEGATE_CC" "$MENU_DELEGATE_H" "$TOOLBAR_ANDROID_CC" "$TOOLBAR_ANDROID_H" "$ACTION_DELEGATE_CC" "$ACTION_DELEGATE_H" "$ACTION_LIST_MEDIATOR" "$EXTENSION_ACTION_POPUP" "$EXTENSION_POPUP_CONTENTS_CC" "$EXTENSION_POPUP_CONTENTS_H" "$MENU_COORDINATOR" "$MENU_VIEW_MODEL" "$EXTENSION_ACTION_VIEW_MODEL" "$TABS_EVENT_ROUTER_CC" "$ZIP_INSTALLER" "$WEB_REQUEST_ROUTER" "$EXTENSION_PREFS" "$CHROME_EXTENSIONS_BROWSER_CLIENT" "$EXTENSION_TAB_UTIL_CC" "$TAB_STORE" "$ANDROID_MANIFEST" "$CUSTOM_TAB_MINIMIZATION_MANAGER" "$MINIMIZED_FEATURE_UTILS" "$DEVTOOLS_INTENT_DATA_PROVIDER" "$BASE_CUSTOM_TAB_ROOT_UI_COORDINATOR" "$DEVTOOLS_ACTIVITY" "$DEVTOOLS_WINDOW_ANDROID_JAVA" "$DEVTOOLS_WINDOW_ANDROID_CC" "$DEVTOOLS_WINDOW_CC" "$JS_DIALOG_MANAGER" "$UNDO_BAR" "$ABOUT_FLAGS" "$NAV_POLICY" "$WINDOW_OPEN_TRAITS" "$WEB_CONTENTS_IMPL" "$TABS_API_CC" "$HUB_LAYOUT" "$HELIUM_CONF_PARSER" "$LANGUAGE_SETTINGS_EXT" "$SETTINGS_SEARCH_COORDINATOR" "$GL_FEATURES" "$DOWNLOAD_CRX_UTIL" "$DOWNLOAD_CONTROLLER" "$DOWNLOAD_SETTINGS" "$DOWNLOAD_PREFERENCES" "$ACTION_LIST_COORDINATOR" "$EXTENSION_POPUP_CONTENTS" "$EXTENSION_INSTALL_DIALOG" "$DEFAULT_LOCALE_HANDLER" "$EXTENSION_L10N_UTIL" "$UNPACKED_INSTALLER" "$VIRTUAL_DOCUMENT_PATH" "$SWIPE_REFRESH_HANDLER" "$INCOGNITO_BACK_HANDLER" "$CHROME_VERSION_FILE" "$EXTENSIONS_MENU_HEADER" "$TOOLBAR_POSITION_CONTROLLER" "$NEW_TAB_PAGE" "$NEW_TAB_PAGE_COORDINATOR" "$OMNIBOX_SUGGESTIONS_DROPDOWN" "$OMNIBOX_SUGGESTIONS_CONTAINER" "$OMNIBOX_DROPDOWN_EMBEDDER" "$OMNIBOX_DROPDOWN_EMBEDDER_INTERFACE" "$FEED_SURFACE_COORDINATOR" "$ZERO_SUGGEST_VERBATIM_MATCH_PROVIDER" "$AUTOCOMPLETE_RESULT"; do
     if [ ! -f "$file" ]; then
         echo "Expected file not found: $SRC_DIR/$file" >&2
         exit 1
@@ -252,6 +254,125 @@ if old in text:
 elif 'if (launchExternalDownloadHandler(info))' not in text:
     raise SystemExit(f'download enqueue body not found in {path}')
 path.write_text(text)
+PYCODE
+
+# android: expose third-party downloader selection under Downloads settings.
+# Default off: Chromium's internal download manager remains the normal path.
+python3 - "$DOWNLOAD_CONTROLLER" "$DOWNLOAD_SETTINGS" "$DOWNLOAD_PREFERENCES" <<'PYCODE'
+from pathlib import Path
+import sys
+
+controller = Path(sys.argv[1])
+settings = Path(sys.argv[2])
+preferences = Path(sys.argv[3])
+
+text = controller.read_text()
+class_anchor = 'public class DownloadController {\n'
+class_replacement = '''public class DownloadController {
+    private static final String EXTERNAL_DOWNLOAD_HANDLER_PREF =
+            "external_download_handler";
+'''
+if 'EXTERNAL_DOWNLOAD_HANDLER_PREF' not in text:
+    if class_anchor not in text:
+        raise SystemExit(f'DownloadController class anchor missing: {controller}')
+    text = text.replace(class_anchor, class_replacement, 1)
+shared_import = 'import org.chromium.chrome.browser.preferences.ChromeSharedPreferences;\n'
+nullmarked_import = 'import org.chromium.build.annotations.NullMarked;\n'
+if shared_import not in text:
+    if nullmarked_import not in text:
+        raise SystemExit(f'DownloadController import anchor missing: {controller}')
+    text = text.replace(nullmarked_import, nullmarked_import + shared_import, 1)
+method_anchor = '    private static boolean launchExternalDownloadHandler(DownloadInfo info) {\n'
+method_replacement = '''    private static boolean launchExternalDownloadHandler(DownloadInfo info) {
+        if (!ChromeSharedPreferences.getInstance()
+                .readBoolean(EXTERNAL_DOWNLOAD_HANDLER_PREF, false)) {
+            return false;
+        }
+'''
+if 'readBoolean(EXTERNAL_DOWNLOAD_HANDLER_PREF, false)' not in text:
+    if method_anchor not in text:
+        raise SystemExit(f'DownloadController handler anchor missing: {controller}')
+    text = text.replace(method_anchor, method_replacement, 1)
+controller.write_text(text)
+
+text = settings.read_text()
+shared_import = 'import org.chromium.chrome.browser.preferences.ChromeSharedPreferences;\n'
+pref_import = 'import org.chromium.chrome.browser.preferences.Pref;\n'
+if shared_import not in text:
+    if pref_import not in text:
+        raise SystemExit(f'DownloadSettings import anchor missing: {settings}')
+    text = text.replace(pref_import, pref_import + shared_import, 1)
+constant_anchor = '    public static final String PREF_AUTO_OPEN_PDF_ENABLED = "auto_open_pdf_enabled";\n'
+constant_replacement = constant_anchor + '    public static final String PREF_EXTERNAL_DOWNLOAD_HANDLER = "external_download_handler";\n'
+if 'PREF_EXTERNAL_DOWNLOAD_HANDLER' not in text:
+    if constant_anchor not in text:
+        raise SystemExit(f'DownloadSettings constant anchor missing: {settings}')
+    text = text.replace(constant_anchor, constant_replacement, 1)
+field_anchor = '    private ChromeSwitchPreference mAutoOpenPdfEnabledPref;\n'
+field_replacement = field_anchor + '    private ChromeSwitchPreference mExternalDownloadHandlerPref;\n'
+if 'mExternalDownloadHandlerPref' not in text:
+    if field_anchor not in text:
+        raise SystemExit(f'DownloadSettings field anchor missing: {settings}')
+    text = text.replace(field_anchor, field_replacement, 1)
+create_anchor = '''        mLocationChangePref = (DownloadLocationPreference) findPreference(PREF_LOCATION_CHANGE);
+        mLocationChangePref.setDownloadLocationHelper(new DownloadLocationHelperImpl(getProfile()));
+
+'''
+create_replacement = create_anchor + '''        mExternalDownloadHandlerPref =
+                (ChromeSwitchPreference) findPreference(PREF_EXTERNAL_DOWNLOAD_HANDLER);
+        mExternalDownloadHandlerPref.setOnPreferenceChangeListener(this);
+
+'''
+if 'findPreference(PREF_EXTERNAL_DOWNLOAD_HANDLER)' not in text:
+    if create_anchor not in text:
+        raise SystemExit(f'DownloadSettings create anchor missing: {settings}')
+    text = text.replace(create_anchor, create_replacement, 1)
+update_anchor = '''    private void updateDownloadSettings() {
+        mLocationChangePref.updateSummary();
+
+'''
+update_replacement = update_anchor + '''        mExternalDownloadHandlerPref.setChecked(
+                ChromeSharedPreferences.getInstance()
+                        .readBoolean(PREF_EXTERNAL_DOWNLOAD_HANDLER, false));
+        mExternalDownloadHandlerPref.setEnabled(true);
+
+'''
+if 'mExternalDownloadHandlerPref.setChecked' not in text:
+    if update_anchor not in text:
+        raise SystemExit(f'DownloadSettings update anchor missing: {settings}')
+    text = text.replace(update_anchor, update_replacement, 1)
+change_anchor = '''        } else if (PREF_AUTO_OPEN_PDF_ENABLED.equals(preference.getKey())) {
+            UserPrefs.get(getProfile()).setBoolean(Pref.AUTO_OPEN_PDF_ENABLED, (boolean) newValue);
+        }
+'''
+change_replacement = '''        } else if (PREF_AUTO_OPEN_PDF_ENABLED.equals(preference.getKey())) {
+            UserPrefs.get(getProfile()).setBoolean(Pref.AUTO_OPEN_PDF_ENABLED, (boolean) newValue);
+        } else if (PREF_EXTERNAL_DOWNLOAD_HANDLER.equals(preference.getKey())) {
+            ChromeSharedPreferences.getInstance()
+                    .writeBoolean(PREF_EXTERNAL_DOWNLOAD_HANDLER, (boolean) newValue);
+        }
+'''
+if 'writeBoolean(PREF_EXTERNAL_DOWNLOAD_HANDLER' not in text:
+    if change_anchor not in text:
+        raise SystemExit(f'DownloadSettings change anchor missing: {settings}')
+    text = text.replace(change_anchor, change_replacement, 1)
+settings.write_text(text)
+
+text = preferences.read_text()
+entry = '''
+    <org.chromium.components.browser_ui.settings.ChromeSwitchPreference
+        android:key="external_download_handler"
+        android:title="Use third-party download tool"
+        android:summaryOn="Show a chooser before downloading"
+        android:summaryOff="Use the browser download manager"
+        android:defaultValue="false" />
+'''
+closing_tag = '</PreferenceScreen>\n'
+if 'android:key="external_download_handler"' not in text:
+    if closing_tag not in text:
+        raise SystemExit(f'download_preferences.xml closing tag missing: {preferences}')
+    text = text.replace(closing_tag, entry + closing_tag, 1)
+preferences.write_text(text)
 PYCODE
 
 grep -q 'public View getContainerView()' "$ACTION_LIST_COORDINATOR" || \
