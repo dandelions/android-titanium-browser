@@ -233,13 +233,13 @@ method = '''    // HeliumExternalDownloadHandler: offer non-browser handlers for
     }
 
 '''
+if imports not in text:
+    if chromium_import not in text:
+        raise SystemExit(f'import anchor not found in {path}')
+    text = text.replace(chromium_import, imports + chromium_import, 1)
+if context_import not in text:
+    text = text.replace(chromium_import, chromium_import + context_import, 1)
 if 'HeliumExternalDownloadHandler' not in text:
-    if imports not in text:
-        if chromium_import not in text:
-            raise SystemExit(f'import anchor not found in {path}')
-        text = text.replace(chromium_import, imports + chromium_import, 1)
-    if context_import not in text:
-        text = text.replace(chromium_import, chromium_import + context_import, 1)
     if marker not in text:
         raise SystemExit(f'download enqueue anchor not found in {path}')
     text = text.replace(marker, method + marker, 1)
