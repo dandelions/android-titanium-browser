@@ -212,8 +212,10 @@ method = '''    // HeliumExternalDownloadHandler: offer non-browser handlers for
     private static boolean launchExternalDownloadHandler(DownloadInfo info) {
         Context context = ContextUtils.getApplicationContext();
         Intent downloadIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(info.getUrl().getSpec()));
-        downloadIntent.addCategory(Intent.CATEGORY_BROWSABLE);
+        // Do not require CATEGORY_BROWSABLE: many download managers expose only
+        // ACTION_VIEW/DEFAULT handlers for direct HTTP(S) downloads.
         downloadIntent.putExtra(Intent.EXTRA_TITLE, info.getFileName());
+        downloadIntent.putExtra(Intent.EXTRA_TEXT, info.getUrl().getSpec());
 
         List<ResolveInfo> handlers =
                 context.getPackageManager()
