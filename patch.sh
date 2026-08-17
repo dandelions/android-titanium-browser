@@ -452,6 +452,97 @@ sed -i 's/bool g_allow_mv2_for_testing = false;/bool g_allow_mv2_for_testing = t
 
 # android: require explicit user confirmation before launching external apps
 perl -0pi -e 's|            if \(debug\(\)\) Log\.i\(TAG, "startActivity"\);\n            context\.startActivity\(intent\);\n            recordExternalNavigationDispatched\(intent\);\n            mDelegate\.reportIntentToSafeBrowsing\(intent\);|            if (debug()) Log.i(TAG, "startActivity");\n            Intent launchIntent = intent;\n            if (!Intent.ACTION_CHOOSER.equals(intent.getAction())\n                    \&\& !Intent.ACTION_PICK_ACTIVITY.equals(intent.getAction())) {\n                launchIntent = Intent.createChooser(intent, null);\n            }\n            context.startActivity(launchIntent);\n            recordExternalNavigationDispatched(intent);\n            mDelegate.reportIntentToSafeBrowsing(intent);|' components/external_intents/android/java/src/org/chromium/components/external_intents/ExternalNavigationHandler.java
+# android: offer installed third-party download handlers before using Chromium's
+# internal downloader. The handler gets the public URL and filename; Chromium
+# remains the fallback when no external handler is installed or launch fails.
+python3 - "chrome/android/java/src/org/chromium/chrome/browser/download/DownloadController.java" <<'PYCODE'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+marker = '    static void enqueueDownloadManagerRequest(final DownloadInfo info) {\n'
+imports = '''import android.content.ActivityNotFoundException;
+import android.content.ComponentName;
+import android.content.Context;
+import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
+import android.net.Uri;
+import android.os.Build;
+
+'''
+chromium_import = 'import org.chromium.build.annotations.NullMarked;\n'
+context_import = 'import org.chromium.base.ContextUtils;\n'
+method = '''    // HeliumExternalDownloadHandler: offer non-browser handlers for downloads.
+    private static boolean launchExternalDownloadHandler(DownloadInfo info) {
+        Context context = ContextUtils.getApplicationContext();
+        Intent downloadIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(info.getUrl().getSpec()));
+        downloadIntent.addCategory(Intent.CATEGORY_BROWSABLE);
+        downloadIntent.putExtra(Intent.EXTRA_TITLE, info.getFileName());
+
+        List<ResolveInfo> handlers =
+                context.getPackageManager()
+                        .queryIntentActivities(downloadIntent, PackageManager.MATCH_DEFAULT_ONLY);
+        ArrayList<ComponentName> ownComponents = new ArrayList<>();
+        boolean hasExternalHandler = false;
+        for (ResolveInfo handler : handlers) {
+            if (handler.activityInfo == null) {
+                continue;
+            }
+            ComponentName component =
+                    new ComponentName(handler.activityInfo.packageName, handler.activityInfo.name);
+            if (context.getPackageName().equals(handler.activityInfo.packageName)) {
+                ownComponents.add(component);
+            } else {
+                hasExternalHandler = true;
+            }
+        }
+        if (!hasExternalHandler) {
+            return false;
+        }
+
+        Intent chooser = Intent.createChooser(downloadIntent, "Download with");
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && !ownComponents.isEmpty()) {
+            chooser.putExtra(
+                    Intent.EXTRA_EXCLUDE_COMPONENTS,
+                    ownComponents.toArray(new ComponentName[0]));
+        }
+        chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        try {
+            context.startActivity(chooser);
+            return true;
+        } catch (ActivityNotFoundException e) {
+            return false;
+        }
+    }
+
+'''
+if 'HeliumExternalDownloadHandler' not in text:
+    if imports not in text:
+        if chromium_import not in text:
+            raise SystemExit(f'import anchor not found in {path}')
+        text = text.replace(chromium_import, imports + chromium_import, 1)
+    if context_import not in text:
+        text = text.replace(chromium_import, chromium_import + context_import, 1)
+    if marker not in text:
+        raise SystemExit(f'download enqueue anchor not found in {path}')
+    text = text.replace(marker, method + marker, 1)
+old = '''    static void enqueueDownloadManagerRequest(final DownloadInfo info) {
+        DownloadManagerService.getDownloadManagerService()
+'''
+new = '''    static void enqueueDownloadManagerRequest(final DownloadInfo info) {
+        if (launchExternalDownloadHandler(info)) {
+            return;
+        }
+        DownloadManagerService.getDownloadManagerService()
+'''
+if old in text:
+    text = text.replace(old, new, 1)
+elif 'if (launchExternalDownloadHandler(info))' not in text:
+    raise SystemExit(f'download enqueue body not found in {path}')
+path.write_text(text)
+PYCODE
 
 # ext: isolate top-level navigations from extension blockers
 sed -i '/case DNRRequestAction::Type::BLOCK:/,/case DNRRequestAction::Type::ALLOW:/ s|ClearPendingCallbacks(browser_context, \*request);|if (request->web_request_type == WebRequestResourceType::MAIN_FRAME) { break; }\n          ClearPendingCallbacks(browser_context, *request);|' extensions/browser/api/web_request/extension_web_request_event_router.cc

@@ -89,6 +89,7 @@ LANGUAGE_SETTINGS_EXT=helium/chromium_src/chrome/browser/language/android/java/s
 SETTINGS_SEARCH_COORDINATOR=chrome/android/java/src/org/chromium/chrome/browser/settings/search/SettingsSearchCoordinator.java
 GL_FEATURES=ui/gl/gl_features.cc
 DOWNLOAD_CRX_UTIL=chrome/browser/download/download_crx_util.cc
+DOWNLOAD_CONTROLLER=chrome/android/java/src/org/chromium/chrome/browser/download/DownloadController.java
 ACTION_LIST_COORDINATOR=chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionActionListCoordinator.java
 EXTENSION_POPUP_CONTENTS=chrome/browser/ui/android/extensions/java/src/org/chromium/chrome/browser/ui/extensions/ExtensionActionPopupContents.java
 EXTENSION_INSTALL_DIALOG=chrome/browser/ui/android/extensions/java/src/org/chromium/chrome/browser/ui/extensions/ExtensionInstallDialogBridge.java
@@ -111,7 +112,7 @@ FEED_SURFACE_COORDINATOR=chrome/android/feed/core/java/src/org/chromium/chrome/b
 ZERO_SUGGEST_VERBATIM_MATCH_PROVIDER=components/omnibox/browser/zero_suggest_verbatim_match_provider.cc
 AUTOCOMPLETE_RESULT=components/omnibox/browser/autocomplete_result.cc
 
-for file in "$BRIDGE" "$TOOLBAR_BRIDGE" "$MENU_MEDIATOR" "$TOOLBAR" "$CTA" "$VERIFIER" "$PROFILE_INFO" "$DEV_PRIVATE_FUNCTIONS" "$TIMESTAMP_GNI" "$CONTENT_SETTINGS_FEATURES" "$APP_MENU_DELEGATE" "$MENU_DELEGATE_CC" "$MENU_DELEGATE_H" "$TOOLBAR_ANDROID_CC" "$TOOLBAR_ANDROID_H" "$ACTION_DELEGATE_CC" "$ACTION_DELEGATE_H" "$ACTION_LIST_MEDIATOR" "$EXTENSION_ACTION_POPUP" "$EXTENSION_POPUP_CONTENTS_CC" "$EXTENSION_POPUP_CONTENTS_H" "$MENU_COORDINATOR" "$MENU_VIEW_MODEL" "$EXTENSION_ACTION_VIEW_MODEL" "$TABS_EVENT_ROUTER_CC" "$ZIP_INSTALLER" "$WEB_REQUEST_ROUTER" "$EXTENSION_PREFS" "$CHROME_EXTENSIONS_BROWSER_CLIENT" "$EXTENSION_TAB_UTIL_CC" "$TAB_STORE" "$ANDROID_MANIFEST" "$CUSTOM_TAB_MINIMIZATION_MANAGER" "$MINIMIZED_FEATURE_UTILS" "$DEVTOOLS_INTENT_DATA_PROVIDER" "$BASE_CUSTOM_TAB_ROOT_UI_COORDINATOR" "$DEVTOOLS_ACTIVITY" "$DEVTOOLS_WINDOW_ANDROID_JAVA" "$DEVTOOLS_WINDOW_ANDROID_CC" "$DEVTOOLS_WINDOW_CC" "$JS_DIALOG_MANAGER" "$UNDO_BAR" "$ABOUT_FLAGS" "$NAV_POLICY" "$WINDOW_OPEN_TRAITS" "$WEB_CONTENTS_IMPL" "$TABS_API_CC" "$HUB_LAYOUT" "$HELIUM_CONF_PARSER" "$LANGUAGE_SETTINGS_EXT" "$SETTINGS_SEARCH_COORDINATOR" "$GL_FEATURES" "$DOWNLOAD_CRX_UTIL" "$ACTION_LIST_COORDINATOR" "$EXTENSION_POPUP_CONTENTS" "$EXTENSION_INSTALL_DIALOG" "$DEFAULT_LOCALE_HANDLER" "$EXTENSION_L10N_UTIL" "$UNPACKED_INSTALLER" "$VIRTUAL_DOCUMENT_PATH" "$SWIPE_REFRESH_HANDLER" "$INCOGNITO_BACK_HANDLER" "$CHROME_VERSION_FILE" "$EXTENSIONS_MENU_HEADER" "$TOOLBAR_POSITION_CONTROLLER" "$NEW_TAB_PAGE" "$NEW_TAB_PAGE_COORDINATOR" "$OMNIBOX_SUGGESTIONS_DROPDOWN" "$OMNIBOX_SUGGESTIONS_CONTAINER" "$OMNIBOX_DROPDOWN_EMBEDDER" "$OMNIBOX_DROPDOWN_EMBEDDER_INTERFACE" "$FEED_SURFACE_COORDINATOR" "$ZERO_SUGGEST_VERBATIM_MATCH_PROVIDER" "$AUTOCOMPLETE_RESULT"; do
+for file in "$BRIDGE" "$TOOLBAR_BRIDGE" "$MENU_MEDIATOR" "$TOOLBAR" "$CTA" "$VERIFIER" "$PROFILE_INFO" "$DEV_PRIVATE_FUNCTIONS" "$TIMESTAMP_GNI" "$CONTENT_SETTINGS_FEATURES" "$APP_MENU_DELEGATE" "$MENU_DELEGATE_CC" "$MENU_DELEGATE_H" "$TOOLBAR_ANDROID_CC" "$TOOLBAR_ANDROID_H" "$ACTION_DELEGATE_CC" "$ACTION_DELEGATE_H" "$ACTION_LIST_MEDIATOR" "$EXTENSION_ACTION_POPUP" "$EXTENSION_POPUP_CONTENTS_CC" "$EXTENSION_POPUP_CONTENTS_H" "$MENU_COORDINATOR" "$MENU_VIEW_MODEL" "$EXTENSION_ACTION_VIEW_MODEL" "$TABS_EVENT_ROUTER_CC" "$ZIP_INSTALLER" "$WEB_REQUEST_ROUTER" "$EXTENSION_PREFS" "$CHROME_EXTENSIONS_BROWSER_CLIENT" "$EXTENSION_TAB_UTIL_CC" "$TAB_STORE" "$ANDROID_MANIFEST" "$CUSTOM_TAB_MINIMIZATION_MANAGER" "$MINIMIZED_FEATURE_UTILS" "$DEVTOOLS_INTENT_DATA_PROVIDER" "$BASE_CUSTOM_TAB_ROOT_UI_COORDINATOR" "$DEVTOOLS_ACTIVITY" "$DEVTOOLS_WINDOW_ANDROID_JAVA" "$DEVTOOLS_WINDOW_ANDROID_CC" "$DEVTOOLS_WINDOW_CC" "$JS_DIALOG_MANAGER" "$UNDO_BAR" "$ABOUT_FLAGS" "$NAV_POLICY" "$WINDOW_OPEN_TRAITS" "$WEB_CONTENTS_IMPL" "$TABS_API_CC" "$HUB_LAYOUT" "$HELIUM_CONF_PARSER" "$LANGUAGE_SETTINGS_EXT" "$SETTINGS_SEARCH_COORDINATOR" "$GL_FEATURES" "$DOWNLOAD_CRX_UTIL" "$DOWNLOAD_CONTROLLER" "$ACTION_LIST_COORDINATOR" "$EXTENSION_POPUP_CONTENTS" "$EXTENSION_INSTALL_DIALOG" "$DEFAULT_LOCALE_HANDLER" "$EXTENSION_L10N_UTIL" "$UNPACKED_INSTALLER" "$VIRTUAL_DOCUMENT_PATH" "$SWIPE_REFRESH_HANDLER" "$INCOGNITO_BACK_HANDLER" "$CHROME_VERSION_FILE" "$EXTENSIONS_MENU_HEADER" "$TOOLBAR_POSITION_CONTROLLER" "$NEW_TAB_PAGE" "$NEW_TAB_PAGE_COORDINATOR" "$OMNIBOX_SUGGESTIONS_DROPDOWN" "$OMNIBOX_SUGGESTIONS_CONTAINER" "$OMNIBOX_DROPDOWN_EMBEDDER" "$OMNIBOX_DROPDOWN_EMBEDDER_INTERFACE" "$FEED_SURFACE_COORDINATOR" "$ZERO_SUGGEST_VERBATIM_MATCH_PROVIDER" "$AUTOCOMPLETE_RESULT"; do
     if [ ! -f "$file" ]; then
         echo "Expected file not found: $SRC_DIR/$file" >&2
         exit 1
@@ -161,6 +162,97 @@ sed -i 's/is_android_mobile = is_android_any \&\& !is_android_desktop;/is_androi
 
 grep -q 'addons.opera.com.*delivery.mp.microsoft.com' "$DOWNLOAD_CRX_UTIL" || \
     sed -i '/^bool OffStoreInstallAllowedByPrefs(/a\  for (const char* d : {"addons.opera.com", "operacdn.com", "microsoftedge.microsoft.com", "edge.microsoft.com", "delivery.mp.microsoft.com"}) if (item.GetURL().DomainIs(d) || item.GetReferrerUrl().DomainIs(d)) return true;' "$DOWNLOAD_CRX_UTIL"
+# android: offer installed third-party download handlers before using Chromium's
+# internal downloader. The handler gets the public URL and filename; Chromium
+# remains the fallback when no external handler is installed or launch fails.
+python3 - "$DOWNLOAD_CONTROLLER" <<'PYCODE'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+marker = '    static void enqueueDownloadManagerRequest(final DownloadInfo info) {\n'
+imports = '''import android.content.ActivityNotFoundException;
+import android.content.ComponentName;
+import android.content.Context;
+import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
+import android.net.Uri;
+import android.os.Build;
+
+'''
+chromium_import = 'import org.chromium.build.annotations.NullMarked;\n'
+context_import = 'import org.chromium.base.ContextUtils;\n'
+method = '''    // HeliumExternalDownloadHandler: offer non-browser handlers for downloads.
+    private static boolean launchExternalDownloadHandler(DownloadInfo info) {
+        Context context = ContextUtils.getApplicationContext();
+        Intent downloadIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(info.getUrl().getSpec()));
+        downloadIntent.addCategory(Intent.CATEGORY_BROWSABLE);
+        downloadIntent.putExtra(Intent.EXTRA_TITLE, info.getFileName());
+
+        List<ResolveInfo> handlers =
+                context.getPackageManager()
+                        .queryIntentActivities(downloadIntent, PackageManager.MATCH_DEFAULT_ONLY);
+        ArrayList<ComponentName> ownComponents = new ArrayList<>();
+        boolean hasExternalHandler = false;
+        for (ResolveInfo handler : handlers) {
+            if (handler.activityInfo == null) {
+                continue;
+            }
+            ComponentName component =
+                    new ComponentName(handler.activityInfo.packageName, handler.activityInfo.name);
+            if (context.getPackageName().equals(handler.activityInfo.packageName)) {
+                ownComponents.add(component);
+            } else {
+                hasExternalHandler = true;
+            }
+        }
+        if (!hasExternalHandler) {
+            return false;
+        }
+
+        Intent chooser = Intent.createChooser(downloadIntent, "Download with");
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && !ownComponents.isEmpty()) {
+            chooser.putExtra(
+                    Intent.EXTRA_EXCLUDE_COMPONENTS,
+                    ownComponents.toArray(new ComponentName[0]));
+        }
+        chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        try {
+            context.startActivity(chooser);
+            return true;
+        } catch (ActivityNotFoundException e) {
+            return false;
+        }
+    }
+
+'''
+if 'HeliumExternalDownloadHandler' not in text:
+    if imports not in text:
+        if chromium_import not in text:
+            raise SystemExit(f'import anchor not found in {path}')
+        text = text.replace(chromium_import, imports + chromium_import, 1)
+    if context_import not in text:
+        text = text.replace(chromium_import, chromium_import + context_import, 1)
+    if marker not in text:
+        raise SystemExit(f'download enqueue anchor not found in {path}')
+    text = text.replace(marker, method + marker, 1)
+old = '''    static void enqueueDownloadManagerRequest(final DownloadInfo info) {
+        DownloadManagerService.getDownloadManagerService()
+'''
+new = '''    static void enqueueDownloadManagerRequest(final DownloadInfo info) {
+        if (launchExternalDownloadHandler(info)) {
+            return;
+        }
+        DownloadManagerService.getDownloadManagerService()
+'''
+if old in text:
+    text = text.replace(old, new, 1)
+elif 'if (launchExternalDownloadHandler(info))' not in text:
+    raise SystemExit(f'download enqueue body not found in {path}')
+path.write_text(text)
+PYCODE
 
 grep -q 'public View getContainerView()' "$ACTION_LIST_COORDINATOR" || \
     sed -i '/public class RecyclerViewDelegate {$/a\public View getContainerView() { return mContainer; }' "$ACTION_LIST_COORDINATOR"
