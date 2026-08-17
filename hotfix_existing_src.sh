@@ -1821,12 +1821,16 @@ get_action_icon = """ScopedJavaLocalRef<jobject> ExtensionsMenuDelegateAndroid::
     JNIEnv* env,
     int action_index,
     content::WebContents* web_contents) {
-  if (content::WebContents* active_contents =
-          GetLastAndroidExtensionActionWebContents()) {
-    Profile* active_profile =
-        Profile::FromBrowserContext(active_contents->GetBrowserContext());
-    if (browser_->GetProfile()->IsSameOrParent(active_profile)) {
-      web_contents = active_contents;
+  // Prefer the visible tab supplied by the Android UI. The cached action
+  // WebContents is only a fallback for callers that have no current tab.
+  if (!web_contents) {
+    if (content::WebContents* active_contents =
+            GetLastAndroidExtensionActionWebContents()) {
+      Profile* active_profile =
+          Profile::FromBrowserContext(active_contents->GetBrowserContext());
+      if (browser_->GetProfile()->IsSameOrParent(active_profile)) {
+        web_contents = active_contents;
+      }
     }
   }
   const auto& action_models = menu_model_->action_models();
@@ -1848,12 +1852,16 @@ get_menu_entry = """ScopedJavaLocalRef<jobject> ExtensionsMenuDelegateAndroid::G
     JNIEnv* env,
     int action_index,
     content::WebContents* web_contents) {
-  if (content::WebContents* active_contents =
-          GetLastAndroidExtensionActionWebContents()) {
-    Profile* active_profile =
-        Profile::FromBrowserContext(active_contents->GetBrowserContext());
-    if (browser_->GetProfile()->IsSameOrParent(active_profile)) {
-      web_contents = active_contents;
+  // Prefer the visible tab supplied by the Android UI. The cached action
+  // WebContents is only a fallback for callers that have no current tab.
+  if (!web_contents) {
+    if (content::WebContents* active_contents =
+            GetLastAndroidExtensionActionWebContents()) {
+      Profile* active_profile =
+          Profile::FromBrowserContext(active_contents->GetBrowserContext());
+      if (browser_->GetProfile()->IsSameOrParent(active_profile)) {
+        web_contents = active_contents;
+      }
     }
   }
   const auto& action_models = menu_model_->action_models();
@@ -1999,12 +2007,16 @@ import sys
 
 path = Path(sys.argv[1])
 text = path.read_text()
-resolver = """  if (content::WebContents* active_contents =
-          GetLastAndroidExtensionActionWebContents()) {
-    Profile* active_profile =
-        Profile::FromBrowserContext(active_contents->GetBrowserContext());
-    if (browser_->GetProfile()->IsSameOrParent(active_profile)) {
-      web_contents = active_contents;
+resolver = """  // Prefer the visible tab supplied by the Android UI. The cached action
+  // WebContents is only a fallback for callers that have no current tab.
+  if (!web_contents) {
+    if (content::WebContents* active_contents =
+            GetLastAndroidExtensionActionWebContents()) {
+      Profile* active_profile =
+          Profile::FromBrowserContext(active_contents->GetBrowserContext());
+      if (browser_->GetProfile()->IsSameOrParent(active_profile)) {
+        web_contents = active_contents;
+      }
     }
   }
 """
