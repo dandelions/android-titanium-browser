@@ -613,7 +613,7 @@ if 'name="IDS_MENU_APPEARANCE"' not in text:
     text = text.replace(anchor, entry + anchor, 1)
 path.write_text(text)
 PYCODE
-python3 - "chrome/android/java/src/org/chromium/chrome/browser/ChromeActivity.java" <<'PYCODE'
+python3 - "chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActivity.java" <<'PYCODE'
 from pathlib import Path
 import sys
 path = Path(sys.argv[1])
