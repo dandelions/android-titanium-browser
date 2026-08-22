@@ -70,7 +70,6 @@ CHROME_EXTENSIONS_BROWSER_CLIENT=chrome/browser/extensions/chrome_extensions_bro
 EXTENSION_TAB_UTIL_CC=chrome/browser/extensions/extension_tab_util.cc
 TAB_STORE=chrome/android/java/src/org/chromium/chrome/browser/tabmodel/TabPersistentStoreImpl.java
 ANDROID_MANIFEST=chrome/android/java/AndroidManifest.xml
-ANDROID_CHROME_STRINGS=chrome/browser/ui/android/strings/android_chrome_strings.grd
 CUSTOM_TAB_MINIMIZATION_MANAGER=chrome/android/java/src/org/chromium/chrome/browser/customtabs/features/minimizedcustomtab/CustomTabMinimizationManager.java
 MINIMIZED_FEATURE_UTILS=chrome/android/java/src/org/chromium/chrome/browser/customtabs/features/minimizedcustomtab/MinimizedFeatureUtils.java
 DEVTOOLS_INTENT_DATA_PROVIDER=chrome/android/java/src/org/chromium/chrome/browser/devtools/DevToolsIntentDataProvider.java
@@ -121,7 +120,7 @@ FEED_SURFACE_COORDINATOR=chrome/android/feed/core/java/src/org/chromium/chrome/b
 ZERO_SUGGEST_VERBATIM_MATCH_PROVIDER=components/omnibox/browser/zero_suggest_verbatim_match_provider.cc
 AUTOCOMPLETE_RESULT=components/omnibox/browser/autocomplete_result.cc
 
-for file in "$BRIDGE" "$TOOLBAR_BRIDGE" "$MENU_MEDIATOR" "$TOOLBAR" "$CTA" "$VERIFIER" "$PROFILE_INFO" "$DEV_PRIVATE_FUNCTIONS" "$TIMESTAMP_GNI" "$CONTENT_SETTINGS_FEATURES" "$APP_MENU_DELEGATE" "$TABBED_APP_MENU_DELEGATE" "$CHROME_ACTIVITY" "$ANDROID_RESOURCE_IDS" "$MENU_DELEGATE_CC" "$MENU_DELEGATE_H" "$TOOLBAR_ANDROID_CC" "$TOOLBAR_ANDROID_H" "$ACTION_DELEGATE_CC" "$ACTION_DELEGATE_H" "$ACTION_LIST_MEDIATOR" "$EXTENSION_ACTION_POPUP" "$EXTENSION_POPUP_CONTENTS_CC" "$EXTENSION_POPUP_CONTENTS_H" "$MENU_COORDINATOR" "$MENU_VIEW_MODEL" "$EXTENSION_ACTION_VIEW_MODEL" "$TABS_EVENT_ROUTER_CC" "$ZIP_INSTALLER" "$WEB_REQUEST_ROUTER" "$EXTENSION_PREFS" "$CHROME_EXTENSIONS_BROWSER_CLIENT" "$EXTENSION_TAB_UTIL_CC" "$TAB_STORE" "$ANDROID_MANIFEST" "$ANDROID_CHROME_STRINGS" "$CUSTOM_TAB_MINIMIZATION_MANAGER" "$MINIMIZED_FEATURE_UTILS" "$DEVTOOLS_INTENT_DATA_PROVIDER" "$BASE_CUSTOM_TAB_ROOT_UI_COORDINATOR" "$DEVTOOLS_ACTIVITY" "$DEVTOOLS_WINDOW_ANDROID_JAVA" "$DEVTOOLS_WINDOW_ANDROID_CC" "$DEVTOOLS_WINDOW_CC" "$JS_DIALOG_MANAGER" "$UNDO_BAR" "$ABOUT_FLAGS" "$NAV_POLICY" "$WINDOW_OPEN_TRAITS" "$WEB_CONTENTS_IMPL" "$TABS_API_CC" "$HUB_LAYOUT" "$HELIUM_CONF_PARSER" "$LANGUAGE_SETTINGS_EXT" "$SETTINGS_SEARCH_COORDINATOR" "$GL_FEATURES" "$FIELD_TRIALS" "$ARCORE_MANIFEST" "$MANIFEST_FEATURES" "$DOWNLOAD_CRX_UTIL" "$DOWNLOAD_CONTROLLER" "$DOWNLOAD_SETTINGS" "$DOWNLOAD_PREFERENCES" "$ACTION_LIST_COORDINATOR" "$EXTENSION_POPUP_CONTENTS" "$EXTENSION_INSTALL_DIALOG" "$DEFAULT_LOCALE_HANDLER" "$EXTENSION_L10N_UTIL" "$UNPACKED_INSTALLER" "$VIRTUAL_DOCUMENT_PATH" "$SWIPE_REFRESH_HANDLER" "$INCOGNITO_BACK_HANDLER" "$CHROME_VERSION_FILE" "$EXTENSIONS_MENU_HEADER" "$TOOLBAR_POSITION_CONTROLLER" "$NEW_TAB_PAGE" "$NEW_TAB_PAGE_COORDINATOR" "$OMNIBOX_SUGGESTIONS_DROPDOWN" "$OMNIBOX_SUGGESTIONS_CONTAINER" "$OMNIBOX_DROPDOWN_EMBEDDER" "$OMNIBOX_DROPDOWN_EMBEDDER_INTERFACE" "$FEED_SURFACE_COORDINATOR" "$ZERO_SUGGEST_VERBATIM_MATCH_PROVIDER" "$AUTOCOMPLETE_RESULT"; do
+for file in "$BRIDGE" "$TOOLBAR_BRIDGE" "$MENU_MEDIATOR" "$TOOLBAR" "$CTA" "$VERIFIER" "$PROFILE_INFO" "$DEV_PRIVATE_FUNCTIONS" "$TIMESTAMP_GNI" "$CONTENT_SETTINGS_FEATURES" "$APP_MENU_DELEGATE" "$TABBED_APP_MENU_DELEGATE" "$CHROME_ACTIVITY" "$ANDROID_RESOURCE_IDS" "$MENU_DELEGATE_CC" "$MENU_DELEGATE_H" "$TOOLBAR_ANDROID_CC" "$TOOLBAR_ANDROID_H" "$ACTION_DELEGATE_CC" "$ACTION_DELEGATE_H" "$ACTION_LIST_MEDIATOR" "$EXTENSION_ACTION_POPUP" "$EXTENSION_POPUP_CONTENTS_CC" "$EXTENSION_POPUP_CONTENTS_H" "$MENU_COORDINATOR" "$MENU_VIEW_MODEL" "$EXTENSION_ACTION_VIEW_MODEL" "$TABS_EVENT_ROUTER_CC" "$ZIP_INSTALLER" "$WEB_REQUEST_ROUTER" "$EXTENSION_PREFS" "$CHROME_EXTENSIONS_BROWSER_CLIENT" "$EXTENSION_TAB_UTIL_CC" "$TAB_STORE" "$ANDROID_MANIFEST" "$CUSTOM_TAB_MINIMIZATION_MANAGER" "$MINIMIZED_FEATURE_UTILS" "$DEVTOOLS_INTENT_DATA_PROVIDER" "$BASE_CUSTOM_TAB_ROOT_UI_COORDINATOR" "$DEVTOOLS_ACTIVITY" "$DEVTOOLS_WINDOW_ANDROID_JAVA" "$DEVTOOLS_WINDOW_ANDROID_CC" "$DEVTOOLS_WINDOW_CC" "$JS_DIALOG_MANAGER" "$UNDO_BAR" "$ABOUT_FLAGS" "$NAV_POLICY" "$WINDOW_OPEN_TRAITS" "$WEB_CONTENTS_IMPL" "$TABS_API_CC" "$HUB_LAYOUT" "$HELIUM_CONF_PARSER" "$LANGUAGE_SETTINGS_EXT" "$SETTINGS_SEARCH_COORDINATOR" "$GL_FEATURES" "$FIELD_TRIALS" "$ARCORE_MANIFEST" "$MANIFEST_FEATURES" "$DOWNLOAD_CRX_UTIL" "$DOWNLOAD_CONTROLLER" "$DOWNLOAD_SETTINGS" "$DOWNLOAD_PREFERENCES" "$ACTION_LIST_COORDINATOR" "$EXTENSION_POPUP_CONTENTS" "$EXTENSION_INSTALL_DIALOG" "$DEFAULT_LOCALE_HANDLER" "$EXTENSION_L10N_UTIL" "$UNPACKED_INSTALLER" "$VIRTUAL_DOCUMENT_PATH" "$SWIPE_REFRESH_HANDLER" "$INCOGNITO_BACK_HANDLER" "$CHROME_VERSION_FILE" "$EXTENSIONS_MENU_HEADER" "$TOOLBAR_POSITION_CONTROLLER" "$NEW_TAB_PAGE" "$NEW_TAB_PAGE_COORDINATOR" "$OMNIBOX_SUGGESTIONS_DROPDOWN" "$OMNIBOX_SUGGESTIONS_CONTAINER" "$OMNIBOX_DROPDOWN_EMBEDDER" "$OMNIBOX_DROPDOWN_EMBEDDER_INTERFACE" "$FEED_SURFACE_COORDINATOR" "$ZERO_SUGGEST_VERBATIM_MATCH_PROVIDER" "$AUTOCOMPLETE_RESULT"; do
     if [ ! -f "$file" ]; then
         echo "Expected file not found: $SRC_DIR/$file" >&2
         exit 1
@@ -284,60 +283,128 @@ elif 'if (launchExternalDownloadHandler(info))' not in text:
 path.write_text(text)
 PYCODE
 
-# Add a direct Appearance entry to every Android three-dot menu mode.
-python3 - "$ANDROID_CHROME_STRINGS" "$ANDROID_RESOURCE_IDS" "$TABBED_APP_MENU_DELEGATE" "$CHROME_ACTIVITY" <<'PYCODE'
+# Add an Appearance submenu with direct system, light, and dark theme choices.
+python3 - "$TABBED_APP_MENU_DELEGATE" "$ANDROID_RESOURCE_IDS" "$CHROME_ACTIVITY" <<'PYCODE'
 from pathlib import Path
+import re
 import sys
-strings, ids, delegate, activity = map(Path, sys.argv[1:])
+
+delegate, ids, activity = map(Path, sys.argv[1:])
+
 text = delegate.read_text()
-method = """    private ListItem buildAppearanceItem() {
-        return new ListItem(
-                AppMenuHandler.AppMenuItemType.STANDARD,
+theme_utils_import = 'import org.chromium.chrome.browser.night_mode.NightModeUtils;\n'
+theme_type_import = 'import org.chromium.chrome.browser.night_mode.ThemeType;\n'
+import_anchor = 'import org.chromium.chrome.browser.homepage.HomepageManager;\n'
+if theme_utils_import not in text or theme_type_import not in text:
+    if import_anchor not in text:
+        raise SystemExit("appearance menu import anchor not found")
+    text = text.replace(import_anchor, import_anchor + theme_utils_import + theme_type_import, 1)
+method = """    private ListItem buildAppearanceThemeItem(int id, int theme) {
+        return AppMenuItemUtils.createStandardListItem(
                 AppMenuItemUtils.buildModelForStandardMenuItem(
                         mContext,
                         getAppMenuItemTheme(),
-                        R.id.appearance_menu_id,
-                        R.string.menu_appearance,
+                        id,
+                        NightModeUtils.getThemeSettingTitle(mContext, theme),
                         Resources.ID_NULL,
+                        isMenuIconAtStart()),
+                /* showIcon= */ false);
+    }
+
+    private ListItem buildAppearanceItem() {
+        List<ListItem> submenuItems = new ArrayList<>();
+        submenuItems.add(
+                buildAppearanceThemeItem(
+                        R.id.appearance_system_default_menu_id,
+                        ThemeType.SYSTEM_DEFAULT));
+        submenuItems.add(
+                buildAppearanceThemeItem(
+                        R.id.appearance_light_menu_id, ThemeType.LIGHT));
+        submenuItems.add(
+                buildAppearanceThemeItem(
+                        R.id.appearance_dark_menu_id, ThemeType.DARK));
+
+        return new ListItem(
+                AppMenuHandler.AppMenuItemType.MENU_ITEM_WITH_SUBMENU,
+                AppMenuItemUtils.buildModelForMenuItemWithSubmenu(
+                        mContext,
+                        getAppMenuItemTheme(),
+                        R.id.appearance_menu_id,
+                        R.string.appearance_settings,
+                        Resources.ID_NULL,
+                        () -> submenuItems,
                         isMenuIconAtStart()));
     }
 
 """
-if "private ListItem buildAppearanceItem()" not in text:
-    anchor = "    private ListItem buildSettingsItem() {\n"
-    if anchor not in text:
-        raise SystemExit("appearance menu method anchor not found")
+start = text.find("    private ListItem buildAppearanceThemeItem(")
+if start == -1:
+    start = text.find("    private ListItem buildAppearanceItem() {")
+anchor = "    private ListItem buildSettingsItem() {\n"
+if start != -1:
+    end = text.find(anchor, start)
+    if end == -1:
+        raise SystemExit("appearance menu end anchor not found")
+    text = text[:start] + method + text[end:]
+elif anchor in text:
     text = text.replace(anchor, method + anchor, 1)
+else:
+    raise SystemExit("appearance menu method anchor not found")
 if "modelList.add(buildAppearanceItem());" not in text:
     text = text.replace(
-        "        modelList.add(buildSettingsItem());",
-        "        modelList.add(buildAppearanceItem());\n        modelList.add(buildSettingsItem());")
+            "        modelList.add(buildSettingsItem());",
+            "        modelList.add(buildAppearanceItem());\n        modelList.add(buildSettingsItem());")
 delegate.write_text(text)
+
 text = ids.read_text()
-if 'name="appearance_menu_id"' not in text:
-    anchor = '    <item type="id" name="preferences_id" />'
-    if anchor not in text:
-        raise SystemExit("menu id anchor not found")
-    ids.write_text(text.replace(anchor, '    <item type="id" name="appearance_menu_id" />\n' + anchor, 1))
-text = strings.read_text()
-if 'name="IDS_MENU_APPEARANCE"' not in text:
-    anchor = '      <message name="IDS_MENU_SETTINGS"'
-    if anchor not in text:
-        raise SystemExit("menu settings string anchor not found")
-    strings.write_text(text.replace(anchor, '      <message name="IDS_MENU_APPEARANCE" desc="Menu item for opening appearance settings. [CHAR_LIMIT=27]">\n        Appearance\n      </message>\n' + anchor, 1))
+anchor = '    <item type="id" name="preferences_id" />'
+if anchor not in text:
+    raise SystemExit("menu id anchor not found")
+for name in (
+        "appearance_system_default_menu_id",
+        "appearance_light_menu_id",
+        "appearance_dark_menu_id",
+        "appearance_menu_id"):
+    if f'name="{name}"' not in text:
+        text = text.replace(anchor, f'    <item type="id" name="{name}" />\n' + anchor, 1)
+ids.write_text(text)
+
 text = activity.read_text()
-imp = 'import org.chromium.chrome.browser.about_settings.AboutChromeSettings;\n'
-new_imp = 'import org.chromium.chrome.browser.appearance.settings.AppearanceSettingsFragment;\n'
-if new_imp not in text:
-    if imp not in text:
-        raise SystemExit("ChromeActivity import anchor not found")
-    text = text.replace(imp, imp + new_imp, 1)
-if 'id == R.id.appearance_menu_id' not in text:
-    anchor = '        if (id == R.id.preferences_id) {\n'
-    handler = '        if (id == R.id.appearance_menu_id) {\n            SettingsNavigationFactory.createSettingsNavigation()\n                    .startSettings(this, AppearanceSettingsFragment.class);\n            RecordUserAction.record("MobileMenuAppearance");\n            return true;\n        }\n\n'
-    if anchor not in text:
+text = text.replace(
+        'import org.chromium.chrome.browser.appearance.settings.AppearanceSettingsFragment;\n',
+        '')
+night_mode_import = 'import org.chromium.chrome.browser.night_mode.SystemNightModeMonitor;\n'
+theme_type_import = 'import org.chromium.chrome.browser.night_mode.ThemeType;\n'
+if theme_type_import not in text:
+    if night_mode_import not in text:
+        raise SystemExit("ChromeActivity night mode import anchor not found")
+    text = text.replace(night_mode_import, night_mode_import + theme_type_import, 1)
+text = re.sub(
+        r'        if \(id == R\.id\.appearance_menu_id\) \{\n.*?        \}\n\n',
+        '',
+        text,
+        flags=re.DOTALL)
+handler = """        if (id == R.id.appearance_system_default_menu_id
+                || id == R.id.appearance_light_menu_id
+                || id == R.id.appearance_dark_menu_id) {
+            int theme = ThemeType.SYSTEM_DEFAULT;
+            if (id == R.id.appearance_light_menu_id) {
+                theme = ThemeType.LIGHT;
+            } else if (id == R.id.appearance_dark_menu_id) {
+                theme = ThemeType.DARK;
+            }
+            ChromeSharedPreferences.getInstance()
+                    .writeInt(ChromePreferenceKeys.UI_THEME_SETTING, theme);
+            RecordUserAction.record("MobileMenuAppearanceTheme");
+            return true;
+        }
+
+"""
+handler_anchor = '        if (id == R.id.preferences_id) {\n'
+if 'id == R.id.appearance_system_default_menu_id' not in text:
+    if handler_anchor not in text:
         raise SystemExit("ChromeActivity settings handler anchor not found")
-    text = text.replace(anchor, handler + anchor, 1)
+    text = text.replace(handler_anchor, handler + handler_anchor, 1)
 activity.write_text(text)
 PYCODE
 
