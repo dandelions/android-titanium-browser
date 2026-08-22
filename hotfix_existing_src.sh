@@ -46,6 +46,9 @@ DEV_PRIVATE_FUNCTIONS=chrome/browser/extensions/api/developer_private/developer_
 TIMESTAMP_GNI=build/timestamp.gni
 CONTENT_SETTINGS_FEATURES=components/content_settings/core/common/features.cc
 APP_MENU_DELEGATE=chrome/android/java/src/org/chromium/chrome/browser/app/appmenu/AppMenuPropertiesDelegateImpl.java
+TABBED_APP_MENU_DELEGATE=chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java
+CHROME_ACTIVITY=chrome/android/java/src/org/chromium/chrome/browser/ChromeActivity.java
+ANDROID_RESOURCE_IDS=chrome/android/java/res/values/ids.xml
 MENU_DELEGATE_CC=chrome/browser/ui/android/extensions/extensions_menu_delegate_android.cc
 MENU_DELEGATE_H=chrome/browser/ui/android/extensions/extensions_menu_delegate_android.h
 TOOLBAR_ANDROID_CC=chrome/browser/ui/android/extensions/extensions_toolbar_android.cc
@@ -67,6 +70,7 @@ CHROME_EXTENSIONS_BROWSER_CLIENT=chrome/browser/extensions/chrome_extensions_bro
 EXTENSION_TAB_UTIL_CC=chrome/browser/extensions/extension_tab_util.cc
 TAB_STORE=chrome/android/java/src/org/chromium/chrome/browser/tabmodel/TabPersistentStoreImpl.java
 ANDROID_MANIFEST=chrome/android/java/AndroidManifest.xml
+ANDROID_CHROME_STRINGS=chrome/browser/ui/android/strings/android_chrome_strings.grd
 CUSTOM_TAB_MINIMIZATION_MANAGER=chrome/android/java/src/org/chromium/chrome/browser/customtabs/features/minimizedcustomtab/CustomTabMinimizationManager.java
 MINIMIZED_FEATURE_UTILS=chrome/android/java/src/org/chromium/chrome/browser/customtabs/features/minimizedcustomtab/MinimizedFeatureUtils.java
 DEVTOOLS_INTENT_DATA_PROVIDER=chrome/android/java/src/org/chromium/chrome/browser/devtools/DevToolsIntentDataProvider.java
@@ -117,7 +121,7 @@ FEED_SURFACE_COORDINATOR=chrome/android/feed/core/java/src/org/chromium/chrome/b
 ZERO_SUGGEST_VERBATIM_MATCH_PROVIDER=components/omnibox/browser/zero_suggest_verbatim_match_provider.cc
 AUTOCOMPLETE_RESULT=components/omnibox/browser/autocomplete_result.cc
 
-for file in "$BRIDGE" "$TOOLBAR_BRIDGE" "$MENU_MEDIATOR" "$TOOLBAR" "$CTA" "$VERIFIER" "$PROFILE_INFO" "$DEV_PRIVATE_FUNCTIONS" "$TIMESTAMP_GNI" "$CONTENT_SETTINGS_FEATURES" "$APP_MENU_DELEGATE" "$MENU_DELEGATE_CC" "$MENU_DELEGATE_H" "$TOOLBAR_ANDROID_CC" "$TOOLBAR_ANDROID_H" "$ACTION_DELEGATE_CC" "$ACTION_DELEGATE_H" "$ACTION_LIST_MEDIATOR" "$EXTENSION_ACTION_POPUP" "$EXTENSION_POPUP_CONTENTS_CC" "$EXTENSION_POPUP_CONTENTS_H" "$MENU_COORDINATOR" "$MENU_VIEW_MODEL" "$EXTENSION_ACTION_VIEW_MODEL" "$TABS_EVENT_ROUTER_CC" "$ZIP_INSTALLER" "$WEB_REQUEST_ROUTER" "$EXTENSION_PREFS" "$CHROME_EXTENSIONS_BROWSER_CLIENT" "$EXTENSION_TAB_UTIL_CC" "$TAB_STORE" "$ANDROID_MANIFEST" "$CUSTOM_TAB_MINIMIZATION_MANAGER" "$MINIMIZED_FEATURE_UTILS" "$DEVTOOLS_INTENT_DATA_PROVIDER" "$BASE_CUSTOM_TAB_ROOT_UI_COORDINATOR" "$DEVTOOLS_ACTIVITY" "$DEVTOOLS_WINDOW_ANDROID_JAVA" "$DEVTOOLS_WINDOW_ANDROID_CC" "$DEVTOOLS_WINDOW_CC" "$JS_DIALOG_MANAGER" "$UNDO_BAR" "$ABOUT_FLAGS" "$NAV_POLICY" "$WINDOW_OPEN_TRAITS" "$WEB_CONTENTS_IMPL" "$TABS_API_CC" "$HUB_LAYOUT" "$HELIUM_CONF_PARSER" "$LANGUAGE_SETTINGS_EXT" "$SETTINGS_SEARCH_COORDINATOR" "$GL_FEATURES" "$FIELD_TRIALS" "$ARCORE_MANIFEST" "$MANIFEST_FEATURES" "$DOWNLOAD_CRX_UTIL" "$DOWNLOAD_CONTROLLER" "$DOWNLOAD_SETTINGS" "$DOWNLOAD_PREFERENCES" "$ACTION_LIST_COORDINATOR" "$EXTENSION_POPUP_CONTENTS" "$EXTENSION_INSTALL_DIALOG" "$DEFAULT_LOCALE_HANDLER" "$EXTENSION_L10N_UTIL" "$UNPACKED_INSTALLER" "$VIRTUAL_DOCUMENT_PATH" "$SWIPE_REFRESH_HANDLER" "$INCOGNITO_BACK_HANDLER" "$CHROME_VERSION_FILE" "$EXTENSIONS_MENU_HEADER" "$TOOLBAR_POSITION_CONTROLLER" "$NEW_TAB_PAGE" "$NEW_TAB_PAGE_COORDINATOR" "$OMNIBOX_SUGGESTIONS_DROPDOWN" "$OMNIBOX_SUGGESTIONS_CONTAINER" "$OMNIBOX_DROPDOWN_EMBEDDER" "$OMNIBOX_DROPDOWN_EMBEDDER_INTERFACE" "$FEED_SURFACE_COORDINATOR" "$ZERO_SUGGEST_VERBATIM_MATCH_PROVIDER" "$AUTOCOMPLETE_RESULT"; do
+for file in "$BRIDGE" "$TOOLBAR_BRIDGE" "$MENU_MEDIATOR" "$TOOLBAR" "$CTA" "$VERIFIER" "$PROFILE_INFO" "$DEV_PRIVATE_FUNCTIONS" "$TIMESTAMP_GNI" "$CONTENT_SETTINGS_FEATURES" "$APP_MENU_DELEGATE" "$TABBED_APP_MENU_DELEGATE" "$CHROME_ACTIVITY" "$ANDROID_RESOURCE_IDS" "$MENU_DELEGATE_CC" "$MENU_DELEGATE_H" "$TOOLBAR_ANDROID_CC" "$TOOLBAR_ANDROID_H" "$ACTION_DELEGATE_CC" "$ACTION_DELEGATE_H" "$ACTION_LIST_MEDIATOR" "$EXTENSION_ACTION_POPUP" "$EXTENSION_POPUP_CONTENTS_CC" "$EXTENSION_POPUP_CONTENTS_H" "$MENU_COORDINATOR" "$MENU_VIEW_MODEL" "$EXTENSION_ACTION_VIEW_MODEL" "$TABS_EVENT_ROUTER_CC" "$ZIP_INSTALLER" "$WEB_REQUEST_ROUTER" "$EXTENSION_PREFS" "$CHROME_EXTENSIONS_BROWSER_CLIENT" "$EXTENSION_TAB_UTIL_CC" "$TAB_STORE" "$ANDROID_MANIFEST" "$ANDROID_CHROME_STRINGS" "$CUSTOM_TAB_MINIMIZATION_MANAGER" "$MINIMIZED_FEATURE_UTILS" "$DEVTOOLS_INTENT_DATA_PROVIDER" "$BASE_CUSTOM_TAB_ROOT_UI_COORDINATOR" "$DEVTOOLS_ACTIVITY" "$DEVTOOLS_WINDOW_ANDROID_JAVA" "$DEVTOOLS_WINDOW_ANDROID_CC" "$DEVTOOLS_WINDOW_CC" "$JS_DIALOG_MANAGER" "$UNDO_BAR" "$ABOUT_FLAGS" "$NAV_POLICY" "$WINDOW_OPEN_TRAITS" "$WEB_CONTENTS_IMPL" "$TABS_API_CC" "$HUB_LAYOUT" "$HELIUM_CONF_PARSER" "$LANGUAGE_SETTINGS_EXT" "$SETTINGS_SEARCH_COORDINATOR" "$GL_FEATURES" "$FIELD_TRIALS" "$ARCORE_MANIFEST" "$MANIFEST_FEATURES" "$DOWNLOAD_CRX_UTIL" "$DOWNLOAD_CONTROLLER" "$DOWNLOAD_SETTINGS" "$DOWNLOAD_PREFERENCES" "$ACTION_LIST_COORDINATOR" "$EXTENSION_POPUP_CONTENTS" "$EXTENSION_INSTALL_DIALOG" "$DEFAULT_LOCALE_HANDLER" "$EXTENSION_L10N_UTIL" "$UNPACKED_INSTALLER" "$VIRTUAL_DOCUMENT_PATH" "$SWIPE_REFRESH_HANDLER" "$INCOGNITO_BACK_HANDLER" "$CHROME_VERSION_FILE" "$EXTENSIONS_MENU_HEADER" "$TOOLBAR_POSITION_CONTROLLER" "$NEW_TAB_PAGE" "$NEW_TAB_PAGE_COORDINATOR" "$OMNIBOX_SUGGESTIONS_DROPDOWN" "$OMNIBOX_SUGGESTIONS_CONTAINER" "$OMNIBOX_DROPDOWN_EMBEDDER" "$OMNIBOX_DROPDOWN_EMBEDDER_INTERFACE" "$FEED_SURFACE_COORDINATOR" "$ZERO_SUGGEST_VERBATIM_MATCH_PROVIDER" "$AUTOCOMPLETE_RESULT"; do
     if [ ! -f "$file" ]; then
         echo "Expected file not found: $SRC_DIR/$file" >&2
         exit 1
@@ -278,6 +282,63 @@ if old in text:
 elif 'if (launchExternalDownloadHandler(info))' not in text:
     raise SystemExit(f'download enqueue body not found in {path}')
 path.write_text(text)
+PYCODE
+
+# Add a direct Appearance entry to every Android three-dot menu mode.
+python3 - "$SRC_DIR/$ANDROID_CHROME_STRINGS" "$SRC_DIR/$ANDROID_RESOURCE_IDS" "$SRC_DIR/$TABBED_APP_MENU_DELEGATE" "$SRC_DIR/$CHROME_ACTIVITY" <<'PYCODE'
+from pathlib import Path
+import sys
+strings, ids, delegate, activity = map(Path, sys.argv[1:])
+text = delegate.read_text()
+method = """    private ListItem buildAppearanceItem() {
+        return new ListItem(
+                AppMenuHandler.AppMenuItemType.STANDARD,
+                AppMenuItemUtils.buildModelForStandardMenuItem(
+                        mContext,
+                        getAppMenuItemTheme(),
+                        R.id.appearance_menu_id,
+                        R.string.menu_appearance,
+                        Resources.ID_NULL,
+                        isMenuIconAtStart()));
+    }
+
+"""
+if "private ListItem buildAppearanceItem()" not in text:
+    anchor = "    private ListItem buildSettingsItem() {\n"
+    if anchor not in text:
+        raise SystemExit("appearance menu method anchor not found")
+    text = text.replace(anchor, method + anchor, 1)
+if "modelList.add(buildAppearanceItem());" not in text:
+    text = text.replace(
+        "        modelList.add(buildSettingsItem());",
+        "        modelList.add(buildAppearanceItem());\n        modelList.add(buildSettingsItem());")
+delegate.write_text(text)
+text = ids.read_text()
+if 'name="appearance_menu_id"' not in text:
+    anchor = '    <item type="id" name="preferences_id" />'
+    if anchor not in text:
+        raise SystemExit("menu id anchor not found")
+    ids.write_text(text.replace(anchor, '    <item type="id" name="appearance_menu_id" />\n' + anchor, 1))
+text = strings.read_text()
+if 'name="IDS_MENU_APPEARANCE"' not in text:
+    anchor = '      <message name="IDS_MENU_SETTINGS"'
+    if anchor not in text:
+        raise SystemExit("menu settings string anchor not found")
+    strings.write_text(text.replace(anchor, '      <message name="IDS_MENU_APPEARANCE" desc="Menu item for opening appearance settings. [CHAR_LIMIT=27]">\n        Appearance\n      </message>\n' + anchor, 1))
+text = activity.read_text()
+imp = 'import org.chromium.chrome.browser.about_settings.AboutChromeSettings;\n'
+new_imp = 'import org.chromium.chrome.browser.appearance.settings.AppearanceSettingsFragment;\n'
+if new_imp not in text:
+    if imp not in text:
+        raise SystemExit("ChromeActivity import anchor not found")
+    text = text.replace(imp, imp + new_imp, 1)
+if 'id == R.id.appearance_menu_id' not in text:
+    anchor = '        if (id == R.id.preferences_id) {\n'
+    handler = '        if (id == R.id.appearance_menu_id) {\n            SettingsNavigationFactory.createSettingsNavigation()\n                    .startSettings(this, AppearanceSettingsFragment.class);\n            RecordUserAction.record("MobileMenuAppearance");\n            return true;\n        }\n\n'
+    if anchor not in text:
+        raise SystemExit("ChromeActivity settings handler anchor not found")
+    text = text.replace(anchor, handler + anchor, 1)
+activity.write_text(text)
 PYCODE
 
 # android: expose third-party downloader selection under Downloads settings.

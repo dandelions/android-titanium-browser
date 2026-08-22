@@ -567,6 +567,79 @@ elif 'if (launchExternalDownloadHandler(info))' not in text:
 path.write_text(text)
 PYCODE
 
+# Add a direct Appearance entry to every Android three-dot menu mode.
+python3 - "chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java" <<'PYCODE'
+from pathlib import Path
+import sys
+path = Path(sys.argv[1])
+text = path.read_text()
+method = """    private ListItem buildAppearanceItem() {
+        return new ListItem(
+                AppMenuHandler.AppMenuItemType.STANDARD,
+                AppMenuItemUtils.buildModelForStandardMenuItem(
+                        mContext,
+                        getAppMenuItemTheme(),
+                        R.id.appearance_menu_id,
+                        R.string.menu_appearance,
+                        Resources.ID_NULL,
+                        isMenuIconAtStart()));
+    }
+
+"""
+if "private ListItem buildAppearanceItem()" not in text:
+    anchor = "    private ListItem buildSettingsItem() {\n"
+    if anchor not in text:
+        raise SystemExit("appearance menu method anchor not found")
+    text = text.replace(anchor, method + anchor, 1)
+if "modelList.add(buildAppearanceItem());" not in text:
+    text = text.replace(
+        "        modelList.add(buildSettingsItem());",
+        "        modelList.add(buildAppearanceItem());\n        modelList.add(buildSettingsItem());")
+path.write_text(text)
+PYCODE
+
+# Add the Appearance menu resource and route it to the existing settings fragment.
+sed -i '/<item type="id" name="preferences_id" \/>/i\    <item type="id" name="appearance_menu_id" />' chrome/android/java/res/values/ids.xml
+python3 - "chrome/browser/ui/android/strings/android_chrome_strings.grd" <<'PYCODE'
+from pathlib import Path
+import sys
+path = Path(sys.argv[1])
+text = path.read_text()
+entry = """      <message name=\"IDS_MENU_APPEARANCE\" desc=\"Menu item for opening appearance settings. [CHAR_LIMIT=27]\">\n        Appearance\n      </message>\n"""
+if 'name="IDS_MENU_APPEARANCE"' not in text:
+    anchor = '      <message name="IDS_MENU_SETTINGS"'
+    if anchor not in text:
+        raise SystemExit("menu settings string anchor not found")
+    text = text.replace(anchor, entry + anchor, 1)
+path.write_text(text)
+PYCODE
+python3 - "chrome/android/java/src/org/chromium/chrome/browser/ChromeActivity.java" <<'PYCODE'
+from pathlib import Path
+import sys
+path = Path(sys.argv[1])
+text = path.read_text()
+imp = 'import org.chromium.chrome.browser.about_settings.AboutChromeSettings;\n'
+new_imp = 'import org.chromium.chrome.browser.appearance.settings.AppearanceSettingsFragment;\n'
+if new_imp not in text:
+    if imp not in text:
+        raise SystemExit("ChromeActivity import anchor not found")
+    text = text.replace(imp, imp + new_imp, 1)
+handler = """        if (id == R.id.appearance_menu_id) {
+            SettingsNavigationFactory.createSettingsNavigation()
+                    .startSettings(this, AppearanceSettingsFragment.class);
+            RecordUserAction.record(\"MobileMenuAppearance\");
+            return true;
+        }
+
+"""
+anchor = '        if (id == R.id.preferences_id) {\n'
+if 'id == R.id.appearance_menu_id' not in text:
+    if anchor not in text:
+        raise SystemExit("ChromeActivity settings handler anchor not found")
+    text = text.replace(anchor, handler + anchor, 1)
+path.write_text(text)
+PYCODE
+
 # android: expose third-party downloader selection under Downloads settings.
 # Default off: Chromium's internal download manager remains the normal path.
 python3 - "chrome/android/java/src/org/chromium/chrome/browser/download/DownloadController.java" "chrome/browser/download/android/java/src/org/chromium/chrome/browser/download/settings/DownloadSettings.java" "chrome/browser/download/android/java/res/xml/download_preferences.xml" <<'PYCODE'
