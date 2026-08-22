@@ -285,7 +285,7 @@ path.write_text(text)
 PYCODE
 
 # Add a direct Appearance entry to every Android three-dot menu mode.
-python3 - "$SRC_DIR/$ANDROID_CHROME_STRINGS" "$SRC_DIR/$ANDROID_RESOURCE_IDS" "$SRC_DIR/$TABBED_APP_MENU_DELEGATE" "$SRC_DIR/$CHROME_ACTIVITY" <<'PYCODE'
+python3 - "$ANDROID_CHROME_STRINGS" "$ANDROID_RESOURCE_IDS" "$TABBED_APP_MENU_DELEGATE" "$CHROME_ACTIVITY" <<'PYCODE'
 from pathlib import Path
 import sys
 strings, ids, delegate, activity = map(Path, sys.argv[1:])
