@@ -301,13 +301,12 @@ if theme_utils_import not in text or theme_type_import not in text:
     text = text.replace(import_anchor, import_anchor + theme_utils_import + theme_type_import, 1)
 method = """    private ListItem buildAppearanceThemeItem(int id, int theme) {
         return AppMenuItemUtils.createStandardListItem(
-                AppMenuItemUtils.buildModelForStandardMenuItem(
-                        mContext,
-                        getAppMenuItemTheme(),
-                        id,
-                        NightModeUtils.getThemeSettingTitle(mContext, theme),
-                        Resources.ID_NULL,
-                        isMenuIconAtStart()),
+                AppMenuItemUtils.buildBaseModelForTextItem(
+                                getAppMenuItemTheme(), id, isMenuIconAtStart())
+                        .with(
+                                AppMenuItemProperties.TITLE,
+                                NightModeUtils.getThemeSettingTitle(mContext, theme))
+                        .build(),
                 /* showIcon= */ false);
     }
 
