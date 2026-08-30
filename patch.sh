@@ -826,39 +826,6 @@ grep -q 'Helium: ignore extension main-frame cancel/redirect' extensions/browser
   }\
 ' extensions/browser/api/web_request/extension_web_request_event_router.cc
 
-# ext: keep early content-script injection from breaking page startup
-sed -i '/extensions_features::kExtensionsBackgroundCompilation));/a\
-  if (host_id_.type == mojom::HostID::HostType::kExtensions &&\
-      web_frame->IsOutermostMainFrame() &&\
-      !document_url.SchemeIs("chrome-extension")) {\
-    return;\
-  }' extensions/renderer/user_script_set.cc
-sed -i '/  bool inject_css = !script->css_scripts().empty() &&/,/      !script->js_scripts().empty() && script->run_location() == run_location;/c\
-  // Delay extension main-frame work until the page is idle. Dark-mode/style\
-  // and filtering extensions can otherwise alter CSS or script state before\
-  // the page initializes, leaving some sites blank. Keep\
-  // extension pages at their declared timing so new-tab/homepage extensions\
-  // such as iTabs can initialize normally.\
-  const bool delay_main_frame_extension_scripts =\
-      host_id_.type == mojom::HostID::HostType::kExtensions &&\
-      web_frame->IsOutermostMainFrame() &&\
-      !document_url.SchemeIs("chrome-extension");\
-\
-  mojom::RunLocation script_run_location = script->run_location();\
-  if (delay_main_frame_extension_scripts &&\
-      (script_run_location == mojom::RunLocation::kDocumentStart ||\
-       script_run_location == mojom::RunLocation::kDocumentEnd)) {\
-    script_run_location = mojom::RunLocation::kDocumentIdle;\
-  }\
-\
-  const mojom::RunLocation css_run_location =\
-      delay_main_frame_extension_scripts ? mojom::RunLocation::kDocumentIdle\
-                                         : mojom::RunLocation::kDocumentStart;\
-  bool inject_css =\
-      !script->css_scripts().empty() && run_location == css_run_location;\
-  bool inject_js =\
-      !script->js_scripts().empty() && script_run_location == run_location;' extensions/renderer/user_script_set.cc
-
 # ext: toolbar
 sed -i '/<ViewStub/{N;N;N;N;N;N; /optional_button_stub/a\
         <ViewStub\

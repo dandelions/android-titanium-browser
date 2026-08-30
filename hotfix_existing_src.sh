@@ -47,6 +47,7 @@ TIMESTAMP_GNI=build/timestamp.gni
 CONTENT_SETTINGS_FEATURES=components/content_settings/core/common/features.cc
 APP_MENU_DELEGATE=chrome/android/java/src/org/chromium/chrome/browser/app/appmenu/AppMenuPropertiesDelegateImpl.java
 TABBED_APP_MENU_DELEGATE=chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java
+USER_SCRIPT_SET=extensions/renderer/user_script_set.cc
 CHROME_ACTIVITY=chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActivity.java
 ANDROID_RESOURCE_IDS=chrome/android/java/res/values/ids.xml
 MENU_DELEGATE_CC=chrome/browser/ui/android/extensions/extensions_menu_delegate_android.cc
@@ -120,7 +121,7 @@ FEED_SURFACE_COORDINATOR=chrome/android/feed/core/java/src/org/chromium/chrome/b
 ZERO_SUGGEST_VERBATIM_MATCH_PROVIDER=components/omnibox/browser/zero_suggest_verbatim_match_provider.cc
 AUTOCOMPLETE_RESULT=components/omnibox/browser/autocomplete_result.cc
 
-for file in "$BRIDGE" "$TOOLBAR_BRIDGE" "$MENU_MEDIATOR" "$TOOLBAR" "$CTA" "$VERIFIER" "$PROFILE_INFO" "$DEV_PRIVATE_FUNCTIONS" "$TIMESTAMP_GNI" "$CONTENT_SETTINGS_FEATURES" "$APP_MENU_DELEGATE" "$TABBED_APP_MENU_DELEGATE" "$CHROME_ACTIVITY" "$ANDROID_RESOURCE_IDS" "$MENU_DELEGATE_CC" "$MENU_DELEGATE_H" "$TOOLBAR_ANDROID_CC" "$TOOLBAR_ANDROID_H" "$ACTION_DELEGATE_CC" "$ACTION_DELEGATE_H" "$ACTION_LIST_MEDIATOR" "$EXTENSION_ACTION_POPUP" "$EXTENSION_POPUP_CONTENTS_CC" "$EXTENSION_POPUP_CONTENTS_H" "$MENU_COORDINATOR" "$MENU_VIEW_MODEL" "$EXTENSION_ACTION_VIEW_MODEL" "$TABS_EVENT_ROUTER_CC" "$ZIP_INSTALLER" "$WEB_REQUEST_ROUTER" "$EXTENSION_PREFS" "$CHROME_EXTENSIONS_BROWSER_CLIENT" "$EXTENSION_TAB_UTIL_CC" "$TAB_STORE" "$ANDROID_MANIFEST" "$CUSTOM_TAB_MINIMIZATION_MANAGER" "$MINIMIZED_FEATURE_UTILS" "$DEVTOOLS_INTENT_DATA_PROVIDER" "$BASE_CUSTOM_TAB_ROOT_UI_COORDINATOR" "$DEVTOOLS_ACTIVITY" "$DEVTOOLS_WINDOW_ANDROID_JAVA" "$DEVTOOLS_WINDOW_ANDROID_CC" "$DEVTOOLS_WINDOW_CC" "$JS_DIALOG_MANAGER" "$UNDO_BAR" "$ABOUT_FLAGS" "$NAV_POLICY" "$WINDOW_OPEN_TRAITS" "$WEB_CONTENTS_IMPL" "$TABS_API_CC" "$HUB_LAYOUT" "$HELIUM_CONF_PARSER" "$LANGUAGE_SETTINGS_EXT" "$SETTINGS_SEARCH_COORDINATOR" "$GL_FEATURES" "$FIELD_TRIALS" "$ARCORE_MANIFEST" "$MANIFEST_FEATURES" "$DOWNLOAD_CRX_UTIL" "$DOWNLOAD_CONTROLLER" "$DOWNLOAD_SETTINGS" "$DOWNLOAD_PREFERENCES" "$ACTION_LIST_COORDINATOR" "$EXTENSION_POPUP_CONTENTS" "$EXTENSION_INSTALL_DIALOG" "$DEFAULT_LOCALE_HANDLER" "$EXTENSION_L10N_UTIL" "$UNPACKED_INSTALLER" "$VIRTUAL_DOCUMENT_PATH" "$SWIPE_REFRESH_HANDLER" "$INCOGNITO_BACK_HANDLER" "$CHROME_VERSION_FILE" "$EXTENSIONS_MENU_HEADER" "$TOOLBAR_POSITION_CONTROLLER" "$NEW_TAB_PAGE" "$NEW_TAB_PAGE_COORDINATOR" "$OMNIBOX_SUGGESTIONS_DROPDOWN" "$OMNIBOX_SUGGESTIONS_CONTAINER" "$OMNIBOX_DROPDOWN_EMBEDDER" "$OMNIBOX_DROPDOWN_EMBEDDER_INTERFACE" "$FEED_SURFACE_COORDINATOR" "$ZERO_SUGGEST_VERBATIM_MATCH_PROVIDER" "$AUTOCOMPLETE_RESULT"; do
+for file in "$BRIDGE" "$TOOLBAR_BRIDGE" "$MENU_MEDIATOR" "$TOOLBAR" "$CTA" "$VERIFIER" "$PROFILE_INFO" "$DEV_PRIVATE_FUNCTIONS" "$TIMESTAMP_GNI" "$CONTENT_SETTINGS_FEATURES" "$APP_MENU_DELEGATE" "$TABBED_APP_MENU_DELEGATE" "$USER_SCRIPT_SET" "$CHROME_ACTIVITY" "$ANDROID_RESOURCE_IDS" "$MENU_DELEGATE_CC" "$MENU_DELEGATE_H" "$TOOLBAR_ANDROID_CC" "$TOOLBAR_ANDROID_H" "$ACTION_DELEGATE_CC" "$ACTION_DELEGATE_H" "$ACTION_LIST_MEDIATOR" "$EXTENSION_ACTION_POPUP" "$EXTENSION_POPUP_CONTENTS_CC" "$EXTENSION_POPUP_CONTENTS_H" "$MENU_COORDINATOR" "$MENU_VIEW_MODEL" "$EXTENSION_ACTION_VIEW_MODEL" "$TABS_EVENT_ROUTER_CC" "$ZIP_INSTALLER" "$WEB_REQUEST_ROUTER" "$EXTENSION_PREFS" "$CHROME_EXTENSIONS_BROWSER_CLIENT" "$EXTENSION_TAB_UTIL_CC" "$TAB_STORE" "$ANDROID_MANIFEST" "$CUSTOM_TAB_MINIMIZATION_MANAGER" "$MINIMIZED_FEATURE_UTILS" "$DEVTOOLS_INTENT_DATA_PROVIDER" "$BASE_CUSTOM_TAB_ROOT_UI_COORDINATOR" "$DEVTOOLS_ACTIVITY" "$DEVTOOLS_WINDOW_ANDROID_JAVA" "$DEVTOOLS_WINDOW_ANDROID_CC" "$DEVTOOLS_WINDOW_CC" "$JS_DIALOG_MANAGER" "$UNDO_BAR" "$ABOUT_FLAGS" "$NAV_POLICY" "$WINDOW_OPEN_TRAITS" "$WEB_CONTENTS_IMPL" "$TABS_API_CC" "$HUB_LAYOUT" "$HELIUM_CONF_PARSER" "$LANGUAGE_SETTINGS_EXT" "$SETTINGS_SEARCH_COORDINATOR" "$GL_FEATURES" "$FIELD_TRIALS" "$ARCORE_MANIFEST" "$MANIFEST_FEATURES" "$DOWNLOAD_CRX_UTIL" "$DOWNLOAD_CONTROLLER" "$DOWNLOAD_SETTINGS" "$DOWNLOAD_PREFERENCES" "$ACTION_LIST_COORDINATOR" "$EXTENSION_POPUP_CONTENTS" "$EXTENSION_INSTALL_DIALOG" "$DEFAULT_LOCALE_HANDLER" "$EXTENSION_L10N_UTIL" "$UNPACKED_INSTALLER" "$VIRTUAL_DOCUMENT_PATH" "$SWIPE_REFRESH_HANDLER" "$INCOGNITO_BACK_HANDLER" "$CHROMIUM_VERSION_FILE" "$EXTENSIONS_MENU_HEADER" "$TOOLBAR_POSITION_CONTROLLER" "$NEW_TAB_PAGE" "$NEW_TAB_PAGE_COORDINATOR" "$OMNIBOX_SUGGESTIONS_DROPDOWN" "$OMNIBOX_SUGGESTIONS_CONTAINER" "$OMNIBOX_DROPDOWN_EMBEDDER" "$OMNIBOX_DROPDOWN_EMBEDDER_INTERFACE" "$FEED_SURFACE_COORDINATOR" "$ZERO_SUGGEST_VERBATIM_MATCH_PROVIDER" "$AUTOCOMPLETE_RESULT"; do
     if [ ! -f "$file" ]; then
         echo "Expected file not found: $SRC_DIR/$file" >&2
         exit 1
@@ -1314,6 +1315,41 @@ perl -0pi -e 's/return currentTab != null && !isNativePage && isFlagEnabled && i
 
 # Chromium 152 moved the More tools DevTools form-factor gate into this builder.
 sed -i 's#                || !DeviceFormFactor\.isNonMultiDisplayContextOnTablet(mContext)##' chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/MoreToolsItemBuilder.java
+# Restore declared extension run_at timing. Older Helium patches delayed document_start/document_end scripts
+# and skipped streaming on Android main frames, which prevents script-at extensions from running.
+python3 - "$USER_SCRIPT_SET" <<'PYCODE'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+text = text.replace(
+    """  if (host_id_.type == mojom::HostID::HostType::kExtensions &&
+      web_frame->IsOutermostMainFrame() &&
+      !document_url.SchemeIs(\"chrome-extension\")) {
+    return;
+  }
+""",
+    "",
+    1,
+)
+custom_start = text.find("  // Delay extension main-frame work until the page is idle.")
+if custom_start >= 0:
+    custom_end = text.find(
+        "      !script->js_scripts().empty() && script_run_location == run_location;",
+        custom_start,
+    )
+    if custom_end < 0:
+        raise SystemExit(f"custom script timing block end not found in {path}")
+    custom_end += len(
+        "      !script->js_scripts().empty() && script_run_location == run_location;"
+    )
+    text = text[:custom_start] + """  bool inject_css = !script->css_scripts().empty() &&
+                    run_location == mojom::RunLocation::kDocumentStart;
+  bool inject_js =
+      !script->js_scripts().empty() && script->run_location() == run_location;""" + text[custom_end:]
+path.write_text(text)
+PYCODE
 
 # Make Android DevTools behave as a normal desktop-mode window.
 perl -0pi -e 's|(<activity\n            android:name="org\.chromium\.chrome\.browser\.devtools\.DevToolsActivity"\n            android:theme="\@style/Theme\.Chromium\.Activity"\n            android:exported="false"\n)(?!            android:resizeableActivity="true"\n)|$1            android:resizeableActivity="true"\n|' "$ANDROID_MANIFEST"
