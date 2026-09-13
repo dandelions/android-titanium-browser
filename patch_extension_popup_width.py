@@ -186,6 +186,31 @@ old_resize_delegate = (
     "                    ViewUtils.dpToPx(mActivity, width), ViewUtils.dpToPx(mActivity, height));\n"
     "        }\n"
 )
+old_resize_delegate_153 = (
+    "        public void resizeDueToAutoResize(int width, int height) {\n"
+    "            if (Build.VERSION.SDK_INT >= 34) {\n"
+    "                // Disable transition animations for the popup window. On Android, {@link\n"
+    "                // onLoaded()} is called first, and then {@link resizeDueToAutoResize()} is called.\n"
+    "                // A transition would result in a sliding animation from the original bounds to the\n"
+    "                // updated bounds.\n"
+    "                // TODO(crbug.com/478100096): Figure out what to do for lower API levels.\n"
+    "                ((WindowManager.LayoutParams) mContentView.getRootView().getLayoutParams())\n"
+    "                        .setCanPlayMoveAnimation(false);\n"
+    "            }\n\n"
+    "            int targetWidthPx = ViewUtils.dpToPx(mActivity, width);\n"
+    "            int targetHeightPx = ViewUtils.dpToPx(mActivity, height);\n\n"
+    "            View decorView = mActivity.getWindow().getDecorView();\n"
+    "            int maxAvailableWidthPx = decorView.getWidth();\n"
+    "            int maxAvailableHeightPx = decorView.getHeight();\n\n"
+    "            if (maxAvailableWidthPx > 0) {\n"
+    "                targetWidthPx = Math.min(targetWidthPx, maxAvailableWidthPx);\n"
+    "            }\n"
+    "            if (maxAvailableHeightPx > 0) {\n"
+    "                targetHeightPx = Math.min(targetHeightPx, maxAvailableHeightPx);\n"
+    "            }\n\n"
+    "            mPopupWindow.setDesiredContentSize(targetWidthPx, targetHeightPx);\n"
+    "        }\n"
+)
 new_resize_delegate = (
     "        public void resizeDueToAutoResize(int width, int height, float scale) {\n"
     "            if (Build.VERSION.SDK_INT >= 34) {\n"
@@ -205,7 +230,7 @@ new_resize_delegate = (
     "                    Math.max(Math.round(contentHeightPx * scale), 1));\n"
     "        }\n"
 )
-popup_text = popup_text.replace(old_resize_delegate, new_resize_delegate, 1)
+popup_text = popup_text.replace(old_resize_delegate, new_resize_delegate, 1).replace(old_resize_delegate_153, new_resize_delegate, 1)
 scaled_content_view = (
     "    private static class ScaledContentView extends FrameLayout {\n"
     "        private final View mChildView;\n"
