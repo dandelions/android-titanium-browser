@@ -981,7 +981,7 @@ grep -q 'components/tabs/public/tab_interface.h' "$MENU_DELEGATE_CC" || sed -i '
 grep -q 'extensions/browser/extension_registry.h' "$MENU_DELEGATE_CC" || sed -i '/#include "components\/tabs\/public\/tab_interface.h"/a\#include "extensions/browser/extension_registry.h"' "$MENU_DELEGATE_CC"
 grep -q 'base/no_destructor.h' "$MENU_DELEGATE_CC" || sed -i '/#include "chrome\/browser\/ui\/android\/extensions\/extension_action_delegate_android.h"/a\#include "base/no_destructor.h"' "$MENU_DELEGATE_CC"
 grep -q 'base/memory/weak_ptr.h' "$MENU_DELEGATE_CC" || sed -i '/#include "chrome\/browser\/ui\/android\/extensions\/extension_action_delegate_android.h"/a\#include "base/memory/weak_ptr.h"' "$MENU_DELEGATE_CC"
-grep -q 'g_last_android_extension_action_tab_id' "$MENU_DELEGATE_CC" || sed -i '/constexpr gfx::Size kActionIconSize = /a\
+grep -q 'int g_last_android_extension_action_tab_id = -1;' "$MENU_DELEGATE_CC" || sed -i '/constexpr gfx::Size kActionIconSize = /a\
 int g_last_android_extension_action_tab_id = -1;\
 base::WeakPtr<content::WebContents>&\
 GetLastAndroidExtensionActionWebContentsStorage() {\
@@ -989,7 +989,7 @@ GetLastAndroidExtensionActionWebContentsStorage() {\
   return *storage;\
 }\
 ' "$MENU_DELEGATE_CC"
-grep -qE 'GetLastAndroidExtensionActionWebContentsStorage|g_last_android_extension_action_web_contents' "$MENU_DELEGATE_CC" || sed -i '/int g_last_android_extension_action_tab_id = -1;/a\
+grep -q 'static base::NoDestructor<base::WeakPtr<content::WebContents>> storage;' "$MENU_DELEGATE_CC" || sed -i '/int g_last_android_extension_action_tab_id = -1;/a\
 base::WeakPtr<content::WebContents>&\
 GetLastAndroidExtensionActionWebContentsStorage() {\
   static base::NoDestructor<base::WeakPtr<content::WebContents>> storage;\
