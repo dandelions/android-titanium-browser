@@ -1753,6 +1753,9 @@ if ! grep -q 'private void onPrimaryActionClicked' "$MENU_MEDIATOR"; then
 \
 ' "$MENU_MEDIATOR"
 fi
+if [ -n "$RESOLVED_VERSION" ] && ! version_lt "$RESOLVED_VERSION" "153.0.0.0"; then
+    perl -0pi -e "s|ExtensionActionPopupContents\.create\(nativeHostPtr\)|ExtensionActionPopupContents.create(nativeHostPtr, false)|g; s|(mTabModelSelector)\s*\);|\$1,\n                        false);|g" "$MENU_MEDIATOR"
+fi
 perl -0pi -e 's|\@Override\n    \@Override\n    public void onActionPopupRequested|@Override\n    public void onActionPopupRequested|' "$MENU_MEDIATOR"
 grep -q 'public void onActionPopupRequested(String actionId, long nativeHostPtr)' "$MENU_MEDIATOR" || \
     perl -0pi -e 's|(\n    \@Override\n    public void onReady\(\) \{)|\n    \@Override\n    public void onActionPopupRequested(String actionId, long nativeHostPtr) {\n        showActionPopup(actionId, nativeHostPtr);\n    }\n\n    \@Override\n    public void onActionContextMenuRequested(String actionId) {\n        showActionContextMenu(actionId);\n    }\n\n    \@Override\n    public void hideActivePopup() {\n        closeActivePopup();\n    }\n\n    \@Override\n    public boolean hasActivePopup() {\n        return mActivePopup != null;\n    }\n$1|' "$MENU_MEDIATOR"
