@@ -492,6 +492,8 @@ fi
 
 if [ "$SKIP_SOURCE_PREPARE" != "1" ]; then
     source $SCRIPT_DIR/patch.sh
+elif [ "$FAST_LOCAL_BUILD" = "1" ]; then
+    "$SCRIPT_DIR/hotfix_existing_src.sh" "$PWD"
 fi
 restore_build_state
 
