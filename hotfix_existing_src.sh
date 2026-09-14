@@ -1982,7 +1982,7 @@ grep -q 'base/no_destructor.h' "$MENU_DELEGATE_CC" || \
 grep -q 'base/memory/weak_ptr.h' "$MENU_DELEGATE_CC" || \
     sed -i '/#include "chrome\/browser\/ui\/android\/extensions\/extension_action_delegate_android.h"/a\#include "base/memory/weak_ptr.h"' "$MENU_DELEGATE_CC"
 grep -q 'g_last_android_extension_action_tab_id' "$MENU_DELEGATE_CC" || \
-    sed -i '/constexpr gfx::Size kActionIconSize = gfx::Size(24, 24);/a\
+    sed -i '/constexpr gfx::Size kActionIconSize = /a\
 int g_last_android_extension_action_tab_id = -1;\
 base::WeakPtr<content::WebContents>&\
 GetLastAndroidExtensionActionWebContentsStorage() {\
