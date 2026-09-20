@@ -1,6 +1,6 @@
 # Android Helium Browser 编译说明
 
-当前源码基于 Chromium `153.0.8010.36`，版本号由 `vanadium/args.gn` 自动读取。
+当前源码基于 Chromium `153.0.8010.47`，版本号由 `vanadium/args.gn` 自动读取。
 
 ## 1. 环境要求
 
@@ -46,7 +46,7 @@ NINJA_JOBS=14 ./build.sh
 产物位于：
 
 ```text
-chromium/src/out/release/153.0.8010.36-arm64-v8a.apk
+chromium/src/out/release/153.0.8010.47-arm64-v8a.apk
 ```
 
 ## 3. 可选构建参数
@@ -137,7 +137,7 @@ awk -F= '
 ' chromium/src/chrome/VERSION
 ```
 
-两边都应显示 `153.0.8010.36`。`hotfix_existing_src.sh` 负责把新的下游补丁应用到已有源码，但不会把旧版 Chromium 升级成 `153.0.8010.36`。版本不一致时必须执行完整构建，让 `build.sh` 重新获取目标 Chromium 标签并应用 Vanadium 补丁。
+两边都应显示 `153.0.8010.47`。`hotfix_existing_src.sh` 负责把新的下游补丁应用到已有源码，但不会把旧版 Chromium 升级成 `153.0.8010.47`。版本不一致时必须执行完整构建，让 `build.sh` 重新获取目标 Chromium 标签并应用 Vanadium 补丁。
 
 如果现有源码仍是旧版本，不要继续 Localbuild。清理子模块后直接执行一次完整构建：
 
@@ -199,5 +199,5 @@ grep android_default_version_name vanadium/args.gn
 版本行应显示：
 
 ```text
-android_default_version_name = "153.0.8010.36"
+android_default_version_name = "153.0.8010.47"
 ```
