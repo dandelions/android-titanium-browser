@@ -155,6 +155,9 @@ python3 "$SCRIPT_DIR/patch_extension_popup_width.py" \
     "$EXTENSION_POPUP_CONTENTS_CC" \
     "$EXTENSION_POPUP_CONTENTS_H"
 
+# Auto-dismiss message banners after 4.5s
+python3 "$SCRIPT_DIR/patch_message_autodismiss_duration.py" "$SRC_DIR"
+
 # The toolbar icon toggles the menu, so the duplicate close button is not needed.
 perl -0pi -e 's|\n        android:padding="12dp"||g; s|(android:id="\@\+id/extensions_menu_close_button"\n)(?!        android:visibility="gone"\n)|$1        android:visibility="gone"\n|' "$EXTENSIONS_MENU_HEADER"
 

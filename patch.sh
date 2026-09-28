@@ -356,6 +356,9 @@ python3 "$SCRIPT_DIR/patch_extension_popup_width.py" \
     "$EXTENSION_POPUP_CONTENTS_CC" \
     "$EXTENSION_POPUP_CONTENTS_H"
 
+# Auto-dismiss message banners after 4.5s
+python3 "$SCRIPT_DIR/patch_message_autodismiss_duration.py" .
+
 # viewport
 sed -i 's|<meta name="color-scheme" content="light dark">|&\n<meta name="viewport" content="width=device-width">|' chrome/browser/resources/extensions/extensions.html
 sed -i 's|height: calc(var(--md-toolbar-height) + 58px);|height: calc(var(--md-toolbar-height) + 104px);|' chrome/browser/resources/extensions/extensions.html
