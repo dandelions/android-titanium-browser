@@ -443,6 +443,7 @@ else
     cp "$SCRIPT_DIR/.gclient" ../.gclient
     git submodule foreach git config -f ./.git/config submodule.$name.ignore all
     git config --add remote.origin.fetch '+refs/tags/*:refs/tags/*'
+    git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main || true
     reset_chromium_submodules
 
     # Work on a temporary patch copy. Older versions modified the Vanadium
@@ -472,6 +473,7 @@ else
     patch_filter_list_downloader
 
     cd ..
+    git -C src symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main 2>/dev/null || true
     gclient sync -D --no-history --nohooks
     cd src
     reset_chromium_submodules
