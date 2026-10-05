@@ -662,14 +662,28 @@ replace_if_missing(
     "import org.chromium.chrome.browser.tasks.ReturnToChromeUtil;\n"
     "import org.chromium.chrome.browser.toolbar.settings.AddressBarPreference;\n",
 )
-replace_if_missing(
-    coordinator,
-    "private @Nullable Boolean mShowFakeSearchBoxForToolbarPosition;",
-    "    private @Nullable Boolean mIsWhiteBackgroundOnSearchBoxApplied;\n",
-    "    private @Nullable Boolean mIsWhiteBackgroundOnSearchBoxApplied;\n"
-    "    private @Nullable Boolean mShowFakeSearchBoxForToolbarPosition;\n"
-    "    private int mToolbarPositionTopInset = Integer.MIN_VALUE;\n",
-)
+coordinator_text = coordinator.read_text()
+if "private @Nullable Boolean mShowFakeSearchBoxForToolbarPosition;" not in coordinator_text:
+    for anchor in (
+        "    private @Nullable Boolean mIsWhiteBackgroundOnSearchBoxApplied;\n",
+        "    private @TriState int mIsWhiteBackgroundOnSearchBoxApplied;\n",
+    ):
+        if anchor in coordinator_text:
+            coordinator.write_text(
+                coordinator_text.replace(
+                    anchor,
+                    anchor
+                    + "    private @Nullable Boolean mShowFakeSearchBoxForToolbarPosition;\n"
+                    + "    private int mToolbarPositionTopInset = Integer.MIN_VALUE;\n",
+                    1,
+                )
+            )
+            break
+    else:
+        raise SystemExit(
+            f"NTP bottom toolbar pattern not found in {coordinator}: "
+            "private @Nullable Boolean mShowFakeSearchBoxForToolbarPosition;"
+        )
 replace_if_missing(
     coordinator,
     "mModel.set(NewTabPageLayoutProperties.SEARCH_BOX_VIEW, mNtpSearchBox.getView());\n"
