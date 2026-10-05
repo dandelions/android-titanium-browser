@@ -194,14 +194,18 @@ clean_stale_out_deps() {
 
     rm -f \
         "$out_dir/.chromium_version" \
+        "$out_dir/.helium_out_version" \
         "$out_dir/.ninja_deps" \
         "$out_dir/.ninja_log" \
         "$out_dir/.siso_deps" \
         "$out_dir/.siso_fs_state" \
         "$out_dir/.siso_last_targets" \
         "$out_dir/.siso_failed_targets" \
+        "$out_dir"/gen/chrome/browser/auxiliary_search/java__header.d \
+        "$out_dir"/gen/chrome/browser/magic_stack/android/java__header.d \
         "$out_dir"/obj/chrome/browser/auxiliary_search/java.turbine.jar* \
         "$out_dir"/obj/chrome/browser/magic_stack/android/java.turbine.jar*
+    find "$out_dir/gen" "$out_dir/obj" -name '*.d' -delete 2>/dev/null || true
 }
 
 configure_out_dir() {
@@ -227,14 +231,14 @@ configure_out_dir() {
         return
     fi
 
-    if [ -f "$out_dir/.helium_out_version" ] && [ "$(cat "$out_dir/.helium_out_version")" != "$VERSION" ]; then
-        echo "Chromium version in $out_dir changed ($(cat "$out_dir/.helium_out_version") -> $VERSION); clearing stale Siso/Ninja dependency logs."
+    if [ -f "$out_dir/.helium_depfiles_version" ] && [ "$(cat "$out_dir/.helium_depfiles_version")" != "$VERSION" ]; then
+        echo "Chromium version in $out_dir changed ($(cat "$out_dir/.helium_depfiles_version") -> $VERSION); clearing stale Siso/Ninja dependency logs and depfiles."
         clean_stale_out_deps "$out_dir"
-    elif [ ! -f "$out_dir/.helium_out_version" ] && { [ -f "$out_dir/.siso_deps" ] || [ -f "$out_dir/.siso_fs_state" ] || [ -f "$out_dir/.ninja_deps" ] || [ -f "$out_dir/build.ninja" ]; }; then
-        echo "Recording Chromium version $VERSION for $out_dir and clearing legacy Siso/Ninja dependency logs."
+    elif [ ! -f "$out_dir/.helium_depfiles_version" ] && { [ -f "$out_dir/.siso_deps" ] || [ -f "$out_dir/.siso_fs_state" ] || [ -f "$out_dir/.ninja_deps" ] || [ -f "$out_dir/build.ninja" ]; }; then
+        echo "Recording Chromium version $VERSION for $out_dir and clearing legacy Siso/Ninja dependency logs and depfiles."
         clean_stale_out_deps "$out_dir"
     fi
-    printf '%s\n' "$VERSION" > "$out_dir/.helium_out_version"
+    printf '%s\n' "$VERSION" > "$out_dir/.helium_depfiles_version"
 
     mv "$desired_args" "$out_dir/args.gn"
     gn gen "$out_dir"
