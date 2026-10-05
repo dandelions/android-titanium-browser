@@ -354,6 +354,50 @@ java_text = replace_if_missing(
     "        void resizeDueToAutoResize(int width, int height);\n",
     "        void resizeDueToAutoResize(int width, int height, float scale);\n",
 )
+old_java_create_1arg = (
+    "    /** Creates an {@link ExtensionActionPopupContents} instance from a native host pointer. */\n"
+    "    public static ExtensionActionPopupContents create(long hostPtr) {\n"
+    "        return ExtensionActionPopupContentsJni.get().create(hostPtr);\n"
+    "    }\n\n"
+)
+new_java_create = (
+    "    /** Creates an {@link ExtensionActionPopupContents} instance from a native host pointer. */\n"
+    "    public static ExtensionActionPopupContents create(long hostPtr) {\n"
+    "        return create(hostPtr, false);\n"
+    "    }\n\n"
+    "    /** Creates an {@link ExtensionActionPopupContents} instance from a native host pointer. */\n"
+    "    public static ExtensionActionPopupContents create(\n"
+    "            long hostPtr, boolean inspectWithDevTools) {\n"
+    "        return ExtensionActionPopupContentsJni.get().create(hostPtr, inspectWithDevTools);\n"
+    "    }\n\n"
+)
+java_text = java_text.replace(old_java_create_1arg, new_java_create, 1)
+if "long hostPtr, boolean inspectWithDevTools)" not in java_text:
+    java_text = replace_if_missing(
+        java_contents,
+        java_text,
+        "long hostPtr, boolean inspectWithDevTools)",
+        "    @CalledByNative\n    private ExtensionActionPopupContents(",
+        new_java_create + "    @CalledByNative\n    private ExtensionActionPopupContents(",
+    )
+old_jni_create_1arg = (
+    "        /** Creates the native ExtensionActionPopupContents object and returns its Java peer. */\n"
+    "        ExtensionActionPopupContents create(long hostPtr);\n"
+)
+new_jni_create = (
+    "        /** Creates the native ExtensionActionPopupContents object and returns its Java peer. */\n"
+    "        ExtensionActionPopupContents create(long hostPtr, boolean inspectWithDevTools);\n\n"
+)
+java_text = java_text.replace(old_jni_create_1arg + "\n", new_jni_create, 1)
+java_text = java_text.replace(old_jni_create_1arg, new_jni_create, 1)
+if "ExtensionActionPopupContents create(long hostPtr, boolean inspectWithDevTools);" not in java_text:
+    java_text = replace_if_missing(
+        java_contents,
+        java_text,
+        "ExtensionActionPopupContents create(long hostPtr, boolean inspectWithDevTools);",
+        "    @NativeMethods\n    public interface Natives {\n",
+        "    @NativeMethods\n    public interface Natives {\n" + new_jni_create,
+    )
 
 header_text = native_header.read_text()
 header_text = header_text.replace(
@@ -523,11 +567,58 @@ native_text = native_text.replace(
     "  render_frame_host->GetView()->EnableAutoResize(kMinSize, kMaxSize);\n",
     1,
 )
+old_native_create_1arg = (
+    "static ScopedJavaLocalRef<jobject> JNI_ExtensionActionPopupContents_Create(\n"
+    "    JNIEnv* env,\n"
+    "    jlong host_ptr) {\n"
+    "  std::unique_ptr<ExtensionViewHost> host(\n"
+    "      reinterpret_cast<ExtensionViewHost*>(host_ptr));\n"
+    "  auto* popup_contents = new ExtensionActionPopupContents(std::move(host));\n"
+    "  return popup_contents->GetJavaObject();\n"
+    "}\n"
+)
+old_native_create_1arg_false = (
+    "static ScopedJavaLocalRef<jobject> JNI_ExtensionActionPopupContents_Create(\n"
+    "    JNIEnv* env,\n"
+    "    jlong host_ptr) {\n"
+    "  std::unique_ptr<ExtensionViewHost> host(\n"
+    "      reinterpret_cast<ExtensionViewHost*>(host_ptr));\n"
+    "  auto* popup_contents =\n"
+    "      new ExtensionActionPopupContents(std::move(host), false);\n"
+    "  return popup_contents->GetJavaObject();\n"
+    "}\n"
+)
+new_native_create = (
+    "static ScopedJavaLocalRef<jobject> JNI_ExtensionActionPopupContents_Create(\n"
+    "    JNIEnv* env,\n"
+    "    jlong host_ptr,\n"
+    "    jboolean inspect_with_devtools) {\n"
+    "  std::unique_ptr<ExtensionViewHost> host(\n"
+    "      reinterpret_cast<ExtensionViewHost*>(host_ptr));\n"
+    "  auto* popup_contents = new ExtensionActionPopupContents(\n"
+    "      std::move(host), inspect_with_devtools);\n"
+    "  return popup_contents->GetJavaObject();\n"
+    "}\n\n"
+)
+native_text = native_text.replace(old_native_create_1arg + "\n", new_native_create, 1)
+native_text = native_text.replace(old_native_create_1arg, new_native_create, 1)
+native_text = native_text.replace(old_native_create_1arg_false + "\n", new_native_create, 1)
+native_text = native_text.replace(old_native_create_1arg_false, new_native_create, 1)
+if "jboolean inspect_with_devtools)" not in native_text:
+    native_text = replace_if_missing(
+        native_contents,
+        native_text,
+        "jboolean inspect_with_devtools)",
+        "}  // namespace extensions\n",
+        new_native_create + "}  // namespace extensions\n",
+    )
 required = (
     "constexpr gfx::Size kMinSize = {256, 25};",
     new_set_max_size,
     "new_size.height(),\n      scale);",
     "EnableAutoResize(kMinSize, kMaxSize);",
+    "JNI_ExtensionActionPopupContents_Create",
+    "jboolean inspect_with_devtools)",
 )
 for marker in required:
     if marker not in native_text:
@@ -549,6 +640,9 @@ required_outputs = (
         java_contents,
         java_text,
         (
+            "public static ExtensionActionPopupContents create(long hostPtr)",
+            "long hostPtr, boolean inspectWithDevTools)",
+            "ExtensionActionPopupContents create(long hostPtr, boolean inspectWithDevTools);",
             "private void resizeDueToAutoResize(int width, int height, float scale)",
             "void resizeDueToAutoResize(int width, int height, float scale);",
         ),
