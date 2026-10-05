@@ -460,8 +460,9 @@ else
     # https://grapheneos.org/build#browser-and-webview
     rm -f $VANADIUM_PATCH_DIR/*trichrome-{apk-build-targets,browser-apk-targets}.patch
     rm -f $VANADIUM_PATCH_DIR/*{detailed,supported}-language*.patch
+    rm -f $VANADIUM_PATCH_DIR/*javascript-optimizer-{site-setting,settings-UI}.patch
     rm -f $VANADIUM_PATCH_DIR/*component-updates.patch
-    rm -f $VANADIUM_PATCH_DIR/*{pdf,PDF,for-content-public,toolbar-button,configs-from-config-app}*.patch
+    rm -f $VANADIUM_PATCH_DIR/*{pdf,PDF,for-content-public,toolbar-button,configs-from-config-app,new-tab-card,predictive-back*}*.patch
     # rm -rf $SCRIPT_DIR/vanadium/patches/*crashpad*.patch
     replace "$VANADIUM_PATCH_DIR" "VANADIUM" "HELIUM"
     replace "$VANADIUM_PATCH_DIR" "Vanadium" "Helium"

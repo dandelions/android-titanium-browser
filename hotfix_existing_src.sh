@@ -90,6 +90,9 @@ TABS_API_CC=chrome/browser/extensions/api/tabs/tabs_api.cc
 HUB_LAYOUT=chrome/browser/hub/internal/android/res/layout/hub_layout.xml
 HELIUM_CONF_PARSER=helium/android_config/parser/java/src/app/helium/config/HeliumConfParser.java
 LANGUAGE_SETTINGS_EXT=helium/chromium_src/chrome/browser/language/android/java/src/org/chromium/chrome/browser/language/settings/LanguageSettingsExt.java
+PRIVACY_SETTINGS_EXT=helium/chromium_src/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettingsExt.java
+LAUNCH_INTENT_HOOKS=helium/chromium_src/chrome/android/java/src/org/chromium/chrome/browser/LaunchIntentDispatcherHooks.java
+HOME_MODULES_CONFIG_MANAGER=chrome/browser/magic_stack/android/java/src/org/chromium/chrome/browser/magic_stack/HomeModulesConfigManager.java
 SETTINGS_SEARCH_COORDINATOR=chrome/android/java/src/org/chromium/chrome/browser/settings/search/SettingsSearchCoordinator.java
 GL_FEATURES=ui/gl/gl_features.cc
 FIELD_TRIALS=chrome/browser/chrome_browser_field_trials.cc
@@ -166,8 +169,19 @@ perl -0pi -e 's|\n        android:padding="12dp"||g; s|(android:id="\@\+id/exten
 # Undo the compatibility injection left by older hotfix revisions before reruns.
 sed -i 's|private static void init(Context ctx, SpecType specType) { if (!isEligible()) { return; }|private static void init(Context ctx, SpecType specType) {|' "$HELIUM_CONF_PARSER"
 sed -i '/safelyRemovePreference(prefFragment/d' "$LANGUAGE_SETTINGS_EXT"
+if [ -f "$PRIVACY_SETTINGS_EXT" ]; then
+    sed -i '/safelyRemovePreference($/{N;/PREF_JAVASCRIPT_OPTIMIZER/d}' "$PRIVACY_SETTINGS_EXT"
+fi
+if [ -f "$LAUNCH_INTENT_HOOKS" ]; then
+    sed -i 's|if (!Intent\.ACTION_VIEW\.equals(intent\.getAction())) {|if (!Intent.ACTION_VIEW.equals(intent.getAction()) \|\| !android.webkit.URLUtil.isNetworkUrl(IntentHandler.getUrlFromIntent(intent))) {|' "$LAUNCH_INTENT_HOOKS"
+    sed -i 's|if (urlFromIntent == null) {|if (!android.webkit.URLUtil.isNetworkUrl(urlFromIntent)) {|' "$LAUNCH_INTENT_HOOKS"
+    sed -i 's|static Intent maybeModifyCustomTabIntents(Context context, Intent intent) {|static Intent maybeModifyCustomTabIntents(Context context, Intent intent) { if (!android.webkit.URLUtil.isNetworkUrl(IntentHandler.getUrlFromIntent(intent))) { return intent; }|' "$LAUNCH_INTENT_HOOKS"
+fi
+if [ -f "$HOME_MODULES_CONFIG_MANAGER" ]; then
+    sed -i 's|readBoolean(getSettingsPreferenceKey(moduleType), true)|readBoolean(getSettingsPreferenceKey(moduleType), !HomeModulesUtils.belongsToEducationalTipModule(moduleType))|' "$HOME_MODULES_CONFIG_MANAGER"
+fi
 sed -i '/removeEntryForKey(fragmentName, "translate_switch")/d' "$SETTINGS_SEARCH_COORDINATOR"
-sed -i '/BASE_FEATURE(kFallbackToSWIfGLES3NotSupported,/,/#endif/ s/base::FEATURE_ENABLED_BY_DEFAULT/base::FEATURE_DISABLED_BY_DEFAULT/' "$GL_FEATURES"
+sed -i '/^bool ShouldFallbackToSWIfGLES3NotSupported() {$/,/^}$/ s|^  return true;$|  return false;|' "$GL_FEATURES"
 sed -i '/com.google.ar.core.min_apk_version/d' "$ARCORE_MANIFEST"
 # Chromium 152 moves desktop-Android feature enablement into field trials.
 sed -i '/#if BUILDFLAG(IS_DESKTOP_ANDROID)/{
@@ -180,8 +194,11 @@ feature_overrides.EnableFeature(media::kAndroidEnableBackgroundMediaCapturing);\
 feature_overrides.EnableFeature(media::kAutoPictureInPictureAndroid);\
 feature_overrides.EnableFeature(media::kContextMenuPictureInPictureAndroid);\
 feature_overrides.EnableFeature(chrome::android::kLoadAllTabsAtStartup);\
+feature_overrides.EnableFeature(chrome::android::kChromeNativeUrlOverriding);\
 #if 0
 d}' "$FIELD_TRIALS"
+grep -q 'feature_overrides.EnableFeature(chrome::android::kChromeNativeUrlOverriding);' "$FIELD_TRIALS" || \
+    sed -i '/feature_overrides.EnableFeature(chrome::android::kLoadAllTabsAtStartup);/a\feature_overrides.EnableFeature(chrome::android::kChromeNativeUrlOverriding);' "$FIELD_TRIALS"
 
 sed -i 's|"platforms": \["win", "mac"\]|"platforms": ["win", "mac", "desktop_android"]|' "$MANIFEST_FEATURES"
 
@@ -190,7 +207,7 @@ sed -i 's/is_desktop_android = !!BUILDFLAG(IS_DESKTOP_ANDROID);/is_desktop_andro
 sed -i 's/is_android_mobile = is_android_any \&\& !is_android_desktop;/is_android_mobile = is_android_any \&\& is_android_desktop;/' "$AUTOCOMPLETE_RESULT"
 
 grep -q 'addons.opera.com.*delivery.mp.microsoft.com' "$DOWNLOAD_CRX_UTIL" || \
-    sed -i '/^bool OffStoreInstallAllowedByPrefs(/a\  for (const char* d : {"addons.opera.com", "operacdn.com", "microsoftedge.microsoft.com", "edge.microsoft.com", "delivery.mp.microsoft.com"}) if (item.GetURL().DomainIs(d) || item.GetReferrerUrl().DomainIs(d)) return true;' "$DOWNLOAD_CRX_UTIL"
+    sed -i '/^bool OffStoreInstallAllowedByPrefs(/a\if (const auto\& o = item.GetRequestInitiator(); o \&\& o->scheme() == "chrome-extension") return true; for (const char* d : {"addons.opera.com", "operacdn.com", "microsoftedge.microsoft.com", "edge.microsoft.com", "delivery.mp.microsoft.com"}) if (item.GetURL().DomainIs(d) || item.GetReferrerUrl().DomainIs(d)) return true;' "$DOWNLOAD_CRX_UTIL"
 # android: offer installed third-party download handlers before using Chromium's
 # internal downloader. The handler gets the public URL and filename; Chromium
 # remains the fallback when no external handler is installed or launch fails.
