@@ -212,6 +212,15 @@ configure_out_dir() {
         return
     fi
 
+    if [ -f "$out_dir/.chromium_version" ] && [ "$(cat "$out_dir/.chromium_version")" != "$VERSION" ]; then
+        echo "Chromium version in $out_dir changed ($(cat "$out_dir/.chromium_version") -> $VERSION); clearing stale Ninja dependency log."
+        rm -f "$out_dir/.ninja_deps" "$out_dir/.ninja_log"
+    elif [ ! -f "$out_dir/.chromium_version" ] && [ -f "$out_dir/.ninja_deps" ]; then
+        echo "Recording Chromium version $VERSION for $out_dir and clearing legacy Ninja dependency log."
+        rm -f "$out_dir/.ninja_deps" "$out_dir/.ninja_log"
+    fi
+    printf '%s\n' "$VERSION" > "$out_dir/.chromium_version"
+
     mv "$desired_args" "$out_dir/args.gn"
     gn gen "$out_dir"
     refresh_restored_outputs "$out_dir"
@@ -494,8 +503,14 @@ fi
 # python3 "${SCRIPT_DIR}/helium/utils/replace_resources.py" "${SCRIPT_DIR}/helium/resources/helium_resources.txt" "${SCRIPT_DIR}/helium/resources" .
 
 if [ "$SKIP_SOURCE_PREPARE" != "1" ]; then
-    source $SCRIPT_DIR/patch.sh
+    source "$SCRIPT_DIR/patch.sh"
+    printf '%s\n' "$VERSION" > .helium_patched_version
 elif [ "$FAST_LOCAL_BUILD" = "1" ]; then
+    if [ "$(cat .helium_patched_version 2>/dev/null || true)" != "$VERSION" ]; then
+        echo "Chromium $VERSION has not completed full patch.sh yet; running patch.sh before hotfixes."
+        source "$SCRIPT_DIR/patch.sh"
+        printf '%s\n' "$VERSION" > .helium_patched_version
+    fi
     "$SCRIPT_DIR/hotfix_existing_src.sh" "$PWD"
 fi
 restore_build_state
