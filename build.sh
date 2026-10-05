@@ -521,16 +521,54 @@ fi
 # python3 "${SCRIPT_DIR}/helium/utils/generate_resources.py" "${SCRIPT_DIR}/helium/resources/generate_resources.txt" "${SCRIPT_DIR}/helium/resources"
 # python3 "${SCRIPT_DIR}/helium/utils/replace_resources.py" "${SCRIPT_DIR}/helium/resources/helium_resources.txt" "${SCRIPT_DIR}/helium/resources" .
 
+run_clean_patch_and_hotfixes() {
+    local snapshot_dir
+    local rel_file
+
+    snapshot_dir="$(mktemp -d)"
+    while IFS= read -r rel_file; do
+        [ -n "$rel_file" ] && [ -f "$rel_file" ] || continue
+        cp --parents -p "$rel_file" "$snapshot_dir/"
+    done < <(
+        git diff --name-only HEAD 2>/dev/null || true
+        printf '%s\n' \
+            "third_party/devtools-frontend/src/front_end/entrypoint_template.html" \
+            "third_party/devtools-frontend/src/front_end/panels/settings/settingsScreen.css"
+    )
+
+    git checkout -f HEAD
+    git -C third_party/devtools-frontend/src checkout -f HEAD -- \
+        front_end/entrypoint_template.html \
+        front_end/panels/settings/settingsScreen.css 2>/dev/null || true
+    patch_filter_list_downloader
+    source "$SCRIPT_DIR/patch.sh"
+    "$SCRIPT_DIR/hotfix_existing_src.sh" "$PWD"
+
+    (
+        cd "$snapshot_dir"
+        find . -type f | while IFS= read -r rel_file; do
+            rel_file="${rel_file#./}"
+            if [ -f "$OLDPWD/$rel_file" ] && cmp -s "$rel_file" "$OLDPWD/$rel_file"; then
+                touch -r "$rel_file" "$OLDPWD/$rel_file"
+            fi
+        done
+    )
+    rm -rf "$snapshot_dir"
+    printf '%s\n' "$VERSION" > .helium_patched_version
+    printf '%s\n' "$VERSION" > .helium_clean_patched_version
+}
+
 if [ "$SKIP_SOURCE_PREPARE" != "1" ]; then
     source "$SCRIPT_DIR/patch.sh"
     printf '%s\n' "$VERSION" > .helium_patched_version
+    printf '%s\n' "$VERSION" > .helium_clean_patched_version
 elif [ "$FAST_LOCAL_BUILD" = "1" ]; then
-    if [ "$(cat .helium_patched_version 2>/dev/null || true)" != "$VERSION" ]; then
-        echo "Chromium $VERSION has not completed full patch.sh yet; running patch.sh before hotfixes."
-        source "$SCRIPT_DIR/patch.sh"
-        printf '%s\n' "$VERSION" > .helium_patched_version
+    if [ "$(cat .helium_clean_patched_version 2>/dev/null || true)" != "$VERSION" ]; then
+        echo "Resetting tracked files in chromium/src to clean HEAD and applying patch.sh + hotfixes once for Chromium $VERSION."
+        run_clean_patch_and_hotfixes
+    else
+        "$SCRIPT_DIR/hotfix_existing_src.sh" "$PWD"
     fi
-    "$SCRIPT_DIR/hotfix_existing_src.sh" "$PWD"
 fi
 restore_build_state
 

@@ -404,16 +404,16 @@ sed -i 's/BASE_FEATURE(kExtensionsZipFileInstalledInProfileDir, base::FEATURE_DI
 sed -i 's/BASE_FEATURE(kExtensionsZipFileInstalledInProfileDir, "ExtensionsZipFileInstalledInProfileDir", base::FEATURE_DISABLED_BY_DEFAULT);/BASE_FEATURE(kExtensionsZipFileInstalledInProfileDir, "ExtensionsZipFileInstalledInProfileDir", base::FEATURE_ENABLED_BY_DEFAULT);/' extensions/common/extension_features.cc
 sed -i '/#include "base\/functional\/callback_helpers.h"/a\#include "base/hash/sha1.h"\n#include "base/strings/string_number_conversions.h"' extensions/browser/zipfile_installer.cc
 perl -0pi -e 's|  // Create the root of the unique directory for the \.zip file\.\n  base::FilePath::StringType dir_name =\n      zip_file\.RemoveExtension\(\)\.BaseName\(\)\.value\(\) \+ FILE_PATH_LITERAL\("_"\);\n\n  // Creates the full unique directory path as unzip_dir\.\n  base::FilePath unzip_dir;\n  if \(!base::CreateTemporaryDirInDir\(root_unzip_dir, dir_name, &unzip_dir\)\) \{\n    return ZipResultVariant\{ErrorUtils::FormatErrorMessage\(\n        kExtensionHandlerZippedDirError,\n        base::UTF16ToUTF8\(unzip_dir\.LossyDisplayName\(\)\)\)\};\n  \}|  std::string zip_contents;\n  if (!base::ReadFileToString(zip_file, \&zip_contents)) {\n    return ZipResultVariant{std::string(kExtensionHandlerFileUnzipError)};\n  }\n\n  std::string zip_hash =\n      base::HexEncodeLower(base::SHA1HashString(zip_contents)).substr(0, 12);\n  base::FilePath unzip_dir = root_unzip_dir.Append(\n      zip_file.RemoveExtension().BaseName().value() + FILE_PATH_LITERAL("_") +\n      base::FilePath::FromASCII(zip_hash).value());\n  if (base::PathExists(unzip_dir) \&\&\n      !base::DeletePathRecursively(unzip_dir)) {\n    return ZipResultVariant{ErrorUtils::FormatErrorMessage(\n        kExtensionHandlerZippedDirError,\n        base::UTF16ToUTF8(unzip_dir.LossyDisplayName()))};\n  }\n  if (!base::CreateDirectory(unzip_dir)) {\n    return ZipResultVariant{ErrorUtils::FormatErrorMessage(\n        kExtensionHandlerZippedDirError,\n        base::UTF16ToUTF8(unzip_dir.LossyDisplayName()))};\n  }|' extensions/browser/zipfile_installer.cc
-sed -i '/loadUnpacked(): Promise<boolean>;/a\
+grep -q 'installLocalExtensionFile(): Promise<boolean>;' chrome/browser/resources/extensions/toolbar.ts || sed -i '/loadUnpacked(): Promise<boolean>;/a\
   /** Opens a file picker to install a local zip, crx, or user script. */\
   installLocalExtensionFile(): Promise<boolean>;' chrome/browser/resources/extensions/toolbar.ts
-sed -i '/loadUnpacked() {/i\
+grep -q 'installLocalExtensionFile() {' chrome/browser/resources/extensions/toolbar.ts || sed -i '/loadUnpacked() {/i\
   installLocalExtensionFile() {\
     return Promise.resolve(false);\
   }' chrome/browser/resources/extensions/toolbar.ts
-sed -i '/loadUnpacked: HTMLElement,/a\
+grep -q 'loadExtensionFile: HTMLElement,' chrome/browser/resources/extensions/toolbar.ts || sed -i '/loadUnpacked: HTMLElement,/a\
     loadExtensionFile: HTMLElement,' chrome/browser/resources/extensions/toolbar.ts
-sed -i '/protected onLoadUnpackedClick_()/i\
+grep -q 'protected onLoadExtensionFileClick_()' chrome/browser/resources/extensions/toolbar.ts || sed -i '/protected onLoadUnpackedClick_()/i\
   protected onLoadExtensionFileClick_() {\
     this.delegate.installLocalExtensionFile()\
         .then((success) => {\
@@ -429,7 +429,7 @@ sed -i '/protected onLoadUnpackedClick_()/i\
     chrome.metricsPrivate.recordUserAction("Options_LoadLocalExtensionFile");\
   }\
 ' chrome/browser/resources/extensions/toolbar.ts
-sed -i '/<cr-button ?hidden="${!this.canLoadUnpacked_()}" id="loadUnpacked"/i\
+grep -q 'id="loadExtensionFile"' chrome/browser/resources/extensions/toolbar.html.ts || sed -i '/<cr-button ?hidden="${!this.canLoadUnpacked_()}" id="loadUnpacked"/i\
     <cr-button id="loadExtensionFile"\
         @click="${this.onLoadExtensionFileClick_}">\
       Load ZIP/CRX\
@@ -439,7 +439,7 @@ sed -i '/protected canLoadUnpacked_()/,/^  }/c\
   protected canLoadUnpacked_() {\
     return true;\
   }' chrome/browser/resources/extensions/toolbar.ts
-sed -i '/loadUnpacked(): Promise<boolean> {/i\
+grep -q 'installLocalExtensionFile(): Promise<boolean> {' chrome/browser/resources/extensions/service.ts || sed -i '/loadUnpacked(): Promise<boolean> {/i\
   installLocalExtensionFile(): Promise<boolean> {\
     return this.chooseFilePath_(\
         chrome.developerPrivate.SelectType.FILE,\
