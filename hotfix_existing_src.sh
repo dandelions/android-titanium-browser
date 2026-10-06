@@ -34,6 +34,7 @@ if [ ! -d "$SRC_DIR" ]; then
 fi
 
 cd "$SRC_DIR"
+SRC_DIR="$(pwd)"
 
 BRIDGE=chrome/browser/ui/android/extensions/java/src/org/chromium/chrome/browser/ui/extensions/ExtensionsMenuBridge.java
 TOOLBAR_BRIDGE=chrome/browser/ui/android/extensions/java/src/org/chromium/chrome/browser/ui/extensions/ExtensionsToolbarBridge.java
