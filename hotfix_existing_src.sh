@@ -3306,3 +3306,6 @@ PYCODE
     fi
     echo "Verified Android tabs action shadow fix in $SRC_DIR/$TABS_API_CC"
 fi
+
+# Apply Android full media/image permissions & Downloads directory visibility patch
+python3 "$SCRIPT_DIR/patch_android_media_permissions.py" "$SRC_DIR"

@@ -3125,3 +3125,6 @@ PYCODE
         exit 1
     fi
 fi
+
+# Apply Android full media/image permissions & Downloads directory visibility patch
+python3 "$SCRIPT_DIR/patch_android_media_permissions.py" .
