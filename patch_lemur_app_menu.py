@@ -15,6 +15,417 @@ TABBED_DELEGATE_REL = (
     "chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/"
     "TabbedAppMenuPropertiesDelegate.java"
 )
+EXT_TOOLBAR_COORD_REL = (
+    "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/"
+    "ExtensionsToolbarCoordinator.java"
+)
+EXT_TOOLBAR_COORD_IMPL_REL = (
+    "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/"
+    "ExtensionsToolbarCoordinatorImpl.java"
+)
+EXT_MENU_COORD_REL = (
+    "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/"
+    "ExtensionsMenuCoordinator.java"
+)
+EXT_MENU_MEDIATOR_REL = (
+    "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/"
+    "ExtensionsMenuMediator.java"
+)
+
+
+def patch_extensions_toolbar_coordinator(src_dir: Path) -> None:
+    path = src_dir / EXT_TOOLBAR_COORD_REL
+    if not path.exists():
+        raise SystemExit(f"File not found: {path}")
+
+    text = path.read_text(encoding="utf-8")
+    if "default String[] getAllExtensionActionIds()" in text:
+        return
+
+    anchor = (
+        "    /** Returns the {@link ToolbarWidthConsumer} for the action list container. */\n"
+        "    ToolbarWidthConsumer getActionListWidthConsumer();\n"
+        "}"
+    )
+    addition = """    /** Returns the {@link ToolbarWidthConsumer} for the action list container. */
+    ToolbarWidthConsumer getActionListWidthConsumer();
+
+    /** Returns all enabled extension action IDs (pinned first, then unpinned). */
+    default String[] getAllExtensionActionIds() {
+        return new String[0];
+    }
+
+    /** Returns the display title/name for the given extension action on the given WebContents. */
+    default @Nullable String getExtensionActionTitle(
+            String actionId,
+            @Nullable org.chromium.content_public.browser.WebContents webContents) {
+        return null;
+    }
+
+    /** Returns the rendered Bitmap icon (including badge) for the given extension action. */
+    default @Nullable android.graphics.Bitmap getExtensionActionIcon(
+            String actionId,
+            @Nullable org.chromium.content_public.browser.WebContents webContents) {
+        return null;
+    }
+
+    /** Executes the primary action (or opens the popup) for an extension from the custom AppMenu. */
+    default void executeExtensionActionFromAppMenu(
+            String actionId, @Nullable android.view.View fallbackAnchorView) {}
+
+    /** Shows the context menu for an extension from the custom AppMenu. */
+    default void showExtensionContextMenuFromAppMenu(
+            String actionId, @Nullable android.view.View fallbackAnchorView) {}
+}"""
+
+    if anchor not in text:
+        raise SystemExit(f"getActionListWidthConsumer anchor not found in {path}")
+
+    path.write_text(text.replace(anchor, addition, 1), encoding="utf-8")
+
+
+def patch_extensions_toolbar_coordinator_impl(src_dir: Path) -> None:
+    path = src_dir / EXT_TOOLBAR_COORD_IMPL_REL
+    if not path.exists():
+        raise SystemExit(f"File not found: {path}")
+
+    text = path.read_text(encoding="utf-8")
+    if "public String[] getAllExtensionActionIds()" in text:
+        return
+
+    anchor = """    @Override
+    public ToolbarWidthConsumer getActionListWidthConsumer() {
+        return mActionListWidthConsumer;
+    }"""
+
+    addition = """    @Override
+    public ToolbarWidthConsumer getActionListWidthConsumer() {
+        return mActionListWidthConsumer;
+    }
+
+    @Override
+    public String[] getAllExtensionActionIds() {
+        if (mIsDestroyed || mExtensionsToolbarBridge == null) {
+            return new String[0];
+        }
+        String[] pinned = mExtensionsToolbarBridge.getPinnedActionIds();
+        String[] all = mExtensionsToolbarBridge.getAllActionIds();
+        if (all == null || all.length == 0) {
+            return new String[0];
+        }
+        java.util.LinkedHashSet<String> ordered = new java.util.LinkedHashSet<>();
+        if (pinned != null) {
+            for (String id : pinned) {
+                if (id != null && !id.isEmpty()) {
+                    ordered.add(id);
+                }
+            }
+        }
+        for (String id : all) {
+            if (id != null && !id.isEmpty()) {
+                ordered.add(id);
+            }
+        }
+        return ordered.toArray(new String[0]);
+    }
+
+    @Override
+    public @Nullable String getExtensionActionTitle(
+            String actionId,
+            @Nullable org.chromium.content_public.browser.WebContents webContents) {
+        if (mIsDestroyed || mExtensionsToolbarBridge == null) {
+            return null;
+        }
+        org.chromium.chrome.browser.ui.extensions.ExtensionAction action =
+                mExtensionsToolbarBridge.getAction(actionId, webContents);
+        if (action == null) {
+            return null;
+        }
+        String name = action.getName();
+        if (name != null && !name.trim().isEmpty()) {
+            return name.trim();
+        }
+        String title = action.getTitle();
+        if (title != null && !title.trim().isEmpty()) {
+            int newlineIdx = title.indexOf('\\n');
+            return (newlineIdx >= 0 ? title.substring(0, newlineIdx) : title).trim();
+        }
+        return actionId;
+    }
+
+    @Override
+    public @Nullable android.graphics.Bitmap getExtensionActionIcon(
+            String actionId,
+            @Nullable org.chromium.content_public.browser.WebContents webContents) {
+        if (mIsDestroyed || mExtensionsToolbarBridge == null || mContainer == null) {
+            return null;
+        }
+        return ExtensionActionIconUtil.getIcon(
+                mContainer.getContext(),
+                mWindowAndroid,
+                mExtensionsToolbarBridge,
+                actionId,
+                webContents);
+    }
+
+    @Override
+    public void executeExtensionActionFromAppMenu(
+            String actionId, @Nullable View fallbackAnchorView) {
+        if (mIsDestroyed || mExtensionsMenuCoordinator == null) {
+            return;
+        }
+        mExtensionsMenuCoordinator.executeActionFromAppMenu(actionId, fallbackAnchorView);
+    }
+
+    @Override
+    public void showExtensionContextMenuFromAppMenu(
+            String actionId, @Nullable View fallbackAnchorView) {
+        if (mIsDestroyed || mExtensionsMenuCoordinator == null) {
+            return;
+        }
+        mExtensionsMenuCoordinator.showContextMenuFromAppMenu(actionId, fallbackAnchorView);
+    }"""
+
+    if anchor not in text:
+        raise SystemExit(f"getActionListWidthConsumer anchor not found in {path}")
+
+    path.write_text(text.replace(anchor, addition, 1), encoding="utf-8")
+
+
+def patch_extensions_menu_coordinator(src_dir: Path) -> None:
+    path = src_dir / EXT_MENU_COORD_REL
+    if not path.exists():
+        raise SystemExit(f"File not found: {path}")
+
+    text = path.read_text(encoding="utf-8")
+
+    field_marker = "    private boolean mSuppressNextMenuShow;\n"
+    field_anchor = "    @Nullable @VisibleForTesting ExtensionsMenuMediator mMediator;\n"
+    if field_marker not in text:
+        if field_anchor not in text:
+            raise SystemExit(f"mMediator anchor not found in {path}")
+        text = text.replace(
+            field_anchor,
+            field_anchor
+            + field_marker
+            + "    private @Nullable ListMenuButton mAppMenuContextMenuButton;\n",
+            1,
+        )
+
+    # Ensure clicking the toolbar puzzle button still opens the menu if mMediator was created
+    # silently in the background for an AppMenu action.
+    old_toggle_check = """                    if (mMediator != null) {
+                        mExtensionsMenuButton.dismiss();
+                        destroyMediator();
+                        return;
+                    }"""
+    new_toggle_check = """                    if (mMediator != null) {
+                        boolean wasOpen = mIsMenuOpen;
+                        mExtensionsMenuButton.dismiss();
+                        destroyMediator();
+                        if (wasOpen) {
+                            return;
+                        }
+                    }"""
+    if old_toggle_check in text:
+        text = text.replace(old_toggle_check, new_toggle_check, 1)
+
+    old_on_ready = """                        /* onReady= */ () -> {
+                            mExtensionsMenuButton.showMenu();
+                        });"""
+    new_on_ready = """                        /* onReady= */ () -> {
+                            if (mSuppressNextMenuShow) {
+                                mSuppressNextMenuShow = false;
+                                return;
+                            }
+                            mExtensionsMenuButton.showMenu();
+                        });"""
+    if "if (mSuppressNextMenuShow)" not in text:
+        if old_on_ready not in text:
+            raise SystemExit(f"onReady anchor not found in {path}")
+        text = text.replace(old_on_ready, new_on_ready, 1)
+
+    helper_marker = "    public void executeActionFromAppMenu("
+    helper_anchor = "    @VisibleForTesting\n    View getContentView() {"
+    helper_methods = """    public void executeActionFromAppMenu(
+            String actionId, @Nullable View fallbackAnchorView) {
+        if (mMediator == null) {
+            mSuppressNextMenuShow = true;
+            createMediator();
+            mSuppressNextMenuShow = false;
+        }
+        if (mMediator != null) {
+            View anchorView = resolveAppMenuPopupAnchor(fallbackAnchorView);
+            ListMenuButton contextButton = ensureAppMenuContextMenuButton();
+            mMediator.executeActionFromAppMenu(actionId, anchorView, contextButton);
+        }
+    }
+
+    public void showContextMenuFromAppMenu(
+            String actionId, @Nullable View fallbackAnchorView) {
+        if (mMediator == null) {
+            mSuppressNextMenuShow = true;
+            createMediator();
+            mSuppressNextMenuShow = false;
+        }
+        if (mMediator != null) {
+            ListMenuButton contextButton = ensureAppMenuContextMenuButton();
+            if (contextButton != null) {
+                mMediator.showContextMenuFromAppMenu(actionId, contextButton);
+            }
+        }
+    }
+
+    private @Nullable View resolveAppMenuPopupAnchor(@Nullable View fallbackAnchorView) {
+        if (mExtensionsMenuButton != null && mExtensionsMenuButton.isShown()) {
+            return mExtensionsMenuButton;
+        }
+        if (fallbackAnchorView != null && fallbackAnchorView.isShown()) {
+            return fallbackAnchorView;
+        }
+        Activity activity = mWindowAndroid.getActivity().get();
+        if (activity != null) {
+            View menuBtn = activity.findViewById(R.id.menu_button_wrapper);
+            if (menuBtn != null && menuBtn.isShown()) {
+                return menuBtn;
+            }
+            View toolbar = activity.findViewById(R.id.toolbar);
+            if (toolbar != null && toolbar.isShown()) {
+                return toolbar;
+            }
+            return activity.getWindow().getDecorView();
+        }
+        return mExtensionsMenuButton;
+    }
+
+    private @Nullable ListMenuButton ensureAppMenuContextMenuButton() {
+        if (mAppMenuContextMenuButton != null && mAppMenuContextMenuButton.isAttachedToWindow()) {
+            return mAppMenuContextMenuButton;
+        }
+        if (!(mExtensionsMenuButton.getParent() instanceof android.view.ViewGroup)) {
+            return null;
+        }
+        android.view.ViewGroup parent = (android.view.ViewGroup) mExtensionsMenuButton.getParent();
+        ListMenuButton btn =
+                (ListMenuButton)
+                        LayoutInflater.from(mContext)
+                                .inflate(R.layout.extension_action_button, parent, false);
+        btn.setAlpha(0f);
+        btn.setClickable(false);
+        btn.setFocusable(false);
+        btn.setVisibility(View.VISIBLE);
+        parent.addView(btn, new android.view.ViewGroup.LayoutParams(1, 1));
+        mAppMenuContextMenuButton = btn;
+        return mAppMenuContextMenuButton;
+    }
+
+"""
+    if helper_marker not in text:
+        if helper_anchor not in text:
+            raise SystemExit(f"getContentView anchor not found in {path}")
+        text = text.replace(helper_anchor, helper_methods + helper_anchor, 1)
+
+    path.write_text(text, encoding="utf-8")
+
+
+def patch_extensions_menu_mediator(src_dir: Path) -> None:
+    path = src_dir / EXT_MENU_MEDIATOR_REL
+    if not path.exists():
+        raise SystemExit(f"File not found: {path}")
+
+    text = path.read_text(encoding="utf-8")
+
+    field_marker = "    private @Nullable ListMenuButton mPendingFallbackContextMenuButton;\n"
+    field_anchor = "    private @Nullable View mPendingActionAnchorView;\n"
+    if field_marker not in text:
+        if field_anchor not in text:
+            raise SystemExit(f"mPendingActionAnchorView anchor not found in {path}")
+        text = text.replace(field_anchor, field_anchor + field_marker, 1)
+
+    # Make onContextMenuButtonClicked use getCurrentWebContents() when available so incognito tabs work
+    old_ctx_click = """    private void onContextMenuButtonClicked(ListMenuButton buttonView, String actionId) {
+        Tab currentTab = mCurrentTabSupplier.get();
+        if (currentTab == null) {
+            return;
+        }
+
+        WebContents webContents = currentTab.getWebContents();
+        if (webContents == null) {
+            return;
+        }"""
+    new_ctx_click = """    private void onContextMenuButtonClicked(ListMenuButton buttonView, String actionId) {
+        WebContents webContents = getCurrentWebContents();
+        if (webContents == null) {
+            Tab currentTab = mCurrentTabSupplier.get();
+            webContents = currentTab != null ? currentTab.getWebContents() : null;
+        }
+        if (webContents == null) {
+            return;
+        }"""
+    if old_ctx_click in text:
+        text = text.replace(old_ctx_click, new_ctx_click, 1)
+
+    # Allow findContextMenuButtonForPendingAction to fall back to mPendingFallbackContextMenuButton
+    old_find_ctx = """    private @Nullable ListMenuButton findContextMenuButtonForPendingAction() {
+        View current = mPendingActionAnchorView;
+        while (current != null) {
+            View button = current.findViewById(R.id.extensions_menu_item_context_menu);
+            if (button instanceof ListMenuButton) {
+                return (ListMenuButton) button;
+            }
+            if (!(current.getParent() instanceof View)) {
+                return null;
+            }
+            current = (View) current.getParent();
+        }
+        return null;
+    }"""
+    new_find_ctx = """    private @Nullable ListMenuButton findContextMenuButtonForPendingAction() {
+        View current = mPendingActionAnchorView;
+        while (current != null) {
+            if (current instanceof ListMenuButton) {
+                return (ListMenuButton) current;
+            }
+            View button = current.findViewById(R.id.extensions_menu_item_context_menu);
+            if (button instanceof ListMenuButton) {
+                return (ListMenuButton) button;
+            }
+            if (!(current.getParent() instanceof View)) {
+                break;
+            }
+            current = (View) current.getParent();
+        }
+        ListMenuButton fallback = mPendingFallbackContextMenuButton;
+        mPendingFallbackContextMenuButton = null;
+        return fallback;
+    }"""
+    if old_find_ctx in text:
+        text = text.replace(old_find_ctx, new_find_ctx, 1)
+
+    app_menu_methods_marker = "    public void executeActionFromAppMenu("
+    app_menu_methods_anchor = "    private void onPrimaryActionClicked(View anchorView, String extensionId) {"
+    app_menu_methods = """    public void executeActionFromAppMenu(
+            String extensionId,
+            @Nullable View anchorView,
+            @Nullable ListMenuButton fallbackContextMenuButton) {
+        mPendingFallbackContextMenuButton = fallbackContextMenuButton;
+        onPrimaryActionClicked(anchorView, extensionId);
+    }
+
+    public void showContextMenuFromAppMenu(
+            String extensionId, ListMenuButton contextMenuButton) {
+        onContextMenuButtonClicked(contextMenuButton, extensionId);
+    }
+
+"""
+    if app_menu_methods_marker not in text:
+        if app_menu_methods_anchor not in text:
+            raise SystemExit(f"onPrimaryActionClicked anchor not found in {path}")
+        text = text.replace(
+            app_menu_methods_anchor, app_menu_methods + app_menu_methods_anchor, 1
+        )
+
+    path.write_text(text, encoding="utf-8")
 
 
 def patch_app_menu_properties_delegate(src_dir: Path) -> None:
@@ -148,6 +559,7 @@ TABBED_IMPORTS = [
     "import android.app.Dialog;\n",
     "import android.content.res.ColorStateList;\n",
     "import android.content.res.Configuration;\n",
+    "import android.graphics.Bitmap;\n",
     "import android.graphics.Color;\n",
     "import android.graphics.Typeface;\n",
     "import android.graphics.drawable.ColorDrawable;\n",
@@ -171,7 +583,9 @@ TABBED_IMPORTS = [
     "import org.chromium.chrome.browser.preferences.ChromePreferenceKeys;\n",
     "import org.chromium.chrome.browser.preferences.ChromeSharedPreferences;\n",
     "import org.chromium.chrome.browser.toolbar.ToolbarPositionController.ToolbarPositionAndSource;\n",
+    "import org.chromium.chrome.browser.toolbar.extensions.ExtensionsToolbarCoordinator;\n",
     "import org.chromium.chrome.browser.toolbar.settings.AddressBarPreference;\n",
+    "import org.chromium.content_public.browser.WebContents;\n",
 ]
 
 LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup menu panel.
@@ -225,11 +639,15 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
         final int panelBgColor =
                 isIncognito
                         ? 0xFF202124
-                        : (isNight ? 0xFF1E1F23 : 0xFFF7F8FC);
+                        : (isNight ? 0xFF1E1F23 : 0xFFF4F6FB);
         final int surfaceColor =
                 isIncognito
                         ? 0xFF2D2E33
                         : (isNight ? 0xFF2A2C32 : 0xFFFFFFFF);
+        final int extSectionBgColor =
+                isIncognito
+                        ? 0xFF27282D
+                        : (isNight ? 0xFF25272D : 0xFFEAF0FA);
         final int activeSurfaceColor =
                 isNight ? 0x388AB4F8 : 0x1F1A73E8;
         final int textPrimaryColor =
@@ -307,12 +725,17 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
         card.addView(handleView, handleLp);
 
         Tab currentTab = mActivityTabProvider.get();
+        if (currentTab == null && mTabModelSelector != null) {
+            currentTab = mTabModelSelector.getCurrentTab();
+        }
+        final WebContents currentWebContents =
+                currentTab != null ? currentTab.getWebContents() : null;
         GURL url = currentTab != null ? currentTab.getUrl() : GURL.emptyGURL();
         final boolean isNativePage =
                 UrlUtilities.isChromeScheme(url)
                         || (currentTab != null && currentTab.isNativePage());
         final boolean hasWebContents =
-                currentTab != null && !isNativePage && currentTab.getWebContents() != null;
+                currentTab != null && !isNativePage && currentWebContents != null;
         Profile profile = getProfileFromTabModel();
 
         // 2. Quick settings pills row (Theme cycle, Dark web toggle, Toolbar position toggle)
@@ -415,23 +838,195 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
 
         card.addView(quickBar, quickBarLp);
 
-        // 3. Scrollable 4-column grid of common actions & quick settings
+        // 3. Scrollable middle section: Inline Extensions Window + 4-column Browser Tools Grid
         ScrollView scrollView = new ScrollView(mContext);
         scrollView.setVerticalScrollBarEnabled(false);
         scrollView.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
         int maxGridHeight =
-                (int) (mContext.getResources().getDisplayMetrics().heightPixels * 0.52f);
+                (int) (mContext.getResources().getDisplayMetrics().heightPixels * 0.58f);
         LinearLayout.LayoutParams scrollLp =
                 new LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         card.addView(scrollView, scrollLp);
 
+        LinearLayout middleContainer = new LinearLayout(mContext);
+        middleContainer.setOrientation(LinearLayout.VERTICAL);
+        scrollView.addView(
+                middleContainer,
+                new FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        // 3A. Inline Extensions Panel (moves the address bar's extensions window into the middle area)
+        final ExtensionsToolbarCoordinator extCoordinator =
+                mToolbarManager != null ? mToolbarManager.getExtensionsToolbarCoordinator() : null;
+        final String[] extIds =
+                extCoordinator != null
+                        ? extCoordinator.getAllExtensionActionIds()
+                        : new String[0];
+
+        LinearLayout extSectionCard = new LinearLayout(mContext);
+        extSectionCard.setOrientation(LinearLayout.VERTICAL);
+        GradientDrawable extCardBg = new GradientDrawable();
+        extCardBg.setShape(GradientDrawable.RECTANGLE);
+        extCardBg.setCornerRadius(dpToPx(18));
+        extCardBg.setColor(extSectionBgColor);
+        extCardBg.setStroke(dpToPx(1), dividerColor);
+        extSectionCard.setBackground(extCardBg);
+        int extPadH = dpToPx(10);
+        int extPadV = dpToPx(8);
+        extSectionCard.setPadding(extPadH, extPadV, extPadH, extPadV);
+        LinearLayout.LayoutParams extCardLp =
+                new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        extCardLp.bottomMargin = dpToPx(10);
+
+        // Extensions section header row: Title + [权限弹窗] [商店] [管理]
+        LinearLayout extHeaderRow = new LinearLayout(mContext);
+        extHeaderRow.setOrientation(LinearLayout.HORIZONTAL);
+        extHeaderRow.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams extHeaderLp =
+                new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        extHeaderLp.bottomMargin = dpToPx(6);
+
+        ImageView extHeaderIcon = new ImageView(mContext);
+        Drawable puzzleDrawable =
+                AppCompatResources.getDrawable(mContext, R.drawable.ic_extension_24dp);
+        if (puzzleDrawable != null) {
+            puzzleDrawable = puzzleDrawable.mutate();
+            DrawableCompat.setTint(puzzleDrawable, accentColor);
+            extHeaderIcon.setImageDrawable(puzzleDrawable);
+        }
+        LinearLayout.LayoutParams extHeaderIconLp =
+                new LinearLayout.LayoutParams(dpToPx(16), dpToPx(16));
+        extHeaderIconLp.setMarginEnd(dpToPx(6));
+        extHeaderRow.addView(extHeaderIcon, extHeaderIconLp);
+
+        TextView extHeaderTitle = new TextView(mContext);
+        String extTitleStr =
+                mContext.getString(R.string.menu_extensions)
+                        + (extIds.length > 0 ? " (" + extIds.length + ")" : "");
+        extHeaderTitle.setText(extTitleStr);
+        extHeaderTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f);
+        extHeaderTitle.setTypeface(Typeface.DEFAULT_BOLD);
+        extHeaderTitle.setTextColor(textPrimaryColor);
+        extHeaderTitle.setSingleLine(true);
+        extHeaderTitle.setEllipsize(TextUtils.TruncateAt.END);
+        extHeaderRow.addView(
+                extHeaderTitle,
+                new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        View extPermissionsChip =
+                buildHeaderActionChip(
+                        "站点权限",
+                        surfaceColor,
+                        textSecondaryColor,
+                        rippleColor,
+                        v -> triggerMenuAction(dialog, R.id.extensions_menu_menu_id));
+        LinearLayout.LayoutParams chipLp1 =
+                new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        chipLp1.setMarginEnd(dpToPx(6));
+        extHeaderRow.addView(extPermissionsChip, chipLp1);
+
+        View extStoreChip =
+                buildHeaderActionChip(
+                        "商店",
+                        surfaceColor,
+                        textSecondaryColor,
+                        rippleColor,
+                        v -> triggerMenuAction(dialog, R.id.extensions_webstore_menu_id));
+        LinearLayout.LayoutParams chipLp2 =
+                new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        chipLp2.setMarginEnd(dpToPx(6));
+        extHeaderRow.addView(extStoreChip, chipLp2);
+
+        View extManageChip =
+                buildHeaderActionChip(
+                        "管理",
+                        surfaceColor,
+                        accentColor,
+                        rippleColor,
+                        v -> triggerMenuAction(dialog, R.id.manage_extensions_menu_id));
+        extHeaderRow.addView(
+                extManageChip,
+                new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        extSectionCard.addView(extHeaderRow, extHeaderLp);
+
+        if (extIds.length > 0 && extCoordinator != null) {
+            GridLayout extGrid = new GridLayout(mContext);
+            extGrid.setColumnCount(4);
+            extGrid.setUseDefaultMargins(false);
+            extSectionCard.addView(
+                    extGrid,
+                    new LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT));
+
+            for (final String extId : extIds) {
+                Bitmap extIcon =
+                        extCoordinator.getExtensionActionIcon(extId, currentWebContents);
+                String extName =
+                        extCoordinator.getExtensionActionTitle(extId, currentWebContents);
+                if (extName == null || extName.isEmpty()) {
+                    extName = extId;
+                }
+                addLemurExtensionTile(
+                        extGrid,
+                        extIcon,
+                        extName,
+                        surfaceColor,
+                        textPrimaryColor,
+                        rippleColor,
+                        v -> {
+                            if (dialog.isShowing()) {
+                                dialog.dismiss();
+                            }
+                            extCoordinator.executeExtensionActionFromAppMenu(extId, anchorView);
+                        },
+                        v -> {
+                            if (dialog.isShowing()) {
+                                dialog.dismiss();
+                            }
+                            extCoordinator.showExtensionContextMenuFromAppMenu(extId, anchorView);
+                            return true;
+                        });
+            }
+        } else {
+            TextView emptyExtView = new TextView(mContext);
+            emptyExtView.setText("暂无已启用的扩展程序 · 点击管理或前往扩展商店安装");
+            emptyExtView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f);
+            emptyExtView.setTextColor(textSecondaryColor);
+            emptyExtView.setGravity(Gravity.CENTER);
+            int emptyPadV = dpToPx(10);
+            emptyExtView.setPadding(dpToPx(8), emptyPadV, dpToPx(8), emptyPadV);
+            GradientDrawable emptyBg = new GradientDrawable();
+            emptyBg.setShape(GradientDrawable.RECTANGLE);
+            emptyBg.setCornerRadius(dpToPx(12));
+            emptyBg.setColor(surfaceColor);
+            emptyExtView.setBackground(
+                    new RippleDrawable(ColorStateList.valueOf(rippleColor), emptyBg, null));
+            emptyExtView.setOnClickListener(
+                    v -> triggerMenuAction(dialog, R.id.manage_extensions_menu_id));
+            extSectionCard.addView(
+                    emptyExtView,
+                    new LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT));
+        }
+
+        middleContainer.addView(extSectionCard, extCardLp);
+
+        // 3B. 4-Column Grid of Browser Features
         GridLayout grid = new GridLayout(mContext);
         grid.setColumnCount(4);
         grid.setUseDefaultMargins(false);
-        scrollView.addView(
+        middleContainer.addView(
                 grid,
-                new FrameLayout.LayoutParams(
+                new LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         boolean isBookmarked = currentTab != null && shouldCheckBookmarkStar(currentTab);
@@ -454,38 +1049,7 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
                         isIncognito,
                         url);
 
-        // Row 1: Extensions, Manage Extensions, New Tab, Incognito Tab
-        addLemurGridTile(
-                grid,
-                R.drawable.ic_extension_24dp,
-                mContext.getString(R.string.menu_extensions),
-                true,
-                false,
-                surfaceColor,
-                activeSurfaceColor,
-                textPrimaryColor,
-                textSecondaryColor,
-                accentColor,
-                rippleColor,
-                v -> triggerMenuAction(dialog, R.id.extensions_menu_menu_id),
-                v -> {
-                    triggerMenuAction(dialog, R.id.manage_extensions_menu_id);
-                    return true;
-                });
-        addLemurGridTile(
-                grid,
-                R.drawable.ic_extension_24dp,
-                mContext.getString(R.string.menu_manage_extensions),
-                true,
-                false,
-                surfaceColor,
-                activeSurfaceColor,
-                textPrimaryColor,
-                textSecondaryColor,
-                accentColor,
-                rippleColor,
-                v -> triggerMenuAction(dialog, R.id.manage_extensions_menu_id),
-                null);
+        // Row 1: New Tab, Incognito Tab, Bookmark Page, Bookmarks
         addLemurGridTile(
                 grid,
                 R.drawable.ic_add_box_rounded_corner,
@@ -514,8 +1078,6 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
                 rippleColor,
                 v -> triggerMenuAction(dialog, R.id.new_incognito_tab_menu_id),
                 null);
-
-        // Row 2: Bookmark Page, Bookmarks, History, Downloads
         addLemurGridTile(
                 grid,
                 isBookmarked ? R.drawable.ic_star_filled_24dp : R.drawable.ic_star_24dp,
@@ -545,6 +1107,8 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
                 rippleColor,
                 v -> triggerMenuAction(dialog, R.id.all_bookmarks_menu_id),
                 null);
+
+        // Row 2: History, Downloads, Desktop Site, Find in Page
         addLemurGridTile(
                 grid,
                 R.drawable.ic_history_24dp,
@@ -573,8 +1137,6 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
                 rippleColor,
                 v -> triggerMenuAction(dialog, R.id.downloads_menu_id),
                 null);
-
-        // Row 3: Desktop Site, Find in Page, Translate, Page Zoom
         addLemurGridTile(
                 grid,
                 R.drawable.ic_desktop_windows,
@@ -603,6 +1165,8 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
                 rippleColor,
                 v -> triggerMenuAction(dialog, R.id.find_in_page_id),
                 null);
+
+        // Row 3: Translate, Page Zoom, Share, Clear Data
         addLemurGridTile(
                 grid,
                 R.drawable.ic_translate,
@@ -631,8 +1195,6 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
                 rippleColor,
                 v -> triggerMenuAction(dialog, R.id.page_zoom_id),
                 null);
-
-        // Row 4: Share, Clear Data, Site Info / Permissions, Recent Tabs
         addLemurGridTile(
                 grid,
                 R.drawable.ic_share_white_24dp,
@@ -661,6 +1223,8 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
                 rippleColor,
                 v -> triggerMenuAction(dialog, R.id.quick_delete_menu_id),
                 null);
+
+        // Row 4: Site Info / Permissions, Recent Tabs, Reader Mode, Download Page
         addLemurGridTile(
                 grid,
                 R.drawable.ic_settings_tune_24dp,
@@ -689,8 +1253,6 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
                 rippleColor,
                 v -> triggerMenuAction(dialog, R.id.recent_tabs_menu_id),
                 null);
-
-        // Row 5: Reader Mode, Download Page, Add to Home Screen, DevTools
         addLemurGridTile(
                 grid,
                 R.drawable.ic_mobile_friendly_24dp,
@@ -722,6 +1284,8 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
                 rippleColor,
                 v -> triggerMenuAction(dialog, R.id.offline_page_id),
                 null);
+
+        // Row 5: Add to Home Screen, DevTools, Extensions Dialog, Manage Extensions
         addLemurGridTile(
                 grid,
                 R.drawable.ic_add_to_home_screen,
@@ -749,6 +1313,34 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
                 accentColor,
                 rippleColor,
                 v -> triggerMenuAction(dialog, R.id.dev_tools),
+                null);
+        addLemurGridTile(
+                grid,
+                R.drawable.ic_extension_24dp,
+                mContext.getString(R.string.menu_extensions),
+                true,
+                false,
+                surfaceColor,
+                activeSurfaceColor,
+                textPrimaryColor,
+                textSecondaryColor,
+                accentColor,
+                rippleColor,
+                v -> triggerMenuAction(dialog, R.id.extensions_menu_menu_id),
+                null);
+        addLemurGridTile(
+                grid,
+                R.drawable.ic_extension_24dp,
+                mContext.getString(R.string.menu_manage_extensions),
+                true,
+                false,
+                surfaceColor,
+                activeSurfaceColor,
+                textPrimaryColor,
+                textSecondaryColor,
+                accentColor,
+                rippleColor,
+                v -> triggerMenuAction(dialog, R.id.manage_extensions_menu_id),
                 null);
 
         scrollView.post(
@@ -892,6 +1484,102 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
             dialog.dismiss();
         }
         mAppMenuDelegate.onOptionsItemSelected(itemId, null, null);
+    }
+
+    private View buildHeaderActionChip(
+            String label,
+            int bgColor,
+            int textColor,
+            int rippleColor,
+            View.OnClickListener clickListener) {
+        TextView chip = new TextView(mContext);
+        chip.setText(label);
+        chip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
+        chip.setTypeface(Typeface.DEFAULT_BOLD);
+        chip.setTextColor(textColor);
+        chip.setGravity(Gravity.CENTER);
+        chip.setPadding(dpToPx(9), dpToPx(4), dpToPx(9), dpToPx(4));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setShape(GradientDrawable.RECTANGLE);
+        bg.setCornerRadius(dpToPx(10));
+        bg.setColor(bgColor);
+        chip.setBackground(
+                new RippleDrawable(ColorStateList.valueOf(rippleColor), bg, null));
+        chip.setOnClickListener(clickListener);
+        return chip;
+    }
+
+    private void addLemurExtensionTile(
+            GridLayout grid,
+            @Nullable Bitmap iconBitmap,
+            String title,
+            int surfaceColor,
+            int textPrimaryColor,
+            int rippleColor,
+            View.OnClickListener clickListener,
+            View.OnLongClickListener longClickListener) {
+        LinearLayout cell = new LinearLayout(mContext);
+        cell.setOrientation(LinearLayout.VERTICAL);
+        cell.setGravity(Gravity.CENTER_HORIZONTAL);
+        int cellPadH = dpToPx(4);
+        int cellPadV = dpToPx(5);
+        cell.setPadding(cellPadH, cellPadV, cellPadH, cellPadV);
+
+        FrameLayout iconBox = new FrameLayout(mContext);
+        GradientDrawable boxBg = new GradientDrawable();
+        boxBg.setShape(GradientDrawable.RECTANGLE);
+        boxBg.setCornerRadius(dpToPx(14));
+        boxBg.setColor(surfaceColor);
+        iconBox.setBackground(
+                new RippleDrawable(ColorStateList.valueOf(rippleColor), boxBg, null));
+
+        ImageView iconView = new ImageView(mContext);
+        iconView.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        if (iconBitmap != null) {
+            iconView.setImageBitmap(iconBitmap);
+        } else {
+            Drawable fallback =
+                    AppCompatResources.getDrawable(mContext, R.drawable.ic_extension_24dp);
+            if (fallback != null) {
+                fallback = fallback.mutate();
+                DrawableCompat.setTint(fallback, textPrimaryColor);
+                iconView.setImageDrawable(fallback);
+            }
+        }
+        FrameLayout.LayoutParams iconLp =
+                new FrameLayout.LayoutParams(dpToPx(26), dpToPx(26), Gravity.CENTER);
+        iconBox.addView(iconView, iconLp);
+
+        LinearLayout.LayoutParams boxLp =
+                new LinearLayout.LayoutParams(dpToPx(46), dpToPx(46));
+        boxLp.bottomMargin = dpToPx(4);
+        cell.addView(iconBox, boxLp);
+
+        TextView textView = new TextView(mContext);
+        textView.setText(title);
+        textView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
+        textView.setGravity(Gravity.CENTER);
+        textView.setSingleLine(true);
+        textView.setEllipsize(TextUtils.TruncateAt.END);
+        textView.setTextColor(textPrimaryColor);
+        cell.addView(
+                textView,
+                new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        cell.setOnClickListener(clickListener);
+        iconBox.setOnClickListener(clickListener);
+        cell.setOnLongClickListener(longClickListener);
+        iconBox.setOnLongClickListener(longClickListener);
+
+        GridLayout.LayoutParams gridLp =
+                new GridLayout.LayoutParams(
+                        GridLayout.spec(GridLayout.UNDEFINED, 1f),
+                        GridLayout.spec(GridLayout.UNDEFINED, 1f));
+        gridLp.width = 0;
+        gridLp.height = ViewGroup.LayoutParams.WRAP_CONTENT;
+        grid.addView(cell, gridLp);
     }
 
     private View buildQuickSettingPill(
@@ -1172,6 +1860,10 @@ def main() -> None:
         raise SystemExit("Usage: patch_lemur_app_menu.py <chromium-src-dir>")
 
     src_dir = Path(sys.argv[1]).resolve()
+    patch_extensions_toolbar_coordinator(src_dir)
+    patch_extensions_toolbar_coordinator_impl(src_dir)
+    patch_extensions_menu_coordinator(src_dir)
+    patch_extensions_menu_mediator(src_dir)
     patch_app_menu_properties_delegate(src_dir)
     patch_app_menu_handler_impl(src_dir)
     patch_tabbed_app_menu_delegate(src_dir)
