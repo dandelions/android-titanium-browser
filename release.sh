@@ -18,9 +18,26 @@ if [ -f "$RELEASE_ENV_FILE" ]; then
     . "$RELEASE_ENV_FILE"
 fi
 
+# Configure default local proxy for git and gh operations in release.sh.
+DEFAULT_PROXY_URL="${PROXY_URL:-${HTTPS_PROXY:-${https_proxy:-${HTTP_PROXY:-${http_proxy:-http://192.168.2.1:37896}}}}}"
+if [ -n "$DEFAULT_PROXY_URL" ]; then
+    export HTTP_PROXY="${HTTP_PROXY:-$DEFAULT_PROXY_URL}"
+    export HTTPS_PROXY="${HTTPS_PROXY:-$DEFAULT_PROXY_URL}"
+    export http_proxy="${http_proxy:-$HTTP_PROXY}"
+    export https_proxy="${https_proxy:-$HTTPS_PROXY}"
+fi
+
+git_repo() {
+    if [ -n "$DEFAULT_PROXY_URL" ]; then
+        git -c "http.proxy=$HTTP_PROXY" -c "https.proxy=$HTTPS_PROXY" -C "$SCRIPT_DIR" "$@"
+    else
+        git -C "$SCRIPT_DIR" "$@"
+    fi
+}
+
 if [ -z "${TAG:-}" ]; then
-    git -C "$SCRIPT_DIR" fetch origin '+refs/tags/*:refs/tags/*' >/dev/null 2>&1 || true
-    head_tags=$(git -C "$SCRIPT_DIR" tag --points-at HEAD --list "v$VERSION*" | sort -V)
+    git_repo fetch origin '+refs/tags/*:refs/tags/*' >/dev/null 2>&1 || true
+    head_tags=$(git_repo tag --points-at HEAD --list "v$VERSION*" | sort -V)
     if [ -n "$head_tags" ]; then
         TAG=$(printf '%s\n' "$head_tags" | tail -n 1)
     else
@@ -66,29 +83,29 @@ sha_file="$RELEASE_DIR/$VERSION-SHA256SUMS.txt"
 )
 printf '%s\n' "$sha_file" >> "$files_list"
 
-remote_url=$(git -C "$SCRIPT_DIR" remote get-url origin)
+remote_url=$(git_repo remote get-url origin)
 repo=$(printf '%s' "$remote_url" | sed -E 's#^https://([^@]+@)?github.com/##; s#^git@github.com:##; s#\.git$##')
-head_commit=$(git -C "$SCRIPT_DIR" rev-parse HEAD)
+head_commit=$(git_repo rev-parse HEAD)
 
-git -C "$SCRIPT_DIR" fetch origin "refs/tags/$TAG:refs/tags/$TAG" >/dev/null 2>&1 || true
-if git -C "$SCRIPT_DIR" rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
-    tag_commit=$(git -C "$SCRIPT_DIR" rev-list -n 1 "$TAG")
+git_repo fetch origin "refs/tags/$TAG:refs/tags/$TAG" >/dev/null 2>&1 || true
+if git_repo rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+    tag_commit=$(git_repo rev-list -n 1 "$TAG")
     if [ "$tag_commit" != "$head_commit" ]; then
         if [ "$MOVE_TAG" = "1" ]; then
-            git -C "$SCRIPT_DIR" tag -f "$TAG" "$head_commit"
+            git_repo tag -f "$TAG" "$head_commit"
         else
             echo "Tag $TAG already exists at $tag_commit. Set MOVE_TAG=1 to move it to $head_commit." >&2
             exit 1
         fi
     fi
 else
-    git -C "$SCRIPT_DIR" tag "$TAG" "$head_commit"
+    git_repo tag "$TAG" "$head_commit"
 fi
 
 if [ "$MOVE_TAG" = "1" ]; then
-    git -C "$SCRIPT_DIR" push --force origin "refs/tags/$TAG"
+    git_repo push --force origin "refs/tags/$TAG"
 else
-    git -C "$SCRIPT_DIR" push origin "refs/tags/$TAG"
+    git_repo push origin "refs/tags/$TAG"
 fi
 
 if gh release view "$TAG" --repo "$repo" >/dev/null 2>&1; then
