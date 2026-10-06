@@ -3310,3 +3310,4 @@ fi
 
 # Apply Android full media/image permissions & Downloads directory visibility patch
 python3 "$SCRIPT_DIR/patch_android_media_permissions.py" "$SRC_DIR"
+python3 "$SCRIPT_DIR/patch_lemur_app_menu.py" "$SRC_DIR"
