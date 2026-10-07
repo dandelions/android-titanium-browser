@@ -3308,6 +3308,17 @@ PYCODE
     echo "Verified Android tabs action shadow fix in $SRC_DIR/$TABS_API_CC"
 fi
 
+# Deduplicate HasLiveWebContentsForBrowserContext if patch.sh was run multiple times on the same tree
+if [ -f content/public/browser/web_contents.h ]; then
+    perl -0pi -e 's|(CONTENT_EXPORT static bool HasLiveWebContentsForBrowserContext\(BrowserContext\* browser_context\);\n)+|CONTENT_EXPORT static bool HasLiveWebContentsForBrowserContext(BrowserContext* browser_context);\n|g' content/public/browser/web_contents.h
+fi
+if [ -f content/browser/web_contents/web_contents_impl.cc ]; then
+    perl -0pi -e 's|( bool WebContents::HasLiveWebContentsForBrowserContext\(BrowserContext\* browser_context\) \{ for \(WebContentsImpl\* web_contents : WebContentsImpl::GetAllWebContents\(\)\) \{ if \(web_contents->GetBrowserContext\(\) == browser_context\) \{ return true; \} \} return false; \}\n)+| bool WebContents::HasLiveWebContentsForBrowserContext(BrowserContext* browser_context) { for (WebContentsImpl* web_contents : WebContentsImpl::GetAllWebContents()) { if (web_contents->GetBrowserContext() == browser_context) { return true; } } return false; }\n|g' content/browser/web_contents/web_contents_impl.cc
+fi
+if [ -f chrome/browser/profiles/profile_destroyer.cc ]; then
+    perl -0pi -e 's|(if \(content::WebContents::HasLiveWebContentsForBrowserContext\(profile\)\) \{ return; \}\n)+|if (content::WebContents::HasLiveWebContentsForBrowserContext(profile)) { return; }\n|g' chrome/browser/profiles/profile_destroyer.cc
+fi
+
 # Apply Android full media/image permissions & Downloads directory visibility patch
 python3 "$SCRIPT_DIR/patch_android_media_permissions.py" "$SRC_DIR"
 python3 "$SCRIPT_DIR/patch_lemur_app_menu.py" "$SRC_DIR"
