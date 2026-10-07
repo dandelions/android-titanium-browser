@@ -1867,6 +1867,7 @@ def main() -> None:
     patch_app_menu_properties_delegate(src_dir)
     patch_app_menu_handler_impl(src_dir)
     patch_tabbed_app_menu_delegate(src_dir)
+    print(f"Successfully applied Lemur-style quick menu with inline extension icons in {src_dir}")
 
 
 if __name__ == "__main__":

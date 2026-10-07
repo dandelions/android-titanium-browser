@@ -1,6 +1,14 @@
 #!/bin/bash
 
 SCRIPT_DIR="${SCRIPT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
+if ! declare -F version_lt >/dev/null 2>&1; then
+    version_lt() {
+        [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n1)" = "$1" ]
+    }
+fi
+if [ -z "${VERSION:-}" ] && [ -f "$SCRIPT_DIR/vanadium/args.gn" ]; then
+    VERSION="$(grep -m1 -o '[0-9]\+\(\.[0-9]\+\)\{3\}' "$SCRIPT_DIR/vanadium/args.gn" 2>/dev/null || true)"
+fi
 
 mkdir -p chrome/android/java/res_helium_base
 for icon in $(find chrome/android/java/res_helium_base -type f -name '*.png'); do convert $icon -fill navy -tint 36 $icon; done
