@@ -517,7 +517,7 @@ def patch_app_menu_handler_impl(src_dir: Path) -> None:
     show_anchor = """        if (!shouldShowAppMenu() || isAppMenuShowing()) return false;
 
         TextBubble.dismissBubbles();"""
-    old_show_replacement = """        if (!shouldShowAppMenu() || isAppMenuShowing()) return false;
+    old_show_replacement_v1 = """        if (!shouldShowAppMenu() || isAppMenuShowing()) return false;
 
         TextBubble.dismissBubbles();
         if (!mForceNativeMenuOnce
@@ -545,7 +545,7 @@ def patch_app_menu_handler_impl(src_dir: Path) -> None:
             onMenuVisibilityChanged(true);
             return true;
         }"""
-    show_replacement = """        if (!shouldShowAppMenu() || isAppMenuShowing()) return false;
+    old_show_replacement_v2 = """        if (!shouldShowAppMenu() || isAppMenuShowing()) return false;
 
         TextBubble.dismissBubbles();
         final View customMenuAnchorView = anchorView;
@@ -574,12 +574,54 @@ def patch_app_menu_handler_impl(src_dir: Path) -> None:
             onMenuVisibilityChanged(true);
             return true;
         }"""
-    if old_show_replacement in text:
-        text = text.replace(old_show_replacement, show_replacement, 1)
+    show_replacement = """        if (!shouldShowAppMenu() || isAppMenuShowing()) return false;
+
+        TextBubble.dismissBubbles();
+        final View customMenuAnchorView = anchorView;
+        if (!mForceNativeMenuOnce
+                && mDelegate.showCustomAppMenu(
+                        this,
+                        customMenuAnchorView,
+                        startDragging,
+                        isFromBottomBar,
+                        () -> {
+                            mForceNativeMenuOnce = true;
+                            try {
+                                showAppMenu(customMenuAnchorView, false, isFromBottomBar);
+                            } finally {
+                                mForceNativeMenuOnce = false;
+                            }
+                        },
+                        () -> {
+                            mDelegate.onMenuDismissed();
+                            onMenuVisibilityChanged(false);
+                        })) {
+            clearMenuHighlight();
+            RecordUserAction.record("MobileMenuShow");
+            mDelegate.onMenuShown();
+            onMenuVisibilityChanged(true);
+            return true;
+        }"""
+    if old_show_replacement_v1 in text:
+        text = text.replace(old_show_replacement_v1, show_replacement, 1)
+    elif old_show_replacement_v2 in text:
+        text = text.replace(old_show_replacement_v2, show_replacement, 1)
     elif show_marker not in text:
         if show_anchor not in text:
             raise SystemExit(f"showAppMenu anchor not found in {path}")
         text = text.replace(show_anchor, show_replacement, 1)
+
+    old_drag_helper = """    @Nullable AppMenuDragHelper getAppMenuDragHelper() {
+        return mAppMenuDragHelper;
+    }"""
+    new_drag_helper = """    @Nullable AppMenuDragHelper getAppMenuDragHelper() {
+        if (mDelegate.isCustomAppMenuShowing()) return null;
+        return mAppMenuDragHelper;
+    }"""
+    if "if (mDelegate.isCustomAppMenuShowing()) return null;" not in text:
+        if old_drag_helper not in text:
+            raise SystemExit(f"getAppMenuDragHelper anchor not found in {path}")
+        text = text.replace(old_drag_helper, new_drag_helper, 1)
 
     old_is_showing = """    @Override
     public boolean isAppMenuShowing() {
@@ -638,6 +680,7 @@ TABBED_IMPORTS = [
     "import android.widget.LinearLayout;\n",
     "import android.widget.ScrollView;\n",
     "import android.widget.TextView;\n",
+    "import org.chromium.base.ContextUtils;\n",
     "import org.chromium.chrome.browser.night_mode.NightModeUtils;\n",
     "import org.chromium.chrome.browser.night_mode.ThemeType;\n",
     "import org.chromium.chrome.browser.night_mode.WebContentsDarkModeController;\n",
@@ -680,13 +723,14 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
         if (getMenuGroup() != MenuGroup.PAGE_MENU) {
             return false;
         }
-        if (!(mContext instanceof Activity)) {
+        Activity activity = ContextUtils.activityFromContext(mContext);
+        if (activity == null && mContext instanceof Activity) {
+            activity = (Activity) mContext;
+        }
+        if (activity == null || activity.isFinishing() || activity.isDestroyed()) {
             return false;
         }
-        Activity activity = (Activity) mContext;
-        if (activity.isFinishing() || activity.isDestroyed()) {
-            return false;
-        }
+        final @Nullable View popupAnchorView = anchorView != null ? anchorView : mDecorView;
 
         hideCustomAppMenu();
 
@@ -1046,13 +1090,15 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
                             if (dialog.isShowing()) {
                                 dialog.dismiss();
                             }
-                            extCoordinator.executeExtensionActionFromAppMenu(extId, anchorView);
+                            extCoordinator.executeExtensionActionFromAppMenu(
+                                    extId, popupAnchorView);
                         },
                         v -> {
                             if (dialog.isShowing()) {
                                 dialog.dismiss();
                             }
-                            extCoordinator.showExtensionContextMenuFromAppMenu(extId, anchorView);
+                            extCoordinator.showExtensionContextMenuFromAppMenu(
+                                    extId, popupAnchorView);
                             return true;
                         });
             }
