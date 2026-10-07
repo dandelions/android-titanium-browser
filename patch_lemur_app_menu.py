@@ -39,7 +39,22 @@ def patch_extensions_toolbar_coordinator(src_dir: Path) -> None:
         raise SystemExit(f"File not found: {path}")
 
     text = path.read_text(encoding="utf-8")
+
+    # Migrate older @Nullable qualified-type syntax if already patched
+    text = text.replace(
+        "@Nullable org.chromium.content_public.browser.WebContents",
+        "org.chromium.content_public.browser.@Nullable WebContents",
+    )
+    text = text.replace(
+        "@Nullable android.graphics.Bitmap",
+        "android.graphics.@Nullable Bitmap",
+    )
+    text = text.replace(
+        "@Nullable android.view.View",
+        "android.view.@Nullable View",
+    )
     if "default String[] getAllExtensionActionIds()" in text:
+        path.write_text(text, encoding="utf-8")
         return
 
     anchor = (
@@ -58,24 +73,24 @@ def patch_extensions_toolbar_coordinator(src_dir: Path) -> None:
     /** Returns the display title/name for the given extension action on the given WebContents. */
     default @Nullable String getExtensionActionTitle(
             String actionId,
-            @Nullable org.chromium.content_public.browser.WebContents webContents) {
+            org.chromium.content_public.browser.@Nullable WebContents webContents) {
         return null;
     }
 
     /** Returns the rendered Bitmap icon (including badge) for the given extension action. */
-    default @Nullable android.graphics.Bitmap getExtensionActionIcon(
+    default android.graphics.@Nullable Bitmap getExtensionActionIcon(
             String actionId,
-            @Nullable org.chromium.content_public.browser.WebContents webContents) {
+            org.chromium.content_public.browser.@Nullable WebContents webContents) {
         return null;
     }
 
     /** Executes the primary action (or opens the popup) for an extension from the custom AppMenu. */
     default void executeExtensionActionFromAppMenu(
-            String actionId, @Nullable android.view.View fallbackAnchorView) {}
+            String actionId, android.view.@Nullable View fallbackAnchorView) {}
 
     /** Shows the context menu for an extension from the custom AppMenu. */
     default void showExtensionContextMenuFromAppMenu(
-            String actionId, @Nullable android.view.View fallbackAnchorView) {}
+            String actionId, android.view.@Nullable View fallbackAnchorView) {}
 }"""
 
     if anchor not in text:
@@ -90,7 +105,22 @@ def patch_extensions_toolbar_coordinator_impl(src_dir: Path) -> None:
         raise SystemExit(f"File not found: {path}")
 
     text = path.read_text(encoding="utf-8")
+
+    # Migrate older @Nullable qualified-type syntax if already patched
+    text = text.replace(
+        "@Nullable org.chromium.content_public.browser.WebContents",
+        "org.chromium.content_public.browser.@Nullable WebContents",
+    )
+    text = text.replace(
+        "@Nullable android.graphics.Bitmap",
+        "android.graphics.@Nullable Bitmap",
+    )
+    text = text.replace(
+        "@Nullable android.view.View",
+        "android.view.@Nullable View",
+    )
     if "public String[] getAllExtensionActionIds()" in text:
+        path.write_text(text, encoding="utf-8")
         return
 
     anchor = """    @Override
@@ -132,7 +162,7 @@ def patch_extensions_toolbar_coordinator_impl(src_dir: Path) -> None:
     @Override
     public @Nullable String getExtensionActionTitle(
             String actionId,
-            @Nullable org.chromium.content_public.browser.WebContents webContents) {
+            org.chromium.content_public.browser.@Nullable WebContents webContents) {
         if (mIsDestroyed || mExtensionsToolbarBridge == null) {
             return null;
         }
@@ -154,9 +184,9 @@ def patch_extensions_toolbar_coordinator_impl(src_dir: Path) -> None:
     }
 
     @Override
-    public @Nullable android.graphics.Bitmap getExtensionActionIcon(
+    public android.graphics.@Nullable Bitmap getExtensionActionIcon(
             String actionId,
-            @Nullable org.chromium.content_public.browser.WebContents webContents) {
+            org.chromium.content_public.browser.@Nullable WebContents webContents) {
         if (mIsDestroyed || mExtensionsToolbarBridge == null || mContainer == null) {
             return null;
         }
