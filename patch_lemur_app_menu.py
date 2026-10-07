@@ -517,7 +517,7 @@ def patch_app_menu_handler_impl(src_dir: Path) -> None:
     show_anchor = """        if (!shouldShowAppMenu() || isAppMenuShowing()) return false;
 
         TextBubble.dismissBubbles();"""
-    show_replacement = """        if (!shouldShowAppMenu() || isAppMenuShowing()) return false;
+    old_show_replacement = """        if (!shouldShowAppMenu() || isAppMenuShowing()) return false;
 
         TextBubble.dismissBubbles();
         if (!mForceNativeMenuOnce
@@ -545,7 +545,38 @@ def patch_app_menu_handler_impl(src_dir: Path) -> None:
             onMenuVisibilityChanged(true);
             return true;
         }"""
-    if show_marker not in text:
+    show_replacement = """        if (!shouldShowAppMenu() || isAppMenuShowing()) return false;
+
+        TextBubble.dismissBubbles();
+        final View customMenuAnchorView = anchorView;
+        if (!mForceNativeMenuOnce
+                && !startDragging
+                && mDelegate.showCustomAppMenu(
+                        this,
+                        customMenuAnchorView,
+                        startDragging,
+                        isFromBottomBar,
+                        () -> {
+                            mForceNativeMenuOnce = true;
+                            try {
+                                showAppMenu(customMenuAnchorView, false, isFromBottomBar);
+                            } finally {
+                                mForceNativeMenuOnce = false;
+                            }
+                        },
+                        () -> {
+                            mDelegate.onMenuDismissed();
+                            onMenuVisibilityChanged(false);
+                        })) {
+            clearMenuHighlight();
+            RecordUserAction.record("MobileMenuShow");
+            mDelegate.onMenuShown();
+            onMenuVisibilityChanged(true);
+            return true;
+        }"""
+    if old_show_replacement in text:
+        text = text.replace(old_show_replacement, show_replacement, 1)
+    elif show_marker not in text:
         if show_anchor not in text:
             raise SystemExit(f"showAppMenu anchor not found in {path}")
         text = text.replace(show_anchor, show_replacement, 1)
