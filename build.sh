@@ -61,6 +61,19 @@ SKIP_SYSTEM_DEPS="${SKIP_SYSTEM_DEPS:-0}"
 CCACHE_MAX_SIZE="${CCACHE_MAX_SIZE:-30G}"
 BUILD_PROXY="${BUILD_PROXY:-${https_proxy:-${http_proxy:-${HTTPS_PROXY:-${HTTP_PROXY:-}}}}}"
 BUILD_VERSION_INCREMENT="${BUILD_VERSION_INCREMENT:-$((($(date -u +%s) - 1577836800) / 60))}"
+GIT_BRANCH_NAME="$(git -C "$SCRIPT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+if [ -n "${OUTPUT_BRANCH_TAG:-}" ]; then
+    BRANCH_OUTPUT_TAG="$(printf '%s' "$OUTPUT_BRANCH_TAG" | tr -c 'A-Za-z0-9._-' '-' | sed 's/^-*//; s/-*$//')"
+elif [ -n "$GIT_BRANCH_NAME" ] && [ "$GIT_BRANCH_NAME" != "main" ] && [ "$GIT_BRANCH_NAME" != "HEAD" ]; then
+    BRANCH_OUTPUT_TAG="$(printf '%s' "$GIT_BRANCH_NAME" | tr -c 'A-Za-z0-9._-' '-' | sed 's/^-*//; s/-*$//')"
+else
+    BRANCH_OUTPUT_TAG=""
+fi
+if [ -n "$BRANCH_OUTPUT_TAG" ]; then
+    OUTPUT_VERSION_PREFIX="${VERSION}-${BRANCH_OUTPUT_TAG}"
+else
+    OUTPUT_VERSION_PREFIX="${VERSION}"
+fi
 if [ "$FAST_LOCAL_BUILD" = "1" ]; then
     SKIP_SOURCE_PREPARE=1
     SKIP_SYSTEM_DEPS=1
@@ -578,12 +591,12 @@ if [ "$SKIP_SYSTEM_DEPS" != "1" ]; then
     sudo apt-get install -y libgcc-s1:i386
 fi
 mkdir -p out/tmp out/release
-echo "Build options: BUILD_ARM=$BUILD_ARM BUILD_ARM64=$BUILD_ARM64 BUILD_AAB=$BUILD_AAB BUILD_VERSION_INCREMENT=$BUILD_VERSION_INCREMENT NINJA_JOBS=${NINJA_JOBS:-auto}"
+echo "Build options: BUILD_ARM=$BUILD_ARM BUILD_ARM64=$BUILD_ARM64 BUILD_AAB=$BUILD_AAB BUILD_VERSION_INCREMENT=$BUILD_VERSION_INCREMENT NINJA_JOBS=${NINJA_JOBS:-auto} OUTPUT_PREFIX=$OUTPUT_VERSION_PREFIX"
 
 if [ "$BUILD_ARM" = "1" ]; then
     configure_out_dir out/arm arm
     run_autoninja out/arm chrome_public_apk
-    copy_first_output out/arm/apks 'Chrome*.apk' "out/tmp/$VERSION-armeabi-v7a.apk"
+    copy_first_output out/arm/apks 'Chrome*.apk' "out/tmp/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk"
 fi
 
 if [ "$BUILD_ARM64" = "1" ]; then
@@ -593,9 +606,9 @@ if [ "$BUILD_ARM64" = "1" ]; then
         arm64_targets="$arm64_targets chrome_public_bundle"
     fi
     run_autoninja out/arm64 $arm64_targets
-    copy_first_output out/arm64/apks 'Chrome*.apk' "out/tmp/$VERSION-arm64-v8a.apk"
+    copy_first_output out/arm64/apks 'Chrome*.apk' "out/tmp/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk"
     if [ "$BUILD_AAB" = "1" ]; then
-        copy_first_output out/arm64/apks 'Chrome*.aab' "out/tmp/$VERSION-arm64-v8a.aab"
+        copy_first_output out/arm64/apks 'Chrome*.aab' "out/tmp/${OUTPUT_VERSION_PREFIX}-arm64-v8a.aab"
     fi
 fi
 
@@ -603,15 +616,15 @@ export PATH=$PWD/third_party/jdk/current/bin/:$PATH
 export ANDROID_HOME=$PWD/third_party/android_sdk/public
 release_outputs=""
 if [ "$BUILD_ARM" = "1" ]; then
-    sign_apk out/tmp/$VERSION-armeabi-v7a.apk out/release/$VERSION-armeabi-v7a.apk
-    release_outputs="$release_outputs out/release/$VERSION-armeabi-v7a.apk"
+    sign_apk "out/tmp/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk" "out/release/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk"
+    release_outputs="$release_outputs out/release/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk"
 fi
 if [ "$BUILD_ARM64" = "1" ]; then
-    sign_apk out/tmp/$VERSION-arm64-v8a.apk out/release/$VERSION-arm64-v8a.apk
-    release_outputs="$release_outputs out/release/$VERSION-arm64-v8a.apk"
+    sign_apk "out/tmp/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk" "out/release/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk"
+    release_outputs="$release_outputs out/release/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk"
     if [ "$BUILD_AAB" = "1" ]; then
-        sign_aab out/tmp/$VERSION-arm64-v8a.aab out/release/$VERSION-arm64-v8a.aab
-        release_outputs="$release_outputs out/release/$VERSION-arm64-v8a.aab"
+        sign_aab "out/tmp/${OUTPUT_VERSION_PREFIX}-arm64-v8a.aab" "out/release/${OUTPUT_VERSION_PREFIX}-arm64-v8a.aab"
+        release_outputs="$release_outputs out/release/${OUTPUT_VERSION_PREFIX}-arm64-v8a.aab"
     fi
 fi
 echo "Build outputs:"
