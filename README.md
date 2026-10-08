@@ -17,10 +17,14 @@ An experimental Chromium-based web browser for Android with extensions support, 
 
 ### Installing Extensions
 
-Navigate to [Chrome Web Store](https://chromewebstore.google.com/), then enable **Desktop site** by selecting the menu button <kbd>⋮</kbd> in the top right corner and ensure the option is checked. Select **Okay** and proceed as normal if prompted with:
-> The Chrome Web Store is only available on desktop.
- 
-Once you select **Add to Chrome**, [the extension will be installed in the background](https://support.google.com/chrome_webstore/answer/2664769) until the button changes to **Remove from Chrome**.
+You can install extensions from the following sources:
+- [Chrome Web Store (Recommended)](https://chromewebstore.google.com/)
+- [Opera Add-ons](https://addons.opera.com/)
+- [Microsoft Edge Add-ons](https://microsoftedge.microsoft.com/addons/)
+
+You can also install from local CRX (or ZIP) file in the options page of the built-in [**Helium Extension for Android**](https://github.com/jqssun/android-titanium-extension).
+
+Additionally, you can load an unpacked extension manually for testing purposes by navigating to [`chrome://extensions`](chrome://extensions). Enable **Developer mode**, select **Load unpacked**, and choose the folder containing the extension in the Storage Access Framework (SAF) picker. It may take a moment for the extension to load.
 
 ### Using Extensions
 
@@ -28,7 +32,7 @@ To use [an extension's popup](https://developer.chrome.com/docs/extensions/devel
 
 To run an extension in Incognito (OTR) mode, go to **Manage extensions**, find the extension you want to use in Incognito mode, select **Details**, and turn on **Allow in Incognito**.
 
-Manifest V2 (MV2) extensions are supported. You can install [uBlock Origin from Chrome Web Store](https://chromewebstore.google.com/detail/ublock-origin/cjpalhdlnbpafiamejdnhcphjbkeiagm).
+Manifest V2 (MV2) extensions are supported. You can install [uBlock Origin from Chrome Web Store](https://chromewebstore.google.com/detail/ublock-origin/cjpalhdlnbpafiamejdnhcphjbkeiagm). For advanced features including external download manager, enhanced dark mode, and additional privacy options, you can use the built-in [**Helium Extension for Android**](https://github.com/jqssun/android-titanium-extension).
 
 ### Debug URLs
 
