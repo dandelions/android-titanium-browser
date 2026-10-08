@@ -169,6 +169,27 @@ perl -0pi -e 's|\n        android:padding="12dp"||g; s|(android:id="\@\+id/exten
 # tree. Chromium 151.0.7922.137 no longer provides HeliumConfParser.isEligible().
 # Undo the compatibility injection left by older hotfix revisions before reruns.
 sed -i 's|private static void init(Context ctx, SpecType specType) { if (!isEligible()) { return; }|private static void init(Context ctx, SpecType specType) {|' "$HELIUM_CONF_PARSER"
+grep -q 'verifyPackage(Context ctx, String pkgName, byte\[\] sha256CertDigestBytes) { if (true) return false;' "$HELIUM_CONF_PARSER" || \
+    sed -i 's|private static boolean verifyPackage(Context ctx, String pkgName, byte\[\] sha256CertDigestBytes) {|& if (true) return false; |' "$HELIUM_CONF_PARSER"
+if [ -f third_party/blink/renderer/core/css/resolver/viewport_style_resolver.cc ]; then
+    grep -q '!document_->IsViewSource()' third_party/blink/renderer/core/css/resolver/viewport_style_resolver.cc || \
+        sed -i 's|document_->GetSettings() ? |document_->GetSettings() \&\& !document_->IsViewSource() ? |' third_party/blink/renderer/core/css/resolver/viewport_style_resolver.cc
+fi
+if [ -f chrome/browser/prefs/browser_prefs.cc ]; then
+    sed -i 's|kViewSourceLineWrappingEnabled, false|kViewSourceLineWrappingEnabled, true|' chrome/browser/prefs/browser_prefs.cc
+fi
+if [ -f chrome/browser/ui/android/desktop_site/java/src/org/chromium/chrome/browser/desktop_site/DesktopSiteUtils.java ]; then
+    grep -q 'chromewebstore.google.com' chrome/browser/ui/android/desktop_site/java/src/org/chromium/chrome/browser/desktop_site/DesktopSiteUtils.java || \
+        sed -i 's|public static void maybeDefaultEnableWindowSetting(Activity activity, Profile profile) {$|&WebsitePreferenceBridge.setContentSettingCustomScope(profile, ContentSettingsType.REQUEST_DESKTOP_SITE, "[*.]chromewebstore.google.com", SITE_WILDCARD, ContentSetting.ALLOW);|' chrome/browser/ui/android/desktop_site/java/src/org/chromium/chrome/browser/desktop_site/DesktopSiteUtils.java
+fi
+grep -q 'incognito_toggle_menu_id' "$ANDROID_RESOURCE_IDS" || \
+    sed -i 's|<item type="id" name="manage_all_windows_menu_id" />|&<item type="id" name="incognito_toggle_menu_id" />|' "$ANDROID_RESOURCE_IDS"
+grep -q 'R.id.incognito_toggle_menu_id' "$TABBED_APP_MENU_DELEGATE" || \
+    sed -i 's|modelList.add(buildManageWindowsItem());$|&if (isIncognito \&\& MultiWindowUtils.isMultiInstanceApi31Enabled()) modelList.add(new ListItem(AppMenuHandler.AppMenuItemType.STANDARD, AppMenuItemUtils.buildModelForStandardMenuItem(mContext, getAppMenuItemTheme(), R.id.incognito_toggle_menu_id, R.string.accessibility_tabstrip_btn_incognito_toggle_incognito, R.drawable.ic_open_in_browser, false)));|' "$TABBED_APP_MENU_DELEGATE"
+if [ -f chrome/android/java/src/org/chromium/chrome/browser/multiwindow/MultiInstanceManagerApi31.java ]; then
+    grep -q 'R.id.incognito_toggle_menu_id' chrome/android/java/src/org/chromium/chrome/browser/multiwindow/MultiInstanceManagerApi31.java || \
+        sed -i 's|if (id == R.id.manage_all_windows_menu_id) {|if (id == R.id.incognito_toggle_menu_id) { int w = MultiWindowUtils.getLastAccessedWindowIdExcludingSelf(mInstanceId, PersistedInstanceType.REGULAR); if (w != INVALID_WINDOW_ID) openWindow(w, NewWindowAppSource.WINDOW_MANAGER); else openNewWindow(false); return true; } &|' chrome/android/java/src/org/chromium/chrome/browser/multiwindow/MultiInstanceManagerApi31.java
+fi
 sed -i '/safelyRemovePreference(prefFragment/d' "$LANGUAGE_SETTINGS_EXT"
 if [ -f "$PRIVACY_SETTINGS_EXT" ]; then
     sed -i '/safelyRemovePreference($/{N;/PREF_JAVASCRIPT_OPTIMIZER/d}' "$PRIVACY_SETTINGS_EXT"
