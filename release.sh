@@ -70,39 +70,28 @@ add_release_file() {
     fi
 }
 
-# 1. Standard and branch-tagged artifacts for the current version
-for file in "$RELEASE_DIR/$VERSION"-*.apk "$RELEASE_DIR/$VERSION"-*.aab; do
-    add_release_file "$file"
+# 1. Main branch builds for the current $VERSION
+for abi in arm64-v8a armeabi-v7a x86_64 x86; do
+    add_release_file "$RELEASE_DIR/$VERSION-$abi.apk"
+    add_release_file "$RELEASE_DIR/$VERSION-$abi.aab"
 done
 
-# 2. Artifacts built from non-main git branches (local or remote origin)
-for branch_name in $(
-    git_repo for-each-ref --format='%(refname:short)' refs/heads/ refs/remotes/origin/ 2>/dev/null |
-        sed 's#^origin/##' |
-        sort -u
-); do
-    case "$branch_name" in
-        ""|main|HEAD|origin)
-            continue
-            ;;
-    esac
-    branch_tag=$(printf '%s' "$branch_name" | tr -c 'A-Za-z0-9._-' '-' | sed 's/^-*//; s/-*$//')
-    [ -n "$branch_tag" ] || continue
-    for file in \
-        "$RELEASE_DIR"/*-"$branch_tag"-*.apk \
-        "$RELEASE_DIR"/*-"$branch_tag"-*.aab \
-        "$RELEASE_DIR"/*"$branch_tag"*.apk \
-        "$RELEASE_DIR"/*"$branch_tag"*.aab; do
-        add_release_file "$file"
-    done
-done
-
-# 3. Any Lemur / Lemon related APK or AAB packages in RELEASE_DIR
-for file in "$RELEASE_DIR"/*.apk "$RELEASE_DIR"/*.aab; do
+# 2. Current $VERSION branch builds and current $VERSION lemur/lemon builds only
+for file in \
+    "$RELEASE_DIR/$VERSION"-*.apk \
+    "$RELEASE_DIR/$VERSION"-*.aab \
+    "$RELEASE_DIR"/*"$VERSION"*.apk \
+    "$RELEASE_DIR"/*"$VERSION"*.aab; do
     [ -f "$file" ] || continue
     base_lower=$(basename "$file" | tr '[:upper:]' '[:lower:]')
     case "$base_lower" in
-        *lemur*|*lemon*)
+        "$VERSION"-arm64-v8a.apk|"$VERSION"-armeabi-v7a.apk|"$VERSION"-x86_64.apk|"$VERSION"-x86.apk|"$VERSION"-arm64-v8a.aab|"$VERSION"-armeabi-v7a.aab)
+            add_release_file "$file"
+            ;;
+        "$VERSION"-*lemur*.*|"$VERSION"-*lemon*.*|*"$VERSION"*lemur*.*|*"$VERSION"*lemon*.*)
+            add_release_file "$file"
+            ;;
+        "$VERSION"-*.apk|"$VERSION"-*.aab)
             add_release_file "$file"
             ;;
     esac
@@ -150,6 +139,16 @@ fi
 
 if gh release view "$TAG" --repo "$repo" >/dev/null 2>&1; then
     gh release edit "$TAG" --repo "$repo" --title "Helium Android $VERSION"
+    # Remove any accidentally uploaded assets that do not belong to the current $VERSION
+    for existing_asset in $(gh release view "$TAG" --repo "$repo" --json assets --jq '.assets[].name' 2>/dev/null || true); do
+        case "$existing_asset" in
+            *"$VERSION"*)
+                ;;
+            *)
+                gh release delete-asset "$TAG" "$existing_asset" --repo "$repo" --yes >/dev/null 2>&1 || true
+                ;;
+        esac
+    done
 else
     gh release create "$TAG" \
         --repo "$repo" \
