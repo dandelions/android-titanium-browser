@@ -1697,30 +1697,11 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
                     }
                 });
 
-        // 3. Section: 扩展商店 (Extension Stores - Chrome & Edge)
-        TextView storeHeader = new TextView(mContext);
-        storeHeader.setText("扩展商店");
-        storeHeader.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
-        storeHeader.setTypeface(Typeface.DEFAULT_BOLD);
-        storeHeader.setTextColor(textPrimaryColor);
-        LinearLayout.LayoutParams storeHeaderLp =
-                new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        storeHeaderLp.bottomMargin = dpToPx(12);
-        contentCol.addView(storeHeader, storeHeaderLp);
-
-        GridLayout storeGrid = new GridLayout(mContext);
-        storeGrid.setColumnCount(5);
-        storeGrid.setUseDefaultMargins(false);
-        contentCol.addView(
-                storeGrid,
-                new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-
+        // Tool 9: 扩展商店 (Chrome Web Store)
         addLemurToolSquareTile(
-                storeGrid,
+                toolsGrid,
                 createChromeStoreDrawable(),
-                "Chrome",
+                "扩展商店",
                 true,
                 false,
                 tileSurfaceColor,
@@ -1730,33 +1711,6 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
                 accentColor,
                 rippleColor,
                 v -> triggerMenuAction(dialog, R.id.extensions_webstore_menu_id));
-
-        addLemurToolSquareTile(
-                storeGrid,
-                createEdgeStoreDrawable(),
-                "Edge",
-                true,
-                false,
-                tileSurfaceColor,
-                activeSurfaceColor,
-                textPrimaryColor,
-                textSecondaryColor,
-                accentColor,
-                rippleColor,
-                v -> {
-                    if (dialog.isShowing()) {
-                        dialog.dismiss();
-                    }
-                    if (mTabModelSelector != null) {
-                        mTabModelSelector.openNewTab(
-                                new LoadUrlParams(
-                                        "https://microsoftedge.microsoft.com/addons/Microsoft-Edge-Extensions-Home",
-                                        PageTransition.AUTO_TOPLEVEL),
-                                TabLaunchType.FROM_CHROME_UI,
-                                activeTab,
-                                isIncognito);
-                    }
-                });
 
         scrollView.post(
                 () -> {
@@ -2247,25 +2201,6 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
         c.drawCircle(14f * s, 18f * s, 3.8f * s, p);
         p.setColor(0xFF4285F4);
         c.drawCircle(14f * s, 18f * s, 2.8f * s, p);
-        return new BitmapDrawable(mContext.getResources(), bmp);
-    }
-
-    private Drawable createEdgeStoreDrawable() {
-        float d = mContext.getResources().getDisplayMetrics().density;
-        int px = Math.max(28, Math.round(28f * d));
-        Bitmap bmp = Bitmap.createBitmap(px, px, Bitmap.Config.ARGB_8888);
-        Canvas c = new Canvas(bmp);
-        float s = px / 28f;
-        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
-        p.setStyle(Paint.Style.FILL);
-        p.setColor(0xFFF25022);
-        c.drawRoundRect(new RectF(4f * s, 4f * s, 13f * s, 13f * s), 1.5f * s, 1.5f * s, p);
-        p.setColor(0xFF7FBA00);
-        c.drawRoundRect(new RectF(15f * s, 4f * s, 24f * s, 13f * s), 1.5f * s, 1.5f * s, p);
-        p.setColor(0xFF00A4EF);
-        c.drawRoundRect(new RectF(4f * s, 15f * s, 13f * s, 24f * s), 1.5f * s, 1.5f * s, p);
-        p.setColor(0xFFFFB900);
-        c.drawRoundRect(new RectF(15f * s, 15f * s, 24f * s, 24f * s), 1.5f * s, 1.5f * s, p);
         return new BitmapDrawable(mContext.getResources(), bmp);
     }
 
