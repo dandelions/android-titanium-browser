@@ -45,7 +45,7 @@ if [ -z "${TAG:-}" ]; then
     fi
 fi
 RELEASE_DIR="${RELEASE_DIR:-$SCRIPT_DIR/chromium/src/out/release}"
-MOVE_TAG="${MOVE_TAG:-0}"
+MOVE_TAG="${MOVE_TAG:-${MOVE:-0}}"
 
 if ! command -v gh >/dev/null 2>&1; then
     echo "GitHub CLI is required. Install gh or run: gh auth login" >&2
@@ -61,11 +61,51 @@ files_list=$(mktemp)
 trap 'rm -f "$files_list"' EXIT HUP INT TERM
 
 found=0
-for file in "$RELEASE_DIR/$VERSION"-*.apk "$RELEASE_DIR/$VERSION"-*.aab; do
-    if [ -f "$file" ]; then
-        printf '%s\n' "$file" >> "$files_list"
+add_release_file() {
+    candidate="$1"
+    [ -f "$candidate" ] || return 0
+    if ! grep -Fqx "$candidate" "$files_list" 2>/dev/null; then
+        printf '%s\n' "$candidate" >> "$files_list"
         found=1
     fi
+}
+
+# 1. Standard and branch-tagged artifacts for the current version
+for file in "$RELEASE_DIR/$VERSION"-*.apk "$RELEASE_DIR/$VERSION"-*.aab; do
+    add_release_file "$file"
+done
+
+# 2. Artifacts built from non-main git branches (local or remote origin)
+for branch_name in $(
+    git_repo for-each-ref --format='%(refname:short)' refs/heads/ refs/remotes/origin/ 2>/dev/null |
+        sed 's#^origin/##' |
+        sort -u
+); do
+    case "$branch_name" in
+        ""|main|HEAD|origin)
+            continue
+            ;;
+    esac
+    branch_tag=$(printf '%s' "$branch_name" | tr -c 'A-Za-z0-9._-' '-' | sed 's/^-*//; s/-*$//')
+    [ -n "$branch_tag" ] || continue
+    for file in \
+        "$RELEASE_DIR"/*-"$branch_tag"-*.apk \
+        "$RELEASE_DIR"/*-"$branch_tag"-*.aab \
+        "$RELEASE_DIR"/*"$branch_tag"*.apk \
+        "$RELEASE_DIR"/*"$branch_tag"*.aab; do
+        add_release_file "$file"
+    done
+done
+
+# 3. Any Lemur / Lemon related APK or AAB packages in RELEASE_DIR
+for file in "$RELEASE_DIR"/*.apk "$RELEASE_DIR"/*.aab; do
+    [ -f "$file" ] || continue
+    base_lower=$(basename "$file" | tr '[:upper:]' '[:lower:]')
+    case "$base_lower" in
+        *lemur*|*lemon*)
+            add_release_file "$file"
+            ;;
+    esac
 done
 
 if [ "$found" -ne 1 ]; then
