@@ -3,6 +3,10 @@ from pathlib import Path
 import sys
 
 
+MENU_BUTTON_REL = (
+    "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/menu_button/"
+    "MenuButton.java"
+)
 DELEGATE_INTERFACE_REL = (
     "chrome/browser/ui/android/appmenu/java/src/org/chromium/chrome/browser/ui/appmenu/"
     "AppMenuPropertiesDelegate.java"
@@ -33,6 +37,64 @@ EXT_MENU_MEDIATOR_REL = (
 )
 
 
+def patch_menu_button(src_dir: Path) -> None:
+    """Replaces the three-dot toolbar icon with Lemur's three-horizontal-lines icon (☰)."""
+    path = src_dir / MENU_BUTTON_REL
+    if not path.exists():
+        raise SystemExit(f"File not found: {path}")
+
+    text = path.read_text(encoding="utf-8")
+
+    inflate_anchor = """        mMenuImageButton = findViewById(R.id.menu_button);
+        mUpdateBadgeView = findViewById(R.id.menu_badge);
+        mOriginalBackground = getBackground();"""
+    inflate_replacement = """        mMenuImageButton = findViewById(R.id.menu_button);
+        mMenuImageButton.setImageDrawable(createHeliumThreeLinesMenuDrawable());
+        mUpdateBadgeView = findViewById(R.id.menu_badge);
+        mOriginalBackground = getBackground();"""
+    if "createHeliumThreeLinesMenuDrawable()" not in text:
+        if inflate_anchor not in text:
+            raise SystemExit(f"onFinishInflate anchor not found in {path}")
+        text = text.replace(inflate_anchor, inflate_replacement, 1)
+
+    helper_marker = "    private BitmapDrawable createHeliumThreeLinesMenuDrawable() {\n"
+    helper_anchor = "    void setOriginalBackgroundForTesting(Drawable background) {\n"
+    helper_method = """    private BitmapDrawable createHeliumThreeLinesMenuDrawable() {
+        float density = getResources().getDisplayMetrics().density;
+        int sizePx = Math.max(24, Math.round(24f * density));
+        android.graphics.Bitmap bitmap =
+                android.graphics.Bitmap.createBitmap(
+                        sizePx, sizePx, android.graphics.Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bitmap);
+        android.graphics.Paint paint =
+                new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+        paint.setColor(0xFFFFFFFF);
+        paint.setStyle(android.graphics.Paint.Style.STROKE);
+        paint.setStrokeWidth(2.0f * density);
+        paint.setStrokeCap(android.graphics.Paint.Cap.ROUND);
+        float xStart = 4.2f * density;
+        float xEnd = 19.8f * density;
+        canvas.drawLine(xStart, 6.5f * density, xEnd, 6.5f * density, paint);
+        canvas.drawLine(xStart, 12.0f * density, xEnd, 12.0f * density, paint);
+        canvas.drawLine(xStart, 17.5f * density, xEnd, 17.5f * density, paint);
+        return new BitmapDrawable(getResources(), bitmap);
+    }
+
+"""
+    if helper_marker in text:
+        start_idx = text.find(helper_marker)
+        end_idx = text.find(helper_anchor, start_idx)
+        if end_idx == -1:
+            raise SystemExit(f"setOriginalBackgroundForTesting anchor not found in {path}")
+        text = text[:start_idx] + helper_method + text[end_idx:]
+    else:
+        if helper_anchor not in text:
+            raise SystemExit(f"setOriginalBackgroundForTesting anchor not found in {path}")
+        text = text.replace(helper_anchor, helper_method + helper_anchor, 1)
+
+    path.write_text(text, encoding="utf-8")
+
+
 def patch_extensions_toolbar_coordinator(src_dir: Path) -> None:
     path = src_dir / EXT_TOOLBAR_COORD_REL
     if not path.exists():
@@ -53,17 +115,18 @@ def patch_extensions_toolbar_coordinator(src_dir: Path) -> None:
         "@Nullable android.view.View",
         "android.view.@Nullable View",
     )
-    if "default String[] getAllExtensionActionIds()" in text:
-        path.write_text(text, encoding="utf-8")
-        return
 
     anchor = (
         "    /** Returns the {@link ToolbarWidthConsumer} for the action list container. */\n"
         "    ToolbarWidthConsumer getActionListWidthConsumer();\n"
-        "}"
     )
     addition = """    /** Returns the {@link ToolbarWidthConsumer} for the action list container. */
     ToolbarWidthConsumer getActionListWidthConsumer();
+
+    /** Per-Activity opener for the Lemur-style extensions & common tools bottom sheet. */
+    java.util.Map<android.app.Activity, org.chromium.base.Callback<android.view.@Nullable View>>
+            CUSTOM_EXTENSIONS_MENU_OPENERS =
+                    java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
 
     /** Returns all enabled extension action IDs (pinned first, then unpinned). */
     default String[] getAllExtensionActionIds() {
@@ -96,7 +159,9 @@ def patch_extensions_toolbar_coordinator(src_dir: Path) -> None:
     if anchor not in text:
         raise SystemExit(f"getActionListWidthConsumer anchor not found in {path}")
 
-    path.write_text(text.replace(anchor, addition, 1), encoding="utf-8")
+    start_idx = text.find(anchor)
+    text = text[:start_idx] + addition + "\n"
+    path.write_text(text, encoding="utf-8")
 
 
 def patch_extensions_toolbar_coordinator_impl(src_dir: Path) -> None:
@@ -119,6 +184,58 @@ def patch_extensions_toolbar_coordinator_impl(src_dir: Path) -> None:
         "@Nullable android.view.View",
         "android.view.@Nullable View",
     )
+
+    # Always keep the 4-small-squares extensions button visible on phone/tablet toolbars
+    old_should_show = """    private boolean shouldShowMenuIcon() {
+        return mExtensionsMenuCoordinator.isExtensionsMenuOpen()
+                || mShowExtensionsMenuPending
+                || (mCanShowMenuIcon && isMenuButtonPinned());
+    }"""
+    new_should_show = """    private boolean shouldShowMenuIcon() {
+        return !mIsWebApp && mCanShowMenuIcon;
+    }"""
+    if old_should_show in text:
+        text = text.replace(old_should_show, new_should_show, 1)
+
+    old_show_ext_menu = """    @Override
+    public void showExtensionsMenu() {
+        mShowExtensionsMenuPending = true;
+        updateMenuIconVisibility();
+
+        ListMenuButton extensionsMenuButton = mContainer.findViewById(R.id.extensions_menu_button);
+        assert extensionsMenuButton != null;
+
+        // Post to click after the layout pass.
+        extensionsMenuButton.post(
+                () -> {
+                    extensionsMenuButton.performClick();
+                });
+    }"""
+    new_show_ext_menu = """    @Override
+    public void showExtensionsMenu() {
+        Activity activity = mWindowAndroid.getActivity().get();
+        org.chromium.base.Callback<@Nullable View> customOpener =
+                activity != null ? CUSTOM_EXTENSIONS_MENU_OPENERS.get(activity) : null;
+        if (customOpener != null) {
+            View btn = mContainer != null ? mContainer.findViewById(R.id.extensions_menu_button) : null;
+            customOpener.onResult(btn);
+            return;
+        }
+        mShowExtensionsMenuPending = true;
+        updateMenuIconVisibility();
+
+        ListMenuButton extensionsMenuButton = mContainer.findViewById(R.id.extensions_menu_button);
+        assert extensionsMenuButton != null;
+
+        // Post to click after the layout pass.
+        extensionsMenuButton.post(
+                () -> {
+                    extensionsMenuButton.performClick();
+                });
+    }"""
+    if old_show_ext_menu in text:
+        text = text.replace(old_show_ext_menu, new_show_ext_menu, 1)
+
     if "public String[] getAllExtensionActionIds()" in text:
         path.write_text(text, encoding="utf-8")
         return
@@ -242,14 +359,17 @@ def patch_extensions_menu_coordinator(src_dir: Path) -> None:
             1,
         )
 
-    # Ensure clicking the toolbar puzzle button still opens the menu if mMediator was created
-    # silently in the background for an AppMenu action.
-    old_toggle_check = """                    if (mMediator != null) {
+    # Set 4-small-squares icon on mExtensionsMenuButton and open Lemur Extensions sheet on click
+    old_click_v1 = """        mExtensionsMenuButton.setOnClickListener(
+                (view) -> {
+                    if (mMediator != null) {
                         mExtensionsMenuButton.dismiss();
                         destroyMediator();
                         return;
                     }"""
-    new_toggle_check = """                    if (mMediator != null) {
+    old_click_v2 = """        mExtensionsMenuButton.setOnClickListener(
+                (view) -> {
+                    if (mMediator != null) {
                         boolean wasOpen = mIsMenuOpen;
                         mExtensionsMenuButton.dismiss();
                         destroyMediator();
@@ -257,8 +377,50 @@ def patch_extensions_menu_coordinator(src_dir: Path) -> None:
                             return;
                         }
                     }"""
-    if old_toggle_check in text:
-        text = text.replace(old_toggle_check, new_toggle_check, 1)
+    old_click_vanilla = """        mExtensionsMenuButton.setOnClickListener(
+                (view) -> {"""
+    new_click_block = """        mExtensionsMenuButton.setImageDrawable(createHeliumFourSquaresDrawable());
+        mExtensionsMenuButton.setOnClickListener(
+                (view) -> {
+                    Activity activity = mWindowAndroid.getActivity().get();
+                    Callback<@Nullable View> customOpener =
+                            activity != null
+                                    ? ExtensionsToolbarCoordinator.CUSTOM_EXTENSIONS_MENU_OPENERS
+                                            .get(activity)
+                                    : null;
+                    if (customOpener != null) {
+                        customOpener.onResult(mExtensionsMenuButton);
+                        return;
+                    }
+                    if (mMediator != null) {
+                        boolean wasOpen = mIsMenuOpen;
+                        mExtensionsMenuButton.dismiss();
+                        destroyMediator();
+                        if (wasOpen) {
+                            return;
+                        }
+                    }"""
+    if "createHeliumFourSquaresDrawable()" not in text:
+        if old_click_v2 in text:
+            text = text.replace(old_click_v2, new_click_block, 1)
+        elif old_click_v1 in text:
+            text = text.replace(old_click_v1, new_click_block, 1)
+        elif old_click_vanilla in text:
+            text = text.replace(old_click_vanilla, new_click_block, 1)
+        else:
+            raise SystemExit(f"mExtensionsMenuButton.setOnClickListener anchor not found in {path}")
+
+    # Keep the 4-small-squares icon in updateButtonState instead of overwriting with puzzle icon
+    old_update_icon = """        if (state.getIcon() != null) {
+            mExtensionsMenuButton.setImageBitmap(state.getIcon());
+        } else {
+            // Fallback just in case.
+            int iconResId = R.drawable.chrome_extension;
+            mExtensionsMenuButton.setImageResource(iconResId);
+        }"""
+    new_update_icon = """        mExtensionsMenuButton.setImageDrawable(createHeliumFourSquaresDrawable());"""
+    if old_update_icon in text:
+        text = text.replace(old_update_icon, new_update_icon, 1)
 
     old_on_ready = """                        /* onReady= */ () -> {
                             mExtensionsMenuButton.showMenu();
@@ -306,6 +468,33 @@ def patch_extensions_menu_coordinator(src_dir: Path) -> None:
         }
     }
 
+    private android.graphics.drawable.BitmapDrawable createHeliumFourSquaresDrawable() {
+        float density = mContext.getResources().getDisplayMetrics().density;
+        int sizePx = Math.max(24, Math.round(24f * density));
+        android.graphics.Bitmap bitmap =
+                android.graphics.Bitmap.createBitmap(
+                        sizePx, sizePx, android.graphics.Bitmap.Config.ARGB_8888);
+        android.graphics.Canvas canvas = new android.graphics.Canvas(bitmap);
+        android.graphics.Paint paint =
+                new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+        paint.setColor(0xFFFFFFFF);
+        paint.setStyle(android.graphics.Paint.Style.STROKE);
+        paint.setStrokeWidth(1.9f * density);
+        paint.setStrokeJoin(android.graphics.Paint.Join.ROUND);
+        paint.setStrokeCap(android.graphics.Paint.Cap.ROUND);
+        float r = 2.0f * density;
+        android.graphics.RectF rect = new android.graphics.RectF();
+        rect.set(4.0f * density, 4.0f * density, 10.6f * density, 10.6f * density);
+        canvas.drawRoundRect(rect, r, r, paint);
+        rect.set(13.4f * density, 4.0f * density, 20.0f * density, 10.6f * density);
+        canvas.drawRoundRect(rect, r, r, paint);
+        rect.set(4.0f * density, 13.4f * density, 10.6f * density, 20.0f * density);
+        canvas.drawRoundRect(rect, r, r, paint);
+        rect.set(13.4f * density, 13.4f * density, 20.0f * density, 20.0f * density);
+        canvas.drawRoundRect(rect, r, r, paint);
+        return new android.graphics.drawable.BitmapDrawable(mContext.getResources(), bitmap);
+    }
+
     private @Nullable View resolveAppMenuPopupAnchor(@Nullable View fallbackAnchorView) {
         if (mExtensionsMenuButton != null && mExtensionsMenuButton.isShown()) {
             return mExtensionsMenuButton;
@@ -350,7 +539,13 @@ def patch_extensions_menu_coordinator(src_dir: Path) -> None:
     }
 
 """
-    if helper_marker not in text:
+    if helper_marker in text:
+        start_idx = text.find(helper_marker)
+        end_idx = text.find(helper_anchor, start_idx)
+        if end_idx == -1:
+            raise SystemExit(f"getContentView anchor not found after helper_marker in {path}")
+        text = text[:start_idx] + helper_methods + text[end_idx:]
+    else:
         if helper_anchor not in text:
             raise SystemExit(f"getContentView anchor not found in {path}")
         text = text.replace(helper_anchor, helper_methods + helper_anchor, 1)
@@ -372,7 +567,6 @@ def patch_extensions_menu_mediator(src_dir: Path) -> None:
             raise SystemExit(f"mPendingActionAnchorView anchor not found in {path}")
         text = text.replace(field_anchor, field_anchor + field_marker, 1)
 
-    # Make onContextMenuButtonClicked use getCurrentWebContents() when available so incognito tabs work
     old_ctx_click = """    private void onContextMenuButtonClicked(ListMenuButton buttonView, String actionId) {
         Tab currentTab = mCurrentTabSupplier.get();
         if (currentTab == null) {
@@ -395,7 +589,6 @@ def patch_extensions_menu_mediator(src_dir: Path) -> None:
     if old_ctx_click in text:
         text = text.replace(old_ctx_click, new_ctx_click, 1)
 
-    # Allow findContextMenuButtonForPendingAction to fall back to mPendingFallbackContextMenuButton
     old_find_ctx = """    private @Nullable ListMenuButton findContextMenuButtonForPendingAction() {
         View current = mPendingActionAnchorView;
         while (current != null) {
@@ -663,8 +856,13 @@ TABBED_IMPORTS = [
     "import android.content.res.ColorStateList;\n",
     "import android.content.res.Configuration;\n",
     "import android.graphics.Bitmap;\n",
+    "import android.graphics.Canvas;\n",
     "import android.graphics.Color;\n",
+    "import android.graphics.Paint;\n",
+    "import android.graphics.Path;\n",
+    "import android.graphics.RectF;\n",
     "import android.graphics.Typeface;\n",
+    "import android.graphics.drawable.BitmapDrawable;\n",
     "import android.graphics.drawable.ColorDrawable;\n",
     "import android.graphics.drawable.GradientDrawable;\n",
     "import android.graphics.drawable.RippleDrawable;\n",
@@ -686,19 +884,61 @@ TABBED_IMPORTS = [
     "import org.chromium.chrome.browser.night_mode.WebContentsDarkModeController;\n",
     "import org.chromium.chrome.browser.preferences.ChromePreferenceKeys;\n",
     "import org.chromium.chrome.browser.preferences.ChromeSharedPreferences;\n",
+    "import org.chromium.chrome.browser.settings.SettingsNavigationFactory;\n",
+    "import org.chromium.chrome.browser.tab.TabLaunchType;\n",
     "import org.chromium.chrome.browser.toolbar.ToolbarPositionController.ToolbarPositionAndSource;\n",
     "import org.chromium.chrome.browser.toolbar.extensions.ExtensionsToolbarCoordinator;\n",
     "import org.chromium.chrome.browser.toolbar.settings.AddressBarPreference;\n",
+    "import org.chromium.components.browser_ui.accessibility.PageZoomUtils;\n",
+    "import org.chromium.components.browser_ui.settings.SettingsNavigation;\n",
+    "import org.chromium.content_public.browser.LoadUrlParams;\n",
     "import org.chromium.content_public.browser.WebContents;\n",
+    "import org.chromium.ui.base.PageTransition;\n",
 ]
 
 LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup menu panel.
     private @Nullable Dialog mCustomAppMenuDialog;
+    private @Nullable Dialog mCustomExtensionsDialog;
     private boolean mSuppressCustomDismissCallback;
+
+    private static final int ICON_SETTINGS_HEX = 1;
+    private static final int ICON_BOOKMARKS_RIBBON = 2;
+    private static final int ICON_HISTORY_CLOCK = 3;
+    private static final int ICON_DOWNLOAD_TRAY = 4;
+    private static final int ICON_REFRESH = 5;
+    private static final int ICON_DESKTOP_MONITOR = 6;
+    private static final int ICON_BOOKMARK_STAR = 7;
+    private static final int ICON_SHARE_UP = 8;
+    private static final int ICON_THEME_SUN = 9;
+    private static final int ICON_THEME_MOON = 10;
+    private static final int ICON_INCOGNITO_GLASSES = 11;
+    private static final int ICON_POWER_EXIT = 12;
+    private static final int ICON_PUZZLE_EXT = 13;
+    private static final int ICON_FIND_DOC = 14;
+    private static final int ICON_TRANSLATE = 15;
+    private static final int ICON_ADD_HOME = 16;
+    private static final int ICON_WINDOW_MGR = 17;
+    private static final int ICON_VIDEO_ENHANCE = 18;
+    private static final int ICON_ZOOM_PLUS = 19;
+    private static final int ICON_DEVTOOLS_CODE = 20;
+    private static final int ICON_CHEVRON_UP = 21;
+    private static final int ICON_CHEVRON_DOWN = 22;
+
+    private void registerLemurExtensionsMenuOpener() {
+        Activity activity = ContextUtils.activityFromContext(mContext);
+        if (activity == null && mContext instanceof Activity) {
+            activity = (Activity) mContext;
+        }
+        if (activity != null) {
+            ExtensionsToolbarCoordinator.CUSTOM_EXTENSIONS_MENU_OPENERS.put(
+                    activity, this::showCustomExtensionsMenu);
+        }
+    }
 
     @Override
     public boolean isCustomAppMenuShowing() {
-        return mCustomAppMenuDialog != null && mCustomAppMenuDialog.isShowing();
+        return (mCustomAppMenuDialog != null && mCustomAppMenuDialog.isShowing())
+                || (mCustomExtensionsDialog != null && mCustomExtensionsDialog.isShowing());
     }
 
     @Override
@@ -706,6 +946,13 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
         if (mCustomAppMenuDialog != null) {
             Dialog dialog = mCustomAppMenuDialog;
             mCustomAppMenuDialog = null;
+            if (dialog.isShowing()) {
+                dialog.dismiss();
+            }
+        }
+        if (mCustomExtensionsDialog != null) {
+            Dialog dialog = mCustomExtensionsDialog;
+            mCustomExtensionsDialog = null;
             if (dialog.isShowing()) {
                 dialog.dismiss();
             }
@@ -720,6 +967,7 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
             boolean isFromBottomBar,
             Runnable showNativeMenuRunnable,
             Runnable onDismissRunnable) {
+        registerLemurExtensionsMenuOpener();
         if (getMenuGroup() != MenuGroup.PAGE_MENU) {
             return false;
         }
@@ -730,43 +978,32 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
         if (activity == null || activity.isFinishing() || activity.isDestroyed()) {
             return false;
         }
-        final @Nullable View popupAnchorView = anchorView != null ? anchorView : mDecorView;
+        final Activity hostActivity = activity;
 
         hideCustomAppMenu();
 
         final boolean isIncognito = isIncognitoShowing();
-        final boolean isNight =
-                isIncognito
-                        || ((mContext.getResources().getConfiguration().uiMode
-                                        & Configuration.UI_MODE_NIGHT_MASK)
-                                == Configuration.UI_MODE_NIGHT_YES);
+        final int savedTheme =
+                ChromeSharedPreferences.getInstance()
+                        .readInt(
+                                ChromePreferenceKeys.UI_THEME_SETTING,
+                                ThemeType.SYSTEM_DEFAULT);
+        final boolean isSystemNight =
+                (mContext.getResources().getConfiguration().uiMode
+                                & Configuration.UI_MODE_NIGHT_MASK)
+                        == Configuration.UI_MODE_NIGHT_YES;
+        final boolean isDarkThemeActive =
+                savedTheme == ThemeType.DARK
+                        || (savedTheme == ThemeType.SYSTEM_DEFAULT && isSystemNight);
+        final boolean isNight = isIncognito || isDarkThemeActive;
 
-        final int panelBgColor =
-                isIncognito
-                        ? 0xFF202124
-                        : (isNight ? 0xFF1E1F23 : 0xFFF4F6FB);
-        final int surfaceColor =
-                isIncognito
-                        ? 0xFF2D2E33
-                        : (isNight ? 0xFF2A2C32 : 0xFFFFFFFF);
-        final int extSectionBgColor =
-                isIncognito
-                        ? 0xFF27282D
-                        : (isNight ? 0xFF25272D : 0xFFEAF0FA);
-        final int activeSurfaceColor =
-                isNight ? 0x388AB4F8 : 0x1F1A73E8;
-        final int textPrimaryColor =
-                isNight ? 0xFFE8EAED : 0xFF1F1F1F;
-        final int textSecondaryColor =
-                isNight ? 0xFF9AA0A6 : 0xFF5F6368;
-        final int accentColor =
-                isNight ? 0xFF8AB4F8 : 0xFF1A73E8;
-        final int dividerColor =
-                isNight ? 0x22FFFFFF : 0x16000000;
-        final int rippleColor =
-                isNight ? 0x33FFFFFF : 0x1F000000;
+        final int sheetBgColor = isNight ? 0xFF222327 : 0xFFF7F8FA;
+        final int textPrimaryColor = isNight ? 0xFFF1F3F4 : 0xFF1F1F1F;
+        final int textSecondaryColor = isNight ? 0xFF9AA0A6 : 0xFF5F6368;
+        final int accentColor = isNight ? 0xFF8AB4F8 : 0xFF1A73E8;
+        final int rippleColor = isNight ? 0x26FFFFFF : 0x18000000;
 
-        final Dialog dialog = new Dialog(activity);
+        final Dialog dialog = new Dialog(hostActivity);
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
         dialog.setCanceledOnTouchOutside(true);
         mCustomAppMenuDialog = dialog;
@@ -785,49 +1022,61 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
         FrameLayout outerHost = new FrameLayout(mContext);
         outerHost.setClickable(true);
         outerHost.setOnClickListener(v -> dialog.dismiss());
-        int outerPadH = dpToPx(10);
-        int outerPadBottom = dpToPx(10);
-        int outerPadTop = dpToPx(24);
-        outerHost.setPadding(outerPadH, outerPadTop, outerPadH, outerPadBottom);
 
-        LinearLayout card = new LinearLayout(mContext);
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setClickable(true);
-        GradientDrawable cardBg = new GradientDrawable();
-        cardBg.setShape(GradientDrawable.RECTANGLE);
-        cardBg.setCornerRadius(dpToPx(24));
-        cardBg.setColor(panelBgColor);
-        cardBg.setStroke(dpToPx(1), dividerColor);
-        card.setBackground(cardBg);
-        card.setElevation(dpToPx(12));
-        int cardPadH = dpToPx(14);
-        card.setPadding(cardPadH, dpToPx(10), cardPadH, dpToPx(12));
+        LinearLayout sheet = new LinearLayout(mContext);
+        sheet.setOrientation(LinearLayout.VERTICAL);
+        sheet.setClickable(true);
+        GradientDrawable sheetBg = new GradientDrawable();
+        sheetBg.setShape(GradientDrawable.RECTANGLE);
+        float topRadius = dpToPx(26);
+        sheetBg.setCornerRadii(
+                new float[] {
+                    topRadius, topRadius, topRadius, topRadius, 0f, 0f, 0f, 0f
+                });
+        sheetBg.setColor(sheetBgColor);
+        sheet.setBackground(sheetBg);
+        sheet.setElevation(dpToPx(16));
+        sheet.setPadding(dpToPx(10), dpToPx(16), dpToPx(10), dpToPx(24));
 
         int screenWidthPx = mContext.getResources().getDisplayMetrics().widthPixels;
-        int maxCardWidthPx = dpToPx(480);
-        int cardWidth =
-                screenWidthPx - outerPadH * 2 > maxCardWidthPx
-                        ? maxCardWidthPx
+        int maxSheetWidthPx = dpToPx(520);
+        int sheetWidth =
+                screenWidthPx > maxSheetWidthPx
+                        ? maxSheetWidthPx
                         : ViewGroup.LayoutParams.MATCH_PARENT;
-        FrameLayout.LayoutParams cardLp =
+        FrameLayout.LayoutParams sheetLp =
                 new FrameLayout.LayoutParams(
-                        cardWidth,
+                        sheetWidth,
                         ViewGroup.LayoutParams.WRAP_CONTENT,
                         Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
-        outerHost.addView(card, cardLp);
+        outerHost.addView(sheet, sheetLp);
 
-        // 1. Top drag handle indicator
-        View handleView = new View(mContext);
-        GradientDrawable handleBg = new GradientDrawable();
-        handleBg.setShape(GradientDrawable.RECTANGLE);
-        handleBg.setCornerRadius(dpToPx(2));
-        handleBg.setColor(isNight ? 0x44FFFFFF : 0x33000000);
-        handleView.setBackground(handleBg);
-        LinearLayout.LayoutParams handleLp =
-                new LinearLayout.LayoutParams(dpToPx(36), dpToPx(4));
-        handleLp.gravity = Gravity.CENTER_HORIZONTAL;
-        handleLp.bottomMargin = dpToPx(10);
-        card.addView(handleView, handleLp);
+        // Top row: Settings hexagon icon on the right (matches Screenshot 2)
+        LinearLayout topRow = new LinearLayout(mContext);
+        topRow.setOrientation(LinearLayout.HORIZONTAL);
+        topRow.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+        topRow.setPadding(dpToPx(12), 0, dpToPx(14), dpToPx(8));
+
+        FrameLayout settingsBtn = new FrameLayout(mContext);
+        settingsBtn.setContentDescription(mContext.getString(R.string.menu_settings));
+        GradientDrawable settingsRippleMask = new GradientDrawable();
+        settingsRippleMask.setShape(GradientDrawable.OVAL);
+        settingsRippleMask.setColor(Color.WHITE);
+        settingsBtn.setBackground(
+                new RippleDrawable(
+                        ColorStateList.valueOf(rippleColor), null, settingsRippleMask));
+        ImageView settingsIcon = new ImageView(mContext);
+        settingsIcon.setImageDrawable(
+                createLemurVectorIcon(ICON_SETTINGS_HEX, textPrimaryColor, 24));
+        settingsBtn.addView(
+                settingsIcon,
+                new FrameLayout.LayoutParams(dpToPx(24), dpToPx(24), Gravity.CENTER));
+        settingsBtn.setOnClickListener(v -> triggerMenuAction(dialog, R.id.preferences_id));
+        topRow.addView(settingsBtn, new LinearLayout.LayoutParams(dpToPx(40), dpToPx(40)));
+        sheet.addView(
+                topRow,
+                new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         Tab currentTab = mActivityTabProvider.get();
         if (currentTab == null && mTabModelSelector != null) {
@@ -841,127 +1090,334 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
                         || (currentTab != null && currentTab.isNativePage());
         final boolean hasWebContents =
                 currentTab != null && !isNativePage && currentWebContents != null;
-        Profile profile = getProfileFromTabModel();
 
-        // 2. Quick settings pills row (Theme cycle, Dark web toggle, Toolbar position toggle)
-        LinearLayout quickBar = new LinearLayout(mContext);
-        quickBar.setOrientation(LinearLayout.HORIZONTAL);
-        quickBar.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout.LayoutParams quickBarLp =
+        boolean isBookmarked = currentTab != null && shouldCheckBookmarkStar(currentTab);
+        boolean isDesktopSite =
+                hasWebContents
+                        && assumeNonNull(currentTab.getWebContents())
+                                .getNavigationController()
+                                .getUseDesktopUserAgent();
+        boolean canShare = ShareUtils.shouldEnableShare(currentTab);
+
+        // Main menu grid (5 columns x 2 rows matching Screenshot 2)
+        GridLayout grid = new GridLayout(mContext);
+        grid.setColumnCount(5);
+        grid.setUseDefaultMargins(false);
+        sheet.addView(
+                grid,
                 new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        quickBarLp.bottomMargin = dpToPx(10);
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        int currentTheme =
-                ChromeSharedPreferences.getInstance()
-                        .readInt(
-                                ChromePreferenceKeys.UI_THEME_SETTING,
-                                ThemeType.SYSTEM_DEFAULT);
-        CharSequence themeLabel =
-                NightModeUtils.getThemeSettingTitle(mContext, currentTheme);
-        boolean isThemeCustom = currentTheme != ThemeType.SYSTEM_DEFAULT;
-        View themePill =
-                buildQuickSettingPill(
-                        R.drawable.ic_brightness_medium_24dp,
-                        mContext.getString(R.string.appearance_settings) + ": " + themeLabel,
-                        isThemeCustom,
-                        true,
-                        surfaceColor,
-                        activeSurfaceColor,
-                        textPrimaryColor,
-                        accentColor,
-                        rippleColor,
-                        v -> {
-                            int nextTheme;
-                            if (currentTheme == ThemeType.SYSTEM_DEFAULT) {
-                                nextTheme = ThemeType.DARK;
-                            } else if (currentTheme == ThemeType.DARK) {
-                                nextTheme = ThemeType.LIGHT;
-                            } else {
-                                nextTheme = ThemeType.SYSTEM_DEFAULT;
-                            }
-                            int actionId =
-                                    nextTheme == ThemeType.DARK
-                                            ? R.id.appearance_dark_menu_id
-                                            : (nextTheme == ThemeType.LIGHT
-                                                    ? R.id.appearance_light_menu_id
-                                                    : R.id.appearance_system_default_menu_id);
-                            triggerMenuAction(dialog, actionId);
-                        });
-        LinearLayout.LayoutParams pillLp1 =
-                new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.15f);
-        pillLp1.setMarginEnd(dpToPx(6));
-        quickBar.addView(themePill, pillLp1);
+        // Row 1: 书签 | 历史记录 | 下载 | 刷新 | 桌面模式
+        addLemurMainMenuTile(
+                grid,
+                ICON_BOOKMARKS_RIBBON,
+                "书签",
+                true,
+                false,
+                textPrimaryColor,
+                textSecondaryColor,
+                accentColor,
+                rippleColor,
+                v -> triggerMenuAction(dialog, R.id.all_bookmarks_menu_id));
+        addLemurMainMenuTile(
+                grid,
+                ICON_HISTORY_CLOCK,
+                "历史记录",
+                !isIncognito,
+                false,
+                textPrimaryColor,
+                textSecondaryColor,
+                accentColor,
+                rippleColor,
+                v -> triggerMenuAction(dialog, R.id.open_history_menu_id));
+        addLemurMainMenuTile(
+                grid,
+                ICON_DOWNLOAD_TRAY,
+                "下载",
+                true,
+                false,
+                textPrimaryColor,
+                textSecondaryColor,
+                accentColor,
+                rippleColor,
+                v -> triggerMenuAction(dialog, R.id.downloads_menu_id));
+        addLemurMainMenuTile(
+                grid,
+                ICON_REFRESH,
+                "刷新",
+                currentTab != null,
+                false,
+                textPrimaryColor,
+                textSecondaryColor,
+                accentColor,
+                rippleColor,
+                v -> triggerMenuAction(dialog, R.id.reload_menu_id));
+        addLemurMainMenuTile(
+                grid,
+                ICON_DESKTOP_MONITOR,
+                "桌面模式",
+                hasWebContents,
+                isDesktopSite,
+                textPrimaryColor,
+                textSecondaryColor,
+                accentColor,
+                rippleColor,
+                v -> triggerMenuAction(dialog, R.id.request_desktop_site_id));
 
-        boolean autoDarkEnabled =
-                currentTab != null
-                        && !isNativePage
-                        && profile != null
-                        && WebContentsDarkModeController.isEnabledForUrl(
-                                profile, currentTab.getUrl());
-        boolean canToggleAutoDark = currentTab != null && !isNativePage && profile != null;
-        View autoDarkPill =
-                buildQuickSettingPill(
-                        R.drawable.ic_brightness_medium_24dp,
-                        mContext.getString(R.string.menu_auto_dark_web_contents),
-                        autoDarkEnabled,
-                        canToggleAutoDark,
-                        surfaceColor,
-                        activeSurfaceColor,
-                        textPrimaryColor,
-                        accentColor,
-                        rippleColor,
-                        v -> triggerMenuAction(dialog, R.id.auto_dark_web_contents_id));
-        LinearLayout.LayoutParams pillLp2 =
-                new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
-        pillLp2.setMarginEnd(dpToPx(6));
-        quickBar.addView(autoDarkPill, pillLp2);
+        // Row 2: 添加书签 | 分享 | 浅色模式/深色模式 | 无痕模式 | 退出
+        addLemurMainMenuTile(
+                grid,
+                ICON_BOOKMARK_STAR,
+                isBookmarked ? "编辑书签" : "添加书签",
+                currentTab != null,
+                isBookmarked,
+                textPrimaryColor,
+                textSecondaryColor,
+                accentColor,
+                rippleColor,
+                v -> triggerMenuAction(dialog, R.id.bookmark_this_page_id));
+        addLemurMainMenuTile(
+                grid,
+                ICON_SHARE_UP,
+                "分享",
+                canShare,
+                false,
+                textPrimaryColor,
+                textSecondaryColor,
+                accentColor,
+                rippleColor,
+                v -> triggerMenuAction(dialog, R.id.share_menu_id));
 
-        boolean isToolbarTop = AddressBarPreference.isToolbarConfiguredToShowOnTop();
-        String toolbarPosText = isToolbarTop ? "地址栏: 顶部" : "地址栏: 底部";
-        View toolbarPosPill =
-                buildQuickSettingPill(
-                        R.drawable.ic_settings_tune_24dp,
-                        toolbarPosText,
-                        !isToolbarTop,
-                        true,
-                        surfaceColor,
-                        activeSurfaceColor,
-                        textPrimaryColor,
-                        accentColor,
-                        rippleColor,
-                        v -> {
-                            dialog.dismiss();
-                            AddressBarPreference.setToolbarPositionAndSource(
-                                    isToolbarTop
-                                            ? ToolbarPositionAndSource.BOTTOM_SETTINGS
-                                            : ToolbarPositionAndSource.TOP_SETTINGS);
-                        });
-        LinearLayout.LayoutParams pillLp3 =
-                new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 0.95f);
-        quickBar.addView(toolbarPosPill, pillLp3);
+        // Theme toggle: shows "浅色模式" when currently in dark mode (switches to Light),
+        // and "深色模式" when currently in light mode (switches to Dark).
+        final String themeToggleTitle = isDarkThemeActive ? "浅色模式" : "深色模式";
+        final int themeToggleIcon = isDarkThemeActive ? ICON_THEME_SUN : ICON_THEME_MOON;
+        addLemurMainMenuTile(
+                grid,
+                themeToggleIcon,
+                themeToggleTitle,
+                true,
+                false,
+                textPrimaryColor,
+                textSecondaryColor,
+                accentColor,
+                rippleColor,
+                v -> {
+                    int targetTheme = isDarkThemeActive ? ThemeType.LIGHT : ThemeType.DARK;
+                    int menuId =
+                            isDarkThemeActive
+                                    ? R.id.appearance_light_menu_id
+                                    : R.id.appearance_dark_menu_id;
+                    ChromeSharedPreferences.getInstance()
+                            .writeInt(ChromePreferenceKeys.UI_THEME_SETTING, targetTheme);
+                    triggerMenuAction(dialog, menuId);
+                });
 
-        card.addView(quickBar, quickBarLp);
+        addLemurMainMenuTile(
+                grid,
+                ICON_INCOGNITO_GLASSES,
+                "无痕模式",
+                isIncognitoEnabled() && !isIncognitoReauthShowing(),
+                isIncognito,
+                textPrimaryColor,
+                textSecondaryColor,
+                accentColor,
+                rippleColor,
+                v -> triggerMenuAction(dialog, R.id.new_incognito_tab_menu_id));
+        addLemurMainMenuTile(
+                grid,
+                ICON_POWER_EXIT,
+                "退出",
+                true,
+                false,
+                textPrimaryColor,
+                textSecondaryColor,
+                accentColor,
+                rippleColor,
+                v -> {
+                    if (dialog.isShowing()) {
+                        dialog.dismiss();
+                    }
+                    hostActivity.finishAndRemoveTask();
+                });
 
-        // 3. Scrollable middle section: Inline Extensions Window + 4-column Browser Tools Grid
+        dialog.setContentView(
+                outerHost,
+                new ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT));
+
+        Window window = dialog.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            window.setLayout(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT);
+            window.setGravity(Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+            WindowManager.LayoutParams wlp = window.getAttributes();
+            wlp.dimAmount = 0.45f;
+            window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+            window.setAttributes(wlp);
+        }
+
+        dialog.show();
+        return true;
+    }
+
+    /**
+     * Shows the Lemur-style Extensions, Common Tools & Extension Stores bottom sheet
+     * when the 4-small-squares toolbar icon (⊞) is clicked (matches Screenshot 1).
+     */
+    public void showCustomExtensionsMenu(@Nullable View anchorView) {
+        Activity activity = ContextUtils.activityFromContext(mContext);
+        if (activity == null && mContext instanceof Activity) {
+            activity = (Activity) mContext;
+        }
+        if (activity == null || activity.isFinishing() || activity.isDestroyed()) {
+            return;
+        }
+        if (mCustomExtensionsDialog != null && mCustomExtensionsDialog.isShowing()) {
+            mCustomExtensionsDialog.dismiss();
+            return;
+        }
+        hideCustomAppMenu();
+
+        final @Nullable View popupAnchorView = anchorView != null ? anchorView : mDecorView;
+        final boolean isIncognito = isIncognitoShowing();
+        final boolean isNight =
+                isIncognito
+                        || ((mContext.getResources().getConfiguration().uiMode
+                                        & Configuration.UI_MODE_NIGHT_MASK)
+                                == Configuration.UI_MODE_NIGHT_YES);
+
+        final int sheetBgColor = isNight ? 0xFF25262B : 0xFFF4F6FA;
+        final int tileSurfaceColor = isNight ? 0xFF3A3B40 : 0xFFFFFFFF;
+        final int activeSurfaceColor = isNight ? 0xFF2E4978 : 0xFFD2E3FC;
+        final int textPrimaryColor = isNight ? 0xFFF1F3F4 : 0xFF1F1F1F;
+        final int textSecondaryColor = isNight ? 0xFF9AA0A6 : 0xFF5F6368;
+        final int accentColor = isNight ? 0xFF8AB4F8 : 0xFF1A73E8;
+        final int rippleColor = isNight ? 0x28FFFFFF : 0x1A000000;
+
+        final Dialog dialog = new Dialog(activity);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        dialog.setCanceledOnTouchOutside(true);
+        mCustomExtensionsDialog = dialog;
+        dialog.setOnDismissListener(
+                d -> {
+                    if (mCustomExtensionsDialog == d) {
+                        mCustomExtensionsDialog = null;
+                    }
+                });
+
+        FrameLayout outerHost = new FrameLayout(mContext);
+        outerHost.setClickable(true);
+        outerHost.setOnClickListener(v -> dialog.dismiss());
+
+        LinearLayout sheet = new LinearLayout(mContext);
+        sheet.setOrientation(LinearLayout.VERTICAL);
+        sheet.setClickable(true);
+        GradientDrawable sheetBg = new GradientDrawable();
+        sheetBg.setShape(GradientDrawable.RECTANGLE);
+        float topRadius = dpToPx(26);
+        sheetBg.setCornerRadii(
+                new float[] {
+                    topRadius, topRadius, topRadius, topRadius, 0f, 0f, 0f, 0f
+                });
+        sheetBg.setColor(sheetBgColor);
+        sheet.setBackground(sheetBg);
+        sheet.setElevation(dpToPx(16));
+        sheet.setPadding(dpToPx(16), dpToPx(20), dpToPx(16), dpToPx(22));
+
+        int screenWidthPx = mContext.getResources().getDisplayMetrics().widthPixels;
+        int maxSheetWidthPx = dpToPx(520);
+        int sheetWidth =
+                screenWidthPx > maxSheetWidthPx
+                        ? maxSheetWidthPx
+                        : ViewGroup.LayoutParams.MATCH_PARENT;
+        FrameLayout.LayoutParams sheetLp =
+                new FrameLayout.LayoutParams(
+                        sheetWidth,
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                        Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        outerHost.addView(sheet, sheetLp);
+
         ScrollView scrollView = new ScrollView(mContext);
         scrollView.setVerticalScrollBarEnabled(false);
         scrollView.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
-        int maxGridHeight =
-                (int) (mContext.getResources().getDisplayMetrics().heightPixels * 0.58f);
-        LinearLayout.LayoutParams scrollLp =
+        final int maxScrollHeight =
+                (int) (mContext.getResources().getDisplayMetrics().heightPixels * 0.78f);
+        sheet.addView(
+                scrollView,
                 new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        card.addView(scrollView, scrollLp);
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        LinearLayout middleContainer = new LinearLayout(mContext);
-        middleContainer.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout contentCol = new LinearLayout(mContext);
+        contentCol.setOrientation(LinearLayout.VERTICAL);
         scrollView.addView(
-                middleContainer,
+                contentCol,
                 new FrameLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        // 3A. Inline Extensions Panel (moves the address bar's extensions window into the middle area)
+        Tab currentTab = mActivityTabProvider.get();
+        if (currentTab == null && mTabModelSelector != null) {
+            currentTab = mTabModelSelector.getCurrentTab();
+        }
+        final Tab activeTab = currentTab;
+        final WebContents currentWebContents =
+                currentTab != null ? currentTab.getWebContents() : null;
+        GURL url = currentTab != null ? currentTab.getUrl() : GURL.emptyGURL();
+        final boolean isNativePage =
+                UrlUtilities.isChromeScheme(url)
+                        || (currentTab != null && currentTab.isNativePage());
+        final boolean hasWebContents =
+                currentTab != null && !isNativePage && currentWebContents != null;
+        Profile profile = getProfileFromTabModel();
+
+        // 1. Section: 扩展应用 (Installed Extensions)
+        LinearLayout extHeaderRow = new LinearLayout(mContext);
+        extHeaderRow.setOrientation(LinearLayout.HORIZONTAL);
+        extHeaderRow.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams extHeaderLp =
+                new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        extHeaderLp.bottomMargin = dpToPx(12);
+
+        TextView extHeaderTitle = new TextView(mContext);
+        extHeaderTitle.setText("扩展应用");
+        extHeaderTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
+        extHeaderTitle.setTypeface(Typeface.DEFAULT_BOLD);
+        extHeaderTitle.setTextColor(textPrimaryColor);
+        extHeaderRow.addView(
+                extHeaderTitle,
+                new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        final ImageView collapseArrow = new ImageView(mContext);
+        collapseArrow.setImageDrawable(
+                createLemurVectorIcon(ICON_CHEVRON_UP, textSecondaryColor, 20));
+        LinearLayout.LayoutParams arrowLp =
+                new LinearLayout.LayoutParams(dpToPx(28), dpToPx(28));
+        extHeaderRow.addView(collapseArrow, arrowLp);
+        contentCol.addView(extHeaderRow, extHeaderLp);
+
+        final FrameLayout extBodyContainer = new FrameLayout(mContext);
+        LinearLayout.LayoutParams extBodyLp =
+                new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        extBodyLp.bottomMargin = dpToPx(20);
+        contentCol.addView(extBodyContainer, extBodyLp);
+
+        extHeaderRow.setOnClickListener(
+                v -> {
+                    boolean visible = extBodyContainer.getVisibility() == View.VISIBLE;
+                    extBodyContainer.setVisibility(visible ? View.GONE : View.VISIBLE);
+                    collapseArrow.setImageDrawable(
+                            createLemurVectorIcon(
+                                    visible ? ICON_CHEVRON_DOWN : ICON_CHEVRON_UP,
+                                    textSecondaryColor,
+                                    20));
+                });
+
         final ExtensionsToolbarCoordinator extCoordinator =
                 mToolbarManager != null ? mToolbarManager.getExtensionsToolbarCoordinator() : null;
         final String[] extIds =
@@ -969,105 +1425,13 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
                         ? extCoordinator.getAllExtensionActionIds()
                         : new String[0];
 
-        LinearLayout extSectionCard = new LinearLayout(mContext);
-        extSectionCard.setOrientation(LinearLayout.VERTICAL);
-        GradientDrawable extCardBg = new GradientDrawable();
-        extCardBg.setShape(GradientDrawable.RECTANGLE);
-        extCardBg.setCornerRadius(dpToPx(18));
-        extCardBg.setColor(extSectionBgColor);
-        extCardBg.setStroke(dpToPx(1), dividerColor);
-        extSectionCard.setBackground(extCardBg);
-        int extPadH = dpToPx(10);
-        int extPadV = dpToPx(8);
-        extSectionCard.setPadding(extPadH, extPadV, extPadH, extPadV);
-        LinearLayout.LayoutParams extCardLp =
-                new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        extCardLp.bottomMargin = dpToPx(10);
-
-        // Extensions section header row: Title + [权限弹窗] [商店] [管理]
-        LinearLayout extHeaderRow = new LinearLayout(mContext);
-        extHeaderRow.setOrientation(LinearLayout.HORIZONTAL);
-        extHeaderRow.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout.LayoutParams extHeaderLp =
-                new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        extHeaderLp.bottomMargin = dpToPx(6);
-
-        ImageView extHeaderIcon = new ImageView(mContext);
-        Drawable puzzleDrawable =
-                AppCompatResources.getDrawable(mContext, R.drawable.ic_extension_24dp);
-        if (puzzleDrawable != null) {
-            puzzleDrawable = puzzleDrawable.mutate();
-            DrawableCompat.setTint(puzzleDrawable, accentColor);
-            extHeaderIcon.setImageDrawable(puzzleDrawable);
-        }
-        LinearLayout.LayoutParams extHeaderIconLp =
-                new LinearLayout.LayoutParams(dpToPx(16), dpToPx(16));
-        extHeaderIconLp.setMarginEnd(dpToPx(6));
-        extHeaderRow.addView(extHeaderIcon, extHeaderIconLp);
-
-        TextView extHeaderTitle = new TextView(mContext);
-        String extTitleStr =
-                mContext.getString(R.string.menu_extensions)
-                        + (extIds.length > 0 ? " (" + extIds.length + ")" : "");
-        extHeaderTitle.setText(extTitleStr);
-        extHeaderTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f);
-        extHeaderTitle.setTypeface(Typeface.DEFAULT_BOLD);
-        extHeaderTitle.setTextColor(textPrimaryColor);
-        extHeaderTitle.setSingleLine(true);
-        extHeaderTitle.setEllipsize(TextUtils.TruncateAt.END);
-        extHeaderRow.addView(
-                extHeaderTitle,
-                new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-
-        View extPermissionsChip =
-                buildHeaderActionChip(
-                        "站点权限",
-                        surfaceColor,
-                        textSecondaryColor,
-                        rippleColor,
-                        v -> triggerMenuAction(dialog, R.id.extensions_menu_menu_id));
-        LinearLayout.LayoutParams chipLp1 =
-                new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        chipLp1.setMarginEnd(dpToPx(6));
-        extHeaderRow.addView(extPermissionsChip, chipLp1);
-
-        View extStoreChip =
-                buildHeaderActionChip(
-                        "商店",
-                        surfaceColor,
-                        textSecondaryColor,
-                        rippleColor,
-                        v -> triggerMenuAction(dialog, R.id.extensions_webstore_menu_id));
-        LinearLayout.LayoutParams chipLp2 =
-                new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        chipLp2.setMarginEnd(dpToPx(6));
-        extHeaderRow.addView(extStoreChip, chipLp2);
-
-        View extManageChip =
-                buildHeaderActionChip(
-                        "管理",
-                        surfaceColor,
-                        accentColor,
-                        rippleColor,
-                        v -> triggerMenuAction(dialog, R.id.manage_extensions_menu_id));
-        extHeaderRow.addView(
-                extManageChip,
-                new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-
-        extSectionCard.addView(extHeaderRow, extHeaderLp);
-
         if (extIds.length > 0 && extCoordinator != null) {
             GridLayout extGrid = new GridLayout(mContext);
-            extGrid.setColumnCount(4);
+            extGrid.setColumnCount(5);
             extGrid.setUseDefaultMargins(false);
-            extSectionCard.addView(
+            extBodyContainer.addView(
                     extGrid,
-                    new LinearLayout.LayoutParams(
+                    new FrameLayout.LayoutParams(
                             ViewGroup.LayoutParams.MATCH_PARENT,
                             ViewGroup.LayoutParams.WRAP_CONTENT));
 
@@ -1083,7 +1447,7 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
                         extGrid,
                         extIcon,
                         extName,
-                        surfaceColor,
+                        tileSurfaceColor,
                         textPrimaryColor,
                         rippleColor,
                         v -> {
@@ -1103,51 +1467,58 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
                         });
             }
         } else {
-            TextView emptyExtView = new TextView(mContext);
-            emptyExtView.setText("暂无已启用的扩展程序 · 点击管理或前往扩展商店安装");
-            emptyExtView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f);
-            emptyExtView.setTextColor(textSecondaryColor);
-            emptyExtView.setGravity(Gravity.CENTER);
-            int emptyPadV = dpToPx(10);
-            emptyExtView.setPadding(dpToPx(8), emptyPadV, dpToPx(8), emptyPadV);
-            GradientDrawable emptyBg = new GradientDrawable();
-            emptyBg.setShape(GradientDrawable.RECTANGLE);
-            emptyBg.setCornerRadius(dpToPx(12));
-            emptyBg.setColor(surfaceColor);
-            emptyExtView.setBackground(
-                    new RippleDrawable(ColorStateList.valueOf(rippleColor), emptyBg, null));
-            emptyExtView.setOnClickListener(
-                    v -> triggerMenuAction(dialog, R.id.manage_extensions_menu_id));
-            extSectionCard.addView(
-                    emptyExtView,
+            LinearLayout emptyBox = new LinearLayout(mContext);
+            emptyBox.setOrientation(LinearLayout.VERTICAL);
+            emptyBox.setGravity(Gravity.CENTER);
+            emptyBox.setPadding(dpToPx(12), dpToPx(14), dpToPx(12), dpToPx(14));
+
+            ImageView emptyIllus = new ImageView(mContext);
+            emptyIllus.setImageDrawable(createLemurEmptyExtensionsDrawable(isNight));
+            LinearLayout.LayoutParams illusLp =
+                    new LinearLayout.LayoutParams(dpToPx(140), dpToPx(110));
+            illusLp.bottomMargin = dpToPx(8);
+            emptyBox.addView(emptyIllus, illusLp);
+
+            TextView emptyText = new TextView(mContext);
+            emptyText.setText("还没有运行任何扩展");
+            emptyText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14.5f);
+            emptyText.setTextColor(textSecondaryColor);
+            emptyText.setGravity(Gravity.CENTER);
+            emptyBox.addView(
+                    emptyText,
                     new LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.WRAP_CONTENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT));
+            extBodyContainer.addView(
+                    emptyBox,
+                    new FrameLayout.LayoutParams(
                             ViewGroup.LayoutParams.MATCH_PARENT,
                             ViewGroup.LayoutParams.WRAP_CONTENT));
         }
 
-        middleContainer.addView(extSectionCard, extCardLp);
-
-        // 3B. 4-Column Grid of Browser Features
-        GridLayout grid = new GridLayout(mContext);
-        grid.setColumnCount(4);
-        grid.setUseDefaultMargins(false);
-        middleContainer.addView(
-                grid,
+        // 2. Section: 常用工具 (Common Tools - matches Screenshot 1)
+        TextView toolsHeader = new TextView(mContext);
+        toolsHeader.setText("常用工具");
+        toolsHeader.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
+        toolsHeader.setTypeface(Typeface.DEFAULT_BOLD);
+        toolsHeader.setTextColor(textPrimaryColor);
+        LinearLayout.LayoutParams toolsHeaderLp =
                 new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        toolsHeaderLp.bottomMargin = dpToPx(12);
+        contentCol.addView(toolsHeader, toolsHeaderLp);
 
-        boolean isBookmarked = currentTab != null && shouldCheckBookmarkStar(currentTab);
-        boolean isDesktopSite =
-                hasWebContents
-                        && assumeNonNull(currentTab.getWebContents())
-                                .getNavigationController()
-                                .getUseDesktopUserAgent();
-        boolean isReaderMode = isReaderModeShowing(currentTab);
+        GridLayout toolsGrid = new GridLayout(mContext);
+        toolsGrid.setColumnCount(5);
+        toolsGrid.setUseDefaultMargins(false);
+        LinearLayout.LayoutParams toolsGridLp =
+                new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        toolsGridLp.bottomMargin = dpToPx(18);
+        contentCol.addView(toolsGrid, toolsGridLp);
+
         boolean canFindInPage = shouldShowFindInPageItem(currentTab);
         boolean canTranslate = shouldShowTranslateMenuItem(currentTab);
-        boolean canZoom = shouldShowPageZoomItem(currentTab) && !isReaderMode;
-        boolean canShare = ShareUtils.shouldEnableShare(currentTab);
-        boolean canDownloadPage = shouldEnableDownloadPage(currentTab);
         boolean canAddToHome =
                 shouldShowHomeScreenMenuItem(
                         isNativePage,
@@ -1155,413 +1526,247 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
                         url.getScheme().equals(UrlConstants.CONTENT_SCHEME),
                         isIncognito,
                         url);
+        boolean autoDarkEnabled =
+                currentTab != null
+                        && !isNativePage
+                        && profile != null
+                        && WebContentsDarkModeController.isEnabledForUrl(
+                                profile, currentTab.getUrl());
 
-        // Row 1: New Tab, Incognito Tab, Bookmark Page, Bookmarks
-        addLemurGridTile(
-                grid,
-                R.drawable.ic_add_box_rounded_corner,
-                mContext.getString(R.string.menu_new_tab),
-                !IncognitoUtils.isIncognitoModeForced(profile),
-                false,
-                surfaceColor,
-                activeSurfaceColor,
-                textPrimaryColor,
-                textSecondaryColor,
-                accentColor,
-                rippleColor,
-                v -> triggerMenuAction(dialog, R.id.new_tab_menu_id),
-                null);
-        addLemurGridTile(
-                grid,
-                R.drawable.ic_incognito,
-                mContext.getString(R.string.menu_new_incognito_tab),
-                isIncognitoEnabled() && !isIncognitoReauthShowing(),
-                isIncognito,
-                surfaceColor,
-                activeSurfaceColor,
-                textPrimaryColor,
-                textSecondaryColor,
-                accentColor,
-                rippleColor,
-                v -> triggerMenuAction(dialog, R.id.new_incognito_tab_menu_id),
-                null);
-        addLemurGridTile(
-                grid,
-                isBookmarked ? R.drawable.ic_star_filled_24dp : R.drawable.ic_star_24dp,
-                mContext.getString(
-                        isBookmarked ? R.string.edit_bookmark : R.string.menu_bookmark),
-                currentTab != null,
-                isBookmarked,
-                surfaceColor,
-                activeSurfaceColor,
-                textPrimaryColor,
-                textSecondaryColor,
-                accentColor,
-                rippleColor,
-                v -> triggerMenuAction(dialog, R.id.bookmark_this_page_id),
-                null);
-        addLemurGridTile(
-                grid,
-                R.drawable.ic_folder_outline_24dp,
-                mContext.getString(R.string.menu_bookmarks),
+        // Tool 1: 扩展管理
+        addLemurToolSquareTile(
+                toolsGrid,
+                createLemurVectorIcon(ICON_PUZZLE_EXT, textPrimaryColor, 24),
+                "扩展管理",
                 true,
                 false,
-                surfaceColor,
+                tileSurfaceColor,
                 activeSurfaceColor,
                 textPrimaryColor,
                 textSecondaryColor,
                 accentColor,
                 rippleColor,
-                v -> triggerMenuAction(dialog, R.id.all_bookmarks_menu_id),
-                null);
+                v -> triggerMenuAction(dialog, R.id.manage_extensions_menu_id));
 
-        // Row 2: History, Downloads, Desktop Site, Find in Page
-        addLemurGridTile(
-                grid,
-                R.drawable.ic_history_24dp,
-                mContext.getString(R.string.menu_history),
-                !isIncognito,
-                false,
-                surfaceColor,
-                activeSurfaceColor,
-                textPrimaryColor,
-                textSecondaryColor,
-                accentColor,
-                rippleColor,
-                v -> triggerMenuAction(dialog, R.id.open_history_menu_id),
-                null);
-        addLemurGridTile(
-                grid,
-                R.drawable.ic_download_done_24dp,
-                mContext.getString(R.string.menu_downloads),
-                true,
-                false,
-                surfaceColor,
-                activeSurfaceColor,
-                textPrimaryColor,
-                textSecondaryColor,
-                accentColor,
-                rippleColor,
-                v -> triggerMenuAction(dialog, R.id.downloads_menu_id),
-                null);
-        addLemurGridTile(
-                grid,
-                R.drawable.ic_desktop_windows,
-                mContext.getString(R.string.menu_request_desktop_site),
-                hasWebContents,
-                isDesktopSite,
-                surfaceColor,
-                activeSurfaceColor,
-                textPrimaryColor,
-                textSecondaryColor,
-                accentColor,
-                rippleColor,
-                v -> triggerMenuAction(dialog, R.id.request_desktop_site_id),
-                null);
-        addLemurGridTile(
-                grid,
-                R.drawable.ic_find_in_page,
-                mContext.getString(R.string.menu_find_in_page),
+        // Tool 2: 网页查找
+        addLemurToolSquareTile(
+                toolsGrid,
+                createLemurVectorIcon(ICON_FIND_DOC, textPrimaryColor, 24),
+                "网页查找",
                 canFindInPage,
                 false,
-                surfaceColor,
+                tileSurfaceColor,
                 activeSurfaceColor,
                 textPrimaryColor,
                 textSecondaryColor,
                 accentColor,
                 rippleColor,
-                v -> triggerMenuAction(dialog, R.id.find_in_page_id),
-                null);
+                v -> triggerMenuAction(dialog, R.id.find_in_page_id));
 
-        // Row 3: Translate, Page Zoom, Share, Clear Data
-        addLemurGridTile(
-                grid,
-                R.drawable.ic_translate,
-                mContext.getString(R.string.menu_translate),
+        // Tool 3: 翻译…
+        addLemurToolSquareTile(
+                toolsGrid,
+                createLemurVectorIcon(ICON_TRANSLATE, textPrimaryColor, 24),
+                "翻译…",
                 canTranslate,
                 false,
-                surfaceColor,
+                tileSurfaceColor,
                 activeSurfaceColor,
                 textPrimaryColor,
                 textSecondaryColor,
                 accentColor,
                 rippleColor,
-                v -> triggerMenuAction(dialog, R.id.translate_id),
-                null);
-        addLemurGridTile(
-                grid,
-                R.drawable.ic_zoom,
-                mContext.getString(R.string.page_zoom_menu_title),
-                canZoom,
-                false,
-                surfaceColor,
-                activeSurfaceColor,
-                textPrimaryColor,
-                textSecondaryColor,
-                accentColor,
-                rippleColor,
-                v -> triggerMenuAction(dialog, R.id.page_zoom_id),
-                null);
-        addLemurGridTile(
-                grid,
-                R.drawable.ic_share_white_24dp,
-                mContext.getString(R.string.menu_share_page),
-                canShare,
-                false,
-                surfaceColor,
-                activeSurfaceColor,
-                textPrimaryColor,
-                textSecondaryColor,
-                accentColor,
-                rippleColor,
-                v -> triggerMenuAction(dialog, R.id.share_menu_id),
-                null);
-        addLemurGridTile(
-                grid,
-                R.drawable.material_ic_delete_24dp,
-                mContext.getString(R.string.menu_quick_delete),
-                shouldShowQuickDeleteItem(),
-                false,
-                surfaceColor,
-                activeSurfaceColor,
-                textPrimaryColor,
-                textSecondaryColor,
-                accentColor,
-                rippleColor,
-                v -> triggerMenuAction(dialog, R.id.quick_delete_menu_id),
-                null);
+                v -> triggerMenuAction(dialog, R.id.translate_id));
 
-        // Row 4: Site Info / Permissions, Recent Tabs, Reader Mode, Download Page
-        addLemurGridTile(
-                grid,
-                R.drawable.ic_settings_tune_24dp,
-                mContext.getString(R.string.menu_site_controls),
-                currentTab != null && !UrlUtilities.isNtpUrl(url),
-                false,
-                surfaceColor,
-                activeSurfaceColor,
-                textPrimaryColor,
-                textSecondaryColor,
-                accentColor,
-                rippleColor,
-                v -> triggerMenuAction(dialog, R.id.info_menu_id),
-                null);
-        addLemurGridTile(
-                grid,
-                R.drawable.devices_black_24dp,
-                mContext.getString(R.string.menu_recent_tabs),
-                !isIncognito,
-                false,
-                surfaceColor,
-                activeSurfaceColor,
-                textPrimaryColor,
-                textSecondaryColor,
-                accentColor,
-                rippleColor,
-                v -> triggerMenuAction(dialog, R.id.recent_tabs_menu_id),
-                null);
-        addLemurGridTile(
-                grid,
-                R.drawable.ic_mobile_friendly_24dp,
-                mContext.getString(
-                        isReaderMode
-                                ? R.string.hide_reading_mode_text
-                                : R.string.show_reading_mode_text),
-                mMoreToolsItemBuilder.shouldShowReaderModeItem(currentTab),
-                isReaderMode,
-                surfaceColor,
-                activeSurfaceColor,
-                textPrimaryColor,
-                textSecondaryColor,
-                accentColor,
-                rippleColor,
-                v -> triggerMenuAction(dialog, R.id.reader_mode_menu_id),
-                null);
-        addLemurGridTile(
-                grid,
-                R.drawable.ic_file_download_white_24dp,
-                mContext.getString(R.string.menu_download),
-                canDownloadPage,
-                false,
-                surfaceColor,
-                activeSurfaceColor,
-                textPrimaryColor,
-                textSecondaryColor,
-                accentColor,
-                rippleColor,
-                v -> triggerMenuAction(dialog, R.id.offline_page_id),
-                null);
-
-        // Row 5: Add to Home Screen, DevTools, Extensions Dialog, Manage Extensions
-        addLemurGridTile(
-                grid,
-                R.drawable.ic_add_to_home_screen,
-                mContext.getString(R.string.menu_install_create_shortcut),
+        // Tool 4: 添加到主屏幕
+        addLemurToolSquareTile(
+                toolsGrid,
+                createLemurVectorIcon(ICON_ADD_HOME, textPrimaryColor, 24),
+                "添加到主屏幕",
                 canAddToHome,
                 false,
-                surfaceColor,
+                tileSurfaceColor,
                 activeSurfaceColor,
                 textPrimaryColor,
                 textSecondaryColor,
                 accentColor,
                 rippleColor,
-                v -> triggerMenuAction(dialog, R.id.universal_install),
-                null);
-        addLemurGridTile(
-                grid,
-                R.drawable.ic_more_tools_24dp,
-                mContext.getString(R.string.menu_dev_tools),
-                hasWebContents,
-                false,
-                surfaceColor,
-                activeSurfaceColor,
-                textPrimaryColor,
-                textSecondaryColor,
-                accentColor,
-                rippleColor,
-                v -> triggerMenuAction(dialog, R.id.dev_tools),
-                null);
-        addLemurGridTile(
-                grid,
-                R.drawable.ic_extension_24dp,
-                mContext.getString(R.string.menu_extensions),
-                true,
-                false,
-                surfaceColor,
-                activeSurfaceColor,
-                textPrimaryColor,
-                textSecondaryColor,
-                accentColor,
-                rippleColor,
-                v -> triggerMenuAction(dialog, R.id.extensions_menu_menu_id),
-                null);
-        addLemurGridTile(
-                grid,
-                R.drawable.ic_extension_24dp,
-                mContext.getString(R.string.menu_manage_extensions),
-                true,
-                false,
-                surfaceColor,
-                activeSurfaceColor,
-                textPrimaryColor,
-                textSecondaryColor,
-                accentColor,
-                rippleColor,
-                v -> triggerMenuAction(dialog, R.id.manage_extensions_menu_id),
-                null);
+                v -> triggerMenuAction(dialog, R.id.universal_install));
 
-        scrollView.post(
-                () -> {
-                    if (scrollView.getHeight() > maxGridHeight) {
-                        LinearLayout.LayoutParams lp =
-                                (LinearLayout.LayoutParams) scrollView.getLayoutParams();
-                        lp.height = maxGridHeight;
-                        scrollView.setLayoutParams(lp);
+        // Tool 5: 窗口管理
+        addLemurToolSquareTile(
+                toolsGrid,
+                createLemurVectorIcon(ICON_WINDOW_MGR, textPrimaryColor, 24),
+                "窗口管理",
+                true,
+                false,
+                tileSurfaceColor,
+                activeSurfaceColor,
+                textPrimaryColor,
+                textSecondaryColor,
+                accentColor,
+                rippleColor,
+                v -> {
+                    if (dialog.isShowing()) {
+                        dialog.dismiss();
+                    }
+                    View tabSwitcherBtn =
+                            mDecorView != null
+                                    ? mDecorView.findViewById(R.id.tab_switcher_button)
+                                    : null;
+                    if (tabSwitcherBtn != null) {
+                        tabSwitcherBtn.performClick();
+                    } else {
+                        mAppMenuDelegate.onOptionsItemSelected(R.id.new_tab_menu_id, null, null);
                     }
                 });
 
-        // Divider before bottom action bar
-        View bottomDivider = new View(mContext);
-        bottomDivider.setBackgroundColor(dividerColor);
-        LinearLayout.LayoutParams divLp =
+        // Tool 6: 视频增强 / 网页暗色
+        addLemurToolSquareTile(
+                toolsGrid,
+                createLemurVectorIcon(
+                        ICON_VIDEO_ENHANCE, autoDarkEnabled ? accentColor : textPrimaryColor, 24),
+                "视频增强",
+                hasWebContents,
+                autoDarkEnabled,
+                tileSurfaceColor,
+                activeSurfaceColor,
+                textPrimaryColor,
+                textSecondaryColor,
+                accentColor,
+                rippleColor,
+                v -> triggerMenuAction(dialog, R.id.auto_dark_web_contents_id));
+
+        // Tool 7: 默认缩放设置
+        addLemurToolSquareTile(
+                toolsGrid,
+                createLemurVectorIcon(ICON_ZOOM_PLUS, textPrimaryColor, 24),
+                "默认缩放设置",
+                true,
+                false,
+                tileSurfaceColor,
+                activeSurfaceColor,
+                textPrimaryColor,
+                textSecondaryColor,
+                accentColor,
+                rippleColor,
+                v -> {
+                    if (dialog.isShowing()) {
+                        dialog.dismiss();
+                    }
+                    if (hasWebContents) {
+                        PageZoomUtils.setShouldAlwaysShowZoomMenuItem(true);
+                        boolean handled =
+                                mAppMenuDelegate.onOptionsItemSelected(
+                                        R.id.page_zoom_id, null, null);
+                        if (handled) {
+                            return;
+                        }
+                    }
+                    SettingsNavigationFactory.createSettingsNavigation()
+                            .startSettings(
+                                    mContext, SettingsNavigation.SettingsFragment.ACCESSIBILITY);
+                });
+
+        // Tool 8: Devtools
+        addLemurToolSquareTile(
+                toolsGrid,
+                createLemurVectorIcon(ICON_DEVTOOLS_CODE, textPrimaryColor, 24),
+                "Devtools",
+                true,
+                false,
+                tileSurfaceColor,
+                activeSurfaceColor,
+                textPrimaryColor,
+                textSecondaryColor,
+                accentColor,
+                rippleColor,
+                v -> {
+                    if (dialog.isShowing()) {
+                        dialog.dismiss();
+                    }
+                    if (hasWebContents) {
+                        mAppMenuDelegate.onOptionsItemSelected(R.id.dev_tools, null, null);
+                    } else if (mTabModelSelector != null) {
+                        mTabModelSelector.openNewTab(
+                                new LoadUrlParams(
+                                        "https://example.com", PageTransition.AUTO_TOPLEVEL),
+                                TabLaunchType.FROM_CHROME_UI,
+                                activeTab,
+                                isIncognito);
+                    }
+                });
+
+        // 3. Section: 扩展商店 (Extension Stores - Chrome & Edge)
+        TextView storeHeader = new TextView(mContext);
+        storeHeader.setText("扩展商店");
+        storeHeader.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
+        storeHeader.setTypeface(Typeface.DEFAULT_BOLD);
+        storeHeader.setTextColor(textPrimaryColor);
+        LinearLayout.LayoutParams storeHeaderLp =
                 new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT, dpToPx(1));
-        divLp.topMargin = dpToPx(8);
-        divLp.bottomMargin = dpToPx(8);
-        card.addView(bottomDivider, divLp);
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        storeHeaderLp.bottomMargin = dpToPx(12);
+        contentCol.addView(storeHeader, storeHeaderLp);
 
-        // 4. Bottom navigation & settings action bar
-        LinearLayout bottomBar = new LinearLayout(mContext);
-        bottomBar.setOrientation(LinearLayout.HORIZONTAL);
-        bottomBar.setGravity(Gravity.CENTER_VERTICAL);
-
-        boolean canGoBack = currentTab != null && currentTab.canGoBack();
-        boolean canGoForward = currentTab != null && currentTab.canGoForward();
-        boolean canReload = currentTab != null;
-        boolean isLoading = currentTab != null && currentTab.isLoading();
-
-        bottomBar.addView(
-                buildBottomBarButton(
-                        R.drawable.btn_back,
-                        null,
-                        mContext.getString(R.string.accessibility_menu_back),
-                        canGoBack,
-                        false,
-                        surfaceColor,
-                        textPrimaryColor,
-                        textSecondaryColor,
-                        rippleColor,
-                        v -> triggerMenuAction(dialog, R.id.back_menu_id)),
-                new LinearLayout.LayoutParams(0, dpToPx(42), 0.85f));
-
-        bottomBar.addView(
-                buildBottomBarButton(
-                        R.drawable.btn_forward,
-                        null,
-                        mContext.getString(R.string.accessibility_menu_forward),
-                        canGoForward,
-                        false,
-                        surfaceColor,
-                        textPrimaryColor,
-                        textSecondaryColor,
-                        rippleColor,
-                        v -> triggerMenuAction(dialog, R.id.forward_menu_id)),
-                new LinearLayout.LayoutParams(0, dpToPx(42), 0.85f));
-
-        bottomBar.addView(
-                buildBottomBarButton(
-                        R.drawable.btn_reload_stop,
-                        null,
-                        mContext.getString(
-                                isLoading
-                                        ? R.string.accessibility_btn_stop_loading
-                                        : R.string.accessibility_btn_refresh),
-                        canReload,
-                        isLoading,
-                        surfaceColor,
-                        textPrimaryColor,
-                        textSecondaryColor,
-                        rippleColor,
-                        v -> triggerMenuAction(dialog, R.id.reload_menu_id)),
-                new LinearLayout.LayoutParams(0, dpToPx(42), 0.85f));
-
-        bottomBar.addView(
-                buildBottomBarButton(
-                        R.drawable.settings_cog,
-                        mContext.getString(R.string.menu_settings),
-                        mContext.getString(R.string.menu_settings),
-                        true,
-                        false,
-                        surfaceColor,
-                        textPrimaryColor,
-                        textSecondaryColor,
-                        rippleColor,
-                        v -> triggerMenuAction(dialog, R.id.preferences_id)),
-                new LinearLayout.LayoutParams(0, dpToPx(42), 1.35f));
-
-        bottomBar.addView(
-                buildBottomBarButton(
-                        R.drawable.ic_more_tools_24dp,
-                        "原菜单",
-                        "原菜单",
-                        true,
-                        false,
-                        surfaceColor,
-                        textPrimaryColor,
-                        textSecondaryColor,
-                        rippleColor,
-                        v -> {
-                            mSuppressCustomDismissCallback = true;
-                            dialog.dismiss();
-                            onDismissRunnable.run();
-                            showNativeMenuRunnable.run();
-                        }),
-                new LinearLayout.LayoutParams(0, dpToPx(42), 1.35f));
-
-        card.addView(
-                bottomBar,
+        GridLayout storeGrid = new GridLayout(mContext);
+        storeGrid.setColumnCount(5);
+        storeGrid.setUseDefaultMargins(false);
+        contentCol.addView(
+                storeGrid,
                 new LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        addLemurToolSquareTile(
+                storeGrid,
+                createChromeStoreDrawable(),
+                "Chrome",
+                true,
+                false,
+                tileSurfaceColor,
+                activeSurfaceColor,
+                textPrimaryColor,
+                textSecondaryColor,
+                accentColor,
+                rippleColor,
+                v -> triggerMenuAction(dialog, R.id.extensions_webstore_menu_id));
+
+        addLemurToolSquareTile(
+                storeGrid,
+                createEdgeStoreDrawable(),
+                "Edge",
+                true,
+                false,
+                tileSurfaceColor,
+                activeSurfaceColor,
+                textPrimaryColor,
+                textSecondaryColor,
+                accentColor,
+                rippleColor,
+                v -> {
+                    if (dialog.isShowing()) {
+                        dialog.dismiss();
+                    }
+                    if (mTabModelSelector != null) {
+                        mTabModelSelector.openNewTab(
+                                new LoadUrlParams(
+                                        "https://microsoftedge.microsoft.com/addons/Microsoft-Edge-Extensions-Home",
+                                        PageTransition.AUTO_TOPLEVEL),
+                                TabLaunchType.FROM_CHROME_UI,
+                                activeTab,
+                                isIncognito);
+                    }
+                });
+
+        scrollView.post(
+                () -> {
+                    if (scrollView.getHeight() > maxScrollHeight) {
+                        LinearLayout.LayoutParams lp =
+                                (LinearLayout.LayoutParams) scrollView.getLayoutParams();
+                        lp.height = maxScrollHeight;
+                        scrollView.setLayoutParams(lp);
+                    }
+                });
 
         dialog.setContentView(
                 outerHost,
@@ -1577,13 +1782,12 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
                     ViewGroup.LayoutParams.MATCH_PARENT);
             window.setGravity(Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
             WindowManager.LayoutParams wlp = window.getAttributes();
-            wlp.dimAmount = 0.36f;
+            wlp.dimAmount = 0.45f;
             window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
             window.setAttributes(wlp);
         }
 
         dialog.show();
-        return true;
     }
 
     private void triggerMenuAction(Dialog dialog, int itemId) {
@@ -1593,27 +1797,140 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
         mAppMenuDelegate.onOptionsItemSelected(itemId, null, null);
     }
 
-    private View buildHeaderActionChip(
-            String label,
-            int bgColor,
-            int textColor,
+    private void addLemurMainMenuTile(
+            GridLayout grid,
+            int iconType,
+            String title,
+            boolean isEnabled,
+            boolean isActive,
+            int textPrimaryColor,
+            int textSecondaryColor,
+            int accentColor,
             int rippleColor,
             View.OnClickListener clickListener) {
-        TextView chip = new TextView(mContext);
-        chip.setText(label);
-        chip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
-        chip.setTypeface(Typeface.DEFAULT_BOLD);
-        chip.setTextColor(textColor);
-        chip.setGravity(Gravity.CENTER);
-        chip.setPadding(dpToPx(9), dpToPx(4), dpToPx(9), dpToPx(4));
-        GradientDrawable bg = new GradientDrawable();
-        bg.setShape(GradientDrawable.RECTANGLE);
-        bg.setCornerRadius(dpToPx(10));
-        bg.setColor(bgColor);
-        chip.setBackground(
-                new RippleDrawable(ColorStateList.valueOf(rippleColor), bg, null));
-        chip.setOnClickListener(clickListener);
-        return chip;
+        LinearLayout cell = new LinearLayout(mContext);
+        cell.setOrientation(LinearLayout.VERTICAL);
+        cell.setGravity(Gravity.CENTER_HORIZONTAL);
+        cell.setPadding(dpToPx(4), dpToPx(12), dpToPx(4), dpToPx(12));
+
+        GradientDrawable rippleMask = new GradientDrawable();
+        rippleMask.setShape(GradientDrawable.RECTANGLE);
+        rippleMask.setCornerRadius(dpToPx(14));
+        rippleMask.setColor(Color.WHITE);
+        cell.setBackground(
+                new RippleDrawable(ColorStateList.valueOf(rippleColor), null, rippleMask));
+
+        int iconColor =
+                isActive ? accentColor : (isEnabled ? textPrimaryColor : textSecondaryColor);
+        ImageView iconView = new ImageView(mContext);
+        iconView.setImageDrawable(createLemurVectorIcon(iconType, iconColor, 26));
+        LinearLayout.LayoutParams iconLp =
+                new LinearLayout.LayoutParams(dpToPx(26), dpToPx(26));
+        iconLp.bottomMargin = dpToPx(10);
+        cell.addView(iconView, iconLp);
+
+        TextView labelView = new TextView(mContext);
+        labelView.setText(title);
+        labelView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f);
+        labelView.setGravity(Gravity.CENTER);
+        labelView.setSingleLine(true);
+        labelView.setEllipsize(TextUtils.TruncateAt.END);
+        labelView.setTextColor(iconColor);
+        if (isActive) {
+            labelView.setTypeface(Typeface.DEFAULT_BOLD);
+        }
+        cell.addView(
+                labelView,
+                new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        cell.setEnabled(isEnabled);
+        cell.setAlpha(isEnabled ? 1.0f : 0.38f);
+        if (isEnabled) {
+            cell.setOnClickListener(clickListener);
+        }
+
+        GridLayout.LayoutParams gridLp =
+                new GridLayout.LayoutParams(
+                        GridLayout.spec(GridLayout.UNDEFINED, 1f),
+                        GridLayout.spec(GridLayout.UNDEFINED, 1f));
+        gridLp.width = 0;
+        gridLp.height = ViewGroup.LayoutParams.WRAP_CONTENT;
+        grid.addView(cell, gridLp);
+    }
+
+    private void addLemurToolSquareTile(
+            GridLayout grid,
+            Drawable iconDrawable,
+            String title,
+            boolean isEnabled,
+            boolean isActive,
+            int surfaceColor,
+            int activeSurfaceColor,
+            int textPrimaryColor,
+            int textSecondaryColor,
+            int accentColor,
+            int rippleColor,
+            View.OnClickListener clickListener) {
+        LinearLayout cell = new LinearLayout(mContext);
+        cell.setOrientation(LinearLayout.VERTICAL);
+        cell.setGravity(Gravity.CENTER_HORIZONTAL);
+        cell.setPadding(dpToPx(3), dpToPx(6), dpToPx(3), dpToPx(8));
+
+        FrameLayout iconBox = new FrameLayout(mContext);
+        GradientDrawable boxBg = new GradientDrawable();
+        boxBg.setShape(GradientDrawable.RECTANGLE);
+        boxBg.setCornerRadius(dpToPx(16));
+        boxBg.setColor(isActive ? activeSurfaceColor : surfaceColor);
+        if (isActive) {
+            boxBg.setStroke(dpToPx(1), accentColor);
+        }
+        iconBox.setBackground(
+                new RippleDrawable(ColorStateList.valueOf(rippleColor), boxBg, null));
+
+        ImageView iconView = new ImageView(mContext);
+        iconView.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        iconView.setImageDrawable(iconDrawable);
+        iconBox.addView(
+                iconView,
+                new FrameLayout.LayoutParams(dpToPx(26), dpToPx(26), Gravity.CENTER));
+
+        LinearLayout.LayoutParams boxLp =
+                new LinearLayout.LayoutParams(dpToPx(52), dpToPx(52));
+        boxLp.bottomMargin = dpToPx(6);
+        cell.addView(iconBox, boxLp);
+
+        TextView textView = new TextView(mContext);
+        textView.setText(title);
+        textView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f);
+        textView.setGravity(Gravity.CENTER);
+        textView.setMaxLines(2);
+        textView.setEllipsize(TextUtils.TruncateAt.END);
+        textView.setTextColor(
+                isActive ? accentColor : (isEnabled ? textPrimaryColor : textSecondaryColor));
+        cell.addView(
+                textView,
+                new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        cell.setEnabled(isEnabled);
+        cell.setAlpha(isEnabled ? 1.0f : 0.40f);
+        if (isEnabled) {
+            cell.setOnClickListener(clickListener);
+            iconBox.setOnClickListener(clickListener);
+        } else {
+            iconBox.setClickable(false);
+        }
+
+        GridLayout.LayoutParams gridLp =
+                new GridLayout.LayoutParams(
+                        GridLayout.spec(GridLayout.UNDEFINED, 1f),
+                        GridLayout.spec(GridLayout.UNDEFINED, 1f));
+        gridLp.width = 0;
+        gridLp.height = ViewGroup.LayoutParams.WRAP_CONTENT;
+        grid.addView(cell, gridLp);
     }
 
     private void addLemurExtensionTile(
@@ -1628,14 +1945,12 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
         LinearLayout cell = new LinearLayout(mContext);
         cell.setOrientation(LinearLayout.VERTICAL);
         cell.setGravity(Gravity.CENTER_HORIZONTAL);
-        int cellPadH = dpToPx(4);
-        int cellPadV = dpToPx(5);
-        cell.setPadding(cellPadH, cellPadV, cellPadH, cellPadV);
+        cell.setPadding(dpToPx(3), dpToPx(6), dpToPx(3), dpToPx(8));
 
         FrameLayout iconBox = new FrameLayout(mContext);
         GradientDrawable boxBg = new GradientDrawable();
         boxBg.setShape(GradientDrawable.RECTANGLE);
-        boxBg.setCornerRadius(dpToPx(14));
+        boxBg.setCornerRadius(dpToPx(16));
         boxBg.setColor(surfaceColor);
         iconBox.setBackground(
                 new RippleDrawable(ColorStateList.valueOf(rippleColor), boxBg, null));
@@ -1645,26 +1960,21 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
         if (iconBitmap != null) {
             iconView.setImageBitmap(iconBitmap);
         } else {
-            Drawable fallback =
-                    AppCompatResources.getDrawable(mContext, R.drawable.ic_extension_24dp);
-            if (fallback != null) {
-                fallback = fallback.mutate();
-                DrawableCompat.setTint(fallback, textPrimaryColor);
-                iconView.setImageDrawable(fallback);
-            }
+            iconView.setImageDrawable(
+                    createLemurVectorIcon(ICON_PUZZLE_EXT, textPrimaryColor, 26));
         }
-        FrameLayout.LayoutParams iconLp =
-                new FrameLayout.LayoutParams(dpToPx(26), dpToPx(26), Gravity.CENTER);
-        iconBox.addView(iconView, iconLp);
+        iconBox.addView(
+                iconView,
+                new FrameLayout.LayoutParams(dpToPx(28), dpToPx(28), Gravity.CENTER));
 
         LinearLayout.LayoutParams boxLp =
-                new LinearLayout.LayoutParams(dpToPx(46), dpToPx(46));
-        boxLp.bottomMargin = dpToPx(4);
+                new LinearLayout.LayoutParams(dpToPx(52), dpToPx(52));
+        boxLp.bottomMargin = dpToPx(6);
         cell.addView(iconBox, boxLp);
 
         TextView textView = new TextView(mContext);
         textView.setText(title);
-        textView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
+        textView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f);
         textView.setGravity(Gravity.CENTER);
         textView.setSingleLine(true);
         textView.setEllipsize(TextUtils.TruncateAt.END);
@@ -1689,225 +1999,303 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
         grid.addView(cell, gridLp);
     }
 
-    private View buildQuickSettingPill(
-            int iconRes,
-            String text,
-            boolean isActive,
-            boolean isEnabled,
-            int surfaceColor,
-            int activeSurfaceColor,
-            int textPrimaryColor,
-            int accentColor,
-            int rippleColor,
-            View.OnClickListener onClickListener) {
-        LinearLayout pill = new LinearLayout(mContext);
-        pill.setOrientation(LinearLayout.HORIZONTAL);
-        pill.setGravity(Gravity.CENTER);
-        int padH = dpToPx(8);
-        int padV = dpToPx(8);
-        pill.setPadding(padH, padV, padH, padV);
+    private Drawable createLemurVectorIcon(int iconType, int color, int sizeDp) {
+        float d = mContext.getResources().getDisplayMetrics().density;
+        int px = Math.max(24, Math.round(sizeDp * d));
+        Bitmap bmp = Bitmap.createBitmap(px, px, Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(bmp);
+        float s = px / 24f;
 
-        GradientDrawable shape = new GradientDrawable();
-        shape.setShape(GradientDrawable.RECTANGLE);
-        shape.setCornerRadius(dpToPx(12));
-        shape.setColor(isActive ? activeSurfaceColor : surfaceColor);
-        if (isActive) {
-            shape.setStroke(dpToPx(1), accentColor);
-        }
-        pill.setBackground(
-                new RippleDrawable(ColorStateList.valueOf(rippleColor), shape, null));
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        p.setColor(color);
+        p.setStyle(Paint.Style.STROKE);
+        p.setStrokeWidth(1.9f * s);
+        p.setStrokeCap(Paint.Cap.ROUND);
+        p.setStrokeJoin(Paint.Join.ROUND);
 
-        ImageView iconView = new ImageView(mContext);
-        Drawable icon = AppCompatResources.getDrawable(mContext, iconRes);
-        if (icon != null) {
-            icon = icon.mutate();
-            DrawableCompat.setTint(icon, isActive ? accentColor : textPrimaryColor);
-            iconView.setImageDrawable(icon);
-        }
-        LinearLayout.LayoutParams iconLp =
-                new LinearLayout.LayoutParams(dpToPx(16), dpToPx(16));
-        iconLp.setMarginEnd(dpToPx(4));
-        pill.addView(iconView, iconLp);
+        Path path = new Path();
+        RectF rf = new RectF();
 
-        TextView labelView = new TextView(mContext);
-        labelView.setText(text);
-        labelView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f);
-        labelView.setSingleLine(true);
-        labelView.setEllipsize(TextUtils.TruncateAt.END);
-        labelView.setTextColor(isActive ? accentColor : textPrimaryColor);
-        if (isActive) {
-            labelView.setTypeface(Typeface.DEFAULT_BOLD);
-        }
-        pill.addView(
-                labelView,
-                new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.WRAP_CONTENT,
-                        ViewGroup.LayoutParams.WRAP_CONTENT));
+        switch (iconType) {
+            case ICON_SETTINGS_HEX:
+                for (int i = 0; i < 6; i++) {
+                    double angle = Math.toRadians(60 * i);
+                    float x = (float) (12f + 8.5f * Math.cos(angle)) * s;
+                    float y = (float) (12f + 8.5f * Math.sin(angle)) * s;
+                    if (i == 0) path.moveTo(x, y);
+                    else path.lineTo(x, y);
+                }
+                path.close();
+                c.drawPath(path, p);
+                c.drawCircle(12f * s, 12f * s, 2.8f * s, p);
+                break;
 
-        pill.setEnabled(isEnabled);
-        pill.setAlpha(isEnabled ? 1.0f : 0.42f);
-        if (isEnabled) {
-            pill.setOnClickListener(onClickListener);
+            case ICON_BOOKMARKS_RIBBON:
+                path.moveTo(6.5f * s, 4.5f * s);
+                path.lineTo(17.5f * s, 4.5f * s);
+                path.lineTo(17.5f * s, 19.5f * s);
+                path.lineTo(12f * s, 15.2f * s);
+                path.lineTo(6.5f * s, 19.5f * s);
+                path.close();
+                c.drawPath(path, p);
+                break;
+
+            case ICON_HISTORY_CLOCK:
+                rf.set(4f * s, 4f * s, 20f * s, 20f * s);
+                c.drawArc(rf, -60f, 300f, false, p);
+                path.moveTo(12f * s, 7.5f * s);
+                path.lineTo(12f * s, 12.2f * s);
+                path.lineTo(15.2f * s, 14.2f * s);
+                c.drawPath(path, p);
+                break;
+
+            case ICON_DOWNLOAD_TRAY:
+                c.drawLine(12f * s, 4.5f * s, 12f * s, 15f * s, p);
+                path.moveTo(8f * s, 11.2f * s);
+                path.lineTo(12f * s, 15.2f * s);
+                path.lineTo(16f * s, 11.2f * s);
+                c.drawPath(path, p);
+                c.drawLine(5.5f * s, 19f * s, 18.5f * s, 19f * s, p);
+                break;
+
+            case ICON_REFRESH:
+                rf.set(4.5f * s, 4.5f * s, 19.5f * s, 19.5f * s);
+                c.drawArc(rf, 35f, 295f, false, p);
+                path.moveTo(15.5f * s, 4.2f * s);
+                path.lineTo(19.5f * s, 8.0f * s);
+                path.lineTo(14.8f * s, 8.8f * s);
+                c.drawPath(path, p);
+                break;
+
+            case ICON_DESKTOP_MONITOR:
+                rf.set(3.5f * s, 4.5f * s, 20.5f * s, 16f * s);
+                c.drawRoundRect(rf, 2.2f * s, 2.2f * s, p);
+                c.drawLine(8f * s, 19.5f * s, 16f * s, 19.5f * s, p);
+                c.drawLine(12f * s, 16f * s, 12f * s, 19.5f * s, p);
+                break;
+
+            case ICON_BOOKMARK_STAR:
+                for (int i = 0; i < 10; i++) {
+                    double angle = Math.toRadians(-90 + i * 36);
+                    float rad = (i % 2 == 0) ? 8.5f : 3.6f;
+                    float x = (float) (12f + rad * Math.cos(angle)) * s;
+                    float y = (float) (12.4f + rad * Math.sin(angle)) * s;
+                    if (i == 0) path.moveTo(x, y);
+                    else path.lineTo(x, y);
+                }
+                path.close();
+                c.drawPath(path, p);
+                break;
+
+            case ICON_SHARE_UP:
+                c.drawLine(12f * s, 14.5f * s, 12f * s, 4.5f * s, p);
+                path.moveTo(8.2f * s, 8.2f * s);
+                path.lineTo(12f * s, 4.4f * s);
+                path.lineTo(15.8f * s, 8.2f * s);
+                c.drawPath(path, p);
+                path.reset();
+                path.moveTo(5f * s, 13f * s);
+                path.lineTo(5f * s, 18.2f * s);
+                path.lineTo(19f * s, 18.2f * s);
+                path.lineTo(19f * s, 13f * s);
+                c.drawPath(path, p);
+                break;
+
+            case ICON_THEME_SUN:
+                c.drawCircle(12f * s, 12f * s, 4.2f * s, p);
+                for (int i = 0; i < 8; i++) {
+                    double a = Math.toRadians(i * 45);
+                    float x1 = (float) (12f + 6.8f * Math.cos(a)) * s;
+                    float y1 = (float) (12f + 6.8f * Math.sin(a)) * s;
+                    float x2 = (float) (12f + 9.0f * Math.cos(a)) * s;
+                    float y2 = (float) (12f + 9.0f * Math.sin(a)) * s;
+                    c.drawLine(x1, y1, x2, y2, p);
+                }
+                break;
+
+            case ICON_THEME_MOON:
+                rf.set(5.2f * s, 5.2f * s, 18.8f * s, 18.8f * s);
+                c.drawArc(rf, 40f, 260f, false, p);
+                c.drawLine(14.5f * s, 5.5f * s, 17.5f * s, 5.5f * s, p);
+                c.drawLine(16.0f * s, 4.0f * s, 16.0f * s, 7.0f * s, p);
+                break;
+
+            case ICON_INCOGNITO_GLASSES:
+                c.drawCircle(7.5f * s, 14.5f * s, 3.2f * s, p);
+                c.drawCircle(16.5f * s, 14.5f * s, 3.2f * s, p);
+                c.drawLine(10.7f * s, 14.2f * s, 13.3f * s, 14.2f * s, p);
+                c.drawLine(4.5f * s, 13.5f * s, 6.2f * s, 7.0f * s, p);
+                c.drawLine(19.5f * s, 13.5f * s, 17.8f * s, 7.0f * s, p);
+                break;
+
+            case ICON_POWER_EXIT:
+                rf.set(5f * s, 5.5f * s, 19f * s, 19.5f * s);
+                c.drawArc(rf, -55f, 290f, false, p);
+                c.drawLine(12f * s, 3.8f * s, 12f * s, 11.5f * s, p);
+                break;
+
+            case ICON_PUZZLE_EXT:
+                rf.set(5.5f * s, 6.5f * s, 17.5f * s, 18.5f * s);
+                c.drawRoundRect(rf, 2.0f * s, 2.0f * s, p);
+                c.drawCircle(11.5f * s, 5.2f * s, 1.8f * s, p);
+                c.drawCircle(18.8f * s, 12.5f * s, 1.8f * s, p);
+                break;
+
+            case ICON_FIND_DOC:
+                rf.set(5f * s, 4f * s, 17f * s, 19f * s);
+                c.drawRoundRect(rf, 2f * s, 2f * s, p);
+                c.drawLine(8f * s, 8f * s, 13f * s, 8f * s, p);
+                c.drawLine(8f * s, 11.5f * s, 11.5f * s, 11.5f * s, p);
+                c.drawCircle(14.5f * s, 14.5f * s, 3.0f * s, p);
+                c.drawLine(16.8f * s, 16.8f * s, 19.5f * s, 19.5f * s, p);
+                break;
+
+            case ICON_TRANSLATE:
+                rf.set(3.8f * s, 4.2f * s, 14.2f * s, 14.2f * s);
+                c.drawRoundRect(rf, 2f * s, 2f * s, p);
+                c.drawLine(6.5f * s, 7.5f * s, 11.5f * s, 7.5f * s, p);
+                c.drawLine(9f * s, 6f * s, 9f * s, 11.5f * s, p);
+                rf.set(9.8f * s, 9.8f * s, 20.2f * s, 19.8f * s);
+                c.drawRoundRect(rf, 2f * s, 2f * s, p);
+                c.drawLine(13f * s, 16.5f * s, 15f * s, 12.5f * s, p);
+                c.drawLine(17f * s, 16.5f * s, 15f * s, 12.5f * s, p);
+                break;
+
+            case ICON_ADD_HOME:
+                rf.set(5.5f * s, 4f * s, 17.5f * s, 19.5f * s);
+                c.drawRoundRect(rf, 2.2f * s, 2.2f * s, p);
+                c.drawCircle(16.5f * s, 16.5f * s, 4.0f * s, p);
+                c.drawLine(14.7f * s, 16.5f * s, 18.3f * s, 16.5f * s, p);
+                c.drawLine(16.5f * s, 14.7f * s, 16.5f * s, 18.3f * s, p);
+                break;
+
+            case ICON_WINDOW_MGR:
+                rf.set(4.5f * s, 4.5f * s, 14.5f * s, 14.5f * s);
+                c.drawRoundRect(rf, 2f * s, 2f * s, p);
+                rf.set(9.5f * s, 9.5f * s, 19.5f * s, 19.5f * s);
+                c.drawRoundRect(rf, 2f * s, 2f * s, p);
+                c.drawLine(12.5f * s, 14.5f * s, 16.5f * s, 14.5f * s, p);
+                c.drawLine(14.5f * s, 12.5f * s, 14.5f * s, 16.5f * s, p);
+                break;
+
+            case ICON_VIDEO_ENHANCE:
+                rf.set(4f * s, 4f * s, 20f * s, 20f * s);
+                c.drawArc(rf, 35f, 300f, false, p);
+                path.moveTo(10.2f * s, 8.8f * s);
+                path.lineTo(15.2f * s, 12f * s);
+                path.lineTo(10.2f * s, 15.2f * s);
+                path.close();
+                c.drawPath(path, p);
+                break;
+
+            case ICON_ZOOM_PLUS:
+                c.drawCircle(10.8f * s, 10.8f * s, 6.0f * s, p);
+                c.drawLine(15.2f * s, 15.2f * s, 19.5f * s, 19.5f * s, p);
+                c.drawLine(8.3f * s, 10.8f * s, 13.3f * s, 10.8f * s, p);
+                c.drawLine(10.8f * s, 8.3f * s, 10.8f * s, 13.3f * s, p);
+                break;
+
+            case ICON_DEVTOOLS_CODE:
+                path.moveTo(9.2f * s, 7.5f * s);
+                path.lineTo(4.8f * s, 12f * s);
+                path.lineTo(9.2f * s, 16.5f * s);
+                c.drawPath(path, p);
+                path.reset();
+                path.moveTo(14.8f * s, 7.5f * s);
+                path.lineTo(19.2f * s, 12f * s);
+                path.lineTo(14.8f * s, 16.5f * s);
+                c.drawPath(path, p);
+                break;
+
+            case ICON_CHEVRON_UP:
+                path.moveTo(6.5f * s, 14.5f * s);
+                path.lineTo(12f * s, 9.0f * s);
+                path.lineTo(17.5f * s, 14.5f * s);
+                c.drawPath(path, p);
+                break;
+
+            case ICON_CHEVRON_DOWN:
+                path.moveTo(6.5f * s, 9.5f * s);
+                path.lineTo(12f * s, 15.0f * s);
+                path.lineTo(17.5f * s, 9.5f * s);
+                c.drawPath(path, p);
+                break;
         }
-        return pill;
+        return new BitmapDrawable(mContext.getResources(), bmp);
     }
 
-    private void addLemurGridTile(
-            GridLayout grid,
-            int iconRes,
-            String title,
-            boolean isEnabled,
-            boolean isActive,
-            int surfaceColor,
-            int activeSurfaceColor,
-            int textPrimaryColor,
-            int textSecondaryColor,
-            int accentColor,
-            int rippleColor,
-            View.OnClickListener clickListener,
-            View.@Nullable OnLongClickListener longClickListener) {
-        LinearLayout cell = new LinearLayout(mContext);
-        cell.setOrientation(LinearLayout.VERTICAL);
-        cell.setGravity(Gravity.CENTER_HORIZONTAL);
-        int cellPadH = dpToPx(4);
-        int cellPadV = dpToPx(6);
-        cell.setPadding(cellPadH, cellPadV, cellPadH, cellPadV);
-
-        FrameLayout iconBox = new FrameLayout(mContext);
-        GradientDrawable boxBg = new GradientDrawable();
-        boxBg.setShape(GradientDrawable.RECTANGLE);
-        boxBg.setCornerRadius(dpToPx(15));
-        boxBg.setColor(isActive ? activeSurfaceColor : surfaceColor);
-        if (isActive) {
-            boxBg.setStroke(dpToPx(1), accentColor);
-        }
-        iconBox.setBackground(
-                new RippleDrawable(ColorStateList.valueOf(rippleColor), boxBg, null));
-
-        ImageView iconView = new ImageView(mContext);
-        Drawable drawable = AppCompatResources.getDrawable(mContext, iconRes);
-        if (drawable != null) {
-            drawable = drawable.mutate();
-            DrawableCompat.setTint(drawable, isActive ? accentColor : textPrimaryColor);
-            iconView.setImageDrawable(drawable);
-        }
-        FrameLayout.LayoutParams iconLp =
-                new FrameLayout.LayoutParams(dpToPx(24), dpToPx(24), Gravity.CENTER);
-        iconBox.addView(iconView, iconLp);
-
-        LinearLayout.LayoutParams boxLp =
-                new LinearLayout.LayoutParams(dpToPx(48), dpToPx(48));
-        boxLp.bottomMargin = dpToPx(5);
-        cell.addView(iconBox, boxLp);
-
-        TextView textView = new TextView(mContext);
-        textView.setText(title);
-        textView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f);
-        textView.setGravity(Gravity.CENTER);
-        textView.setSingleLine(true);
-        textView.setEllipsize(TextUtils.TruncateAt.END);
-        textView.setTextColor(
-                isActive ? accentColor : (isEnabled ? textPrimaryColor : textSecondaryColor));
-        if (isActive) {
-            textView.setTypeface(Typeface.DEFAULT_BOLD);
-        }
-        cell.addView(
-                textView,
-                new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.WRAP_CONTENT));
-
-        cell.setEnabled(isEnabled);
-        cell.setAlpha(isEnabled ? 1.0f : 0.40f);
-        if (isEnabled) {
-            cell.setOnClickListener(clickListener);
-            iconBox.setOnClickListener(clickListener);
-            if (longClickListener != null) {
-                cell.setOnLongClickListener(longClickListener);
-                iconBox.setOnLongClickListener(longClickListener);
-            }
-        } else {
-            iconBox.setClickable(false);
-        }
-
-        GridLayout.LayoutParams gridLp =
-                new GridLayout.LayoutParams(
-                        GridLayout.spec(GridLayout.UNDEFINED, 1f),
-                        GridLayout.spec(GridLayout.UNDEFINED, 1f));
-        gridLp.width = 0;
-        gridLp.height = ViewGroup.LayoutParams.WRAP_CONTENT;
-        grid.addView(cell, gridLp);
+    private Drawable createChromeStoreDrawable() {
+        float d = mContext.getResources().getDisplayMetrics().density;
+        int px = Math.max(28, Math.round(28f * d));
+        Bitmap bmp = Bitmap.createBitmap(px, px, Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(bmp);
+        float s = px / 28f;
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        RectF bag = new RectF(3f * s, 4f * s, 25f * s, 24f * s);
+        p.setStyle(Paint.Style.FILL);
+        p.setColor(0xFFF1F3F4);
+        c.drawRoundRect(bag, 3.5f * s, 3.5f * s, p);
+        p.setColor(0xFF9AA0A6);
+        c.drawRoundRect(new RectF(10f * s, 6.5f * s, 18f * s, 9f * s), 1.2f * s, 1.2f * s, p);
+        p.setColor(0xFFEA4335);
+        c.drawArc(new RectF(7f * s, 11f * s, 21f * s, 25f * s), 180f, 180f, true, p);
+        p.setColor(0xFFFBBC04);
+        c.drawArc(new RectF(7f * s, 11f * s, 21f * s, 25f * s), 280f, 80f, true, p);
+        p.setColor(0xFF34A853);
+        c.drawArc(new RectF(7f * s, 11f * s, 21f * s, 25f * s), 180f, 65f, true, p);
+        p.setColor(0xFFFFFFFF);
+        c.drawCircle(14f * s, 18f * s, 3.8f * s, p);
+        p.setColor(0xFF4285F4);
+        c.drawCircle(14f * s, 18f * s, 2.8f * s, p);
+        return new BitmapDrawable(mContext.getResources(), bmp);
     }
 
-    private View buildBottomBarButton(
-            int iconRes,
-            @Nullable String label,
-            String contentDesc,
-            boolean isEnabled,
-            boolean useStopLevel,
-            int surfaceColor,
-            int textPrimaryColor,
-            int textSecondaryColor,
-            int rippleColor,
-            View.OnClickListener clickListener) {
-        LinearLayout btn = new LinearLayout(mContext);
-        btn.setOrientation(LinearLayout.HORIZONTAL);
-        btn.setGravity(Gravity.CENTER);
-        btn.setContentDescription(contentDesc);
-        int marginH = dpToPx(3);
-        int padH = dpToPx(8);
-        btn.setPadding(padH, 0, padH, 0);
+    private Drawable createEdgeStoreDrawable() {
+        float d = mContext.getResources().getDisplayMetrics().density;
+        int px = Math.max(28, Math.round(28f * d));
+        Bitmap bmp = Bitmap.createBitmap(px, px, Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(bmp);
+        float s = px / 28f;
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        p.setStyle(Paint.Style.FILL);
+        p.setColor(0xFFF25022);
+        c.drawRoundRect(new RectF(4f * s, 4f * s, 13f * s, 13f * s), 1.5f * s, 1.5f * s, p);
+        p.setColor(0xFF7FBA00);
+        c.drawRoundRect(new RectF(15f * s, 4f * s, 24f * s, 13f * s), 1.5f * s, 1.5f * s, p);
+        p.setColor(0xFF00A4EF);
+        c.drawRoundRect(new RectF(4f * s, 15f * s, 13f * s, 24f * s), 1.5f * s, 1.5f * s, p);
+        p.setColor(0xFFFFB900);
+        c.drawRoundRect(new RectF(15f * s, 15f * s, 24f * s, 24f * s), 1.5f * s, 1.5f * s, p);
+        return new BitmapDrawable(mContext.getResources(), bmp);
+    }
 
-        GradientDrawable bg = new GradientDrawable();
-        bg.setShape(GradientDrawable.RECTANGLE);
-        bg.setCornerRadius(dpToPx(12));
-        bg.setColor(label != null ? surfaceColor : Color.TRANSPARENT);
-        btn.setBackground(
-                new RippleDrawable(ColorStateList.valueOf(rippleColor), bg, null));
+    private Drawable createLemurEmptyExtensionsDrawable(boolean isNight) {
+        float d = mContext.getResources().getDisplayMetrics().density;
+        int w = Math.max(120, Math.round(140f * d));
+        int h = Math.max(96, Math.round(110f * d));
+        Bitmap bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(bmp);
+        float s = w / 140f;
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
 
-        ImageView iconView = new ImageView(mContext);
-        Drawable drawable = AppCompatResources.getDrawable(mContext, iconRes);
-        if (drawable != null) {
-            drawable = drawable.mutate();
-            if (iconRes == R.drawable.btn_reload_stop) {
-                Resources resources = mContext.getResources();
-                drawable.setLevel(
-                        useStopLevel
-                                ? resources.getInteger(R.integer.reload_button_level_stop)
-                                : resources.getInteger(R.integer.reload_button_level_reload));
-            }
-            DrawableCompat.setTint(
-                    drawable, isEnabled ? textPrimaryColor : textSecondaryColor);
-            iconView.setImageDrawable(drawable);
-        }
-        LinearLayout.LayoutParams iconLp =
-                new LinearLayout.LayoutParams(dpToPx(20), dpToPx(20));
-        if (label != null) {
-            iconLp.setMarginEnd(dpToPx(5));
-        }
-        btn.addView(iconView, iconLp);
+        int badgeBg = isNight ? 0xFF38393E : 0xFFE4E7EE;
+        int badgeFg = isNight ? 0xFF9AA0A6 : 0xFF5F6368;
+        p.setStyle(Paint.Style.FILL);
+        p.setColor(badgeBg);
+        c.drawCircle(86f * s, 22f * s, 11f * s, p);
+        c.drawCircle(76f * s, 46f * s, 12f * s, p);
+        c.drawCircle(94f * s, 66f * s, 11f * s, p);
 
-        if (label != null) {
-            TextView tv = new TextView(mContext);
-            tv.setText(label);
-            tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
-            tv.setSingleLine(true);
-            tv.setEllipsize(TextUtils.TruncateAt.END);
-            tv.setTextColor(isEnabled ? textPrimaryColor : textSecondaryColor);
-            tv.setTypeface(Typeface.DEFAULT_BOLD);
-            btn.addView(
-                    tv,
-                    new LinearLayout.LayoutParams(
-                            ViewGroup.LayoutParams.WRAP_CONTENT,
-                            ViewGroup.LayoutParams.WRAP_CONTENT));
-        }
+        p.setColor(badgeFg);
+        c.drawRoundRect(new RectF(81f * s, 17f * s, 91f * s, 27f * s), 2f * s, 2f * s, p);
+        c.drawRoundRect(new RectF(71f * s, 41f * s, 81f * s, 51f * s), 2f * s, 2f * s, p);
+        c.drawRoundRect(new RectF(89f * s, 61f * s, 99f * s, 71f * s), 2f * s, 2f * s, p);
 
-        btn.setEnabled(isEnabled);
-        btn.setAlpha(isEnabled ? 1.0f : 0.38f);
-        if (isEnabled) {
-            btn.setOnClickListener(clickListener);
-        }
-        return btn;
+        p.setColor(0xFFFF9800);
+        c.drawRoundRect(new RectF(42f * s, 52f * s, 66f * s, 86f * s), 8f * s, 8f * s, p);
+        p.setColor(isNight ? 0xFFE8D5C4 : 0xFFF5CBA7);
+        c.drawCircle(54f * s, 38f * s, 9f * s, p);
+        return new BitmapDrawable(mContext.getResources(), bmp);
     }
 
     private int dpToPx(float dp) {
@@ -1934,6 +2322,16 @@ def patch_tabbed_app_menu_delegate(src_dir: Path) -> None:
     missing_imports = "".join(imp for imp in TABBED_IMPORTS if imp not in text)
     if missing_imports:
         text = text.replace(import_anchor, import_anchor + missing_imports, 1)
+
+    ctor_anchor = "        mAppMenuDelegate = appMenuDelegate;\n"
+    ctor_replacement = (
+        "        mAppMenuDelegate = appMenuDelegate;\n"
+        "        registerLemurExtensionsMenuOpener();\n"
+    )
+    if "registerLemurExtensionsMenuOpener();" not in text:
+        if ctor_anchor not in text:
+            raise SystemExit(f"mAppMenuDelegate constructor anchor not found in {path}")
+        text = text.replace(ctor_anchor, ctor_replacement, 1)
 
     destroy_anchor = "    public void destroy() {\n        super.destroy();\n"
     destroy_replacement = (
@@ -1967,6 +2365,7 @@ def main() -> None:
         raise SystemExit("Usage: patch_lemur_app_menu.py <chromium-src-dir>")
 
     src_dir = Path(sys.argv[1]).resolve()
+    patch_menu_button(src_dir)
     patch_extensions_toolbar_coordinator(src_dir)
     patch_extensions_toolbar_coordinator_impl(src_dir)
     patch_extensions_menu_coordinator(src_dir)
@@ -1974,7 +2373,7 @@ def main() -> None:
     patch_app_menu_properties_delegate(src_dir)
     patch_app_menu_handler_impl(src_dir)
     patch_tabbed_app_menu_delegate(src_dir)
-    print(f"Successfully applied Lemur-style quick menu with inline extension icons in {src_dir}")
+    print(f"Successfully applied Lemur-style toolbar icons, 3-line menu, and 4-square extensions sheet in {src_dir}")
 
 
 if __name__ == "__main__":
