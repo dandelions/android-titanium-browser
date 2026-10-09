@@ -1372,7 +1372,6 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
                         || (currentTab != null && currentTab.isNativePage());
         final boolean hasWebContents =
                 currentTab != null && !isNativePage && currentWebContents != null;
-        Profile profile = getProfileFromTabModel();
 
         // 1. Section: 扩展应用 (Installed Extensions)
         LinearLayout extHeaderRow = new LinearLayout(mContext);
@@ -1526,12 +1525,6 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
                         url.getScheme().equals(UrlConstants.CONTENT_SCHEME),
                         isIncognito,
                         url);
-        boolean autoDarkEnabled =
-                currentTab != null
-                        && !isNativePage
-                        && profile != null
-                        && WebContentsDarkModeController.isEnabledForUrl(
-                                profile, currentTab.getUrl());
 
         // Tool 1: 扩展管理
         addLemurToolSquareTile(
@@ -1621,23 +1614,7 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
                     }
                 });
 
-        // Tool 6: 视频增强 / 网页暗色
-        addLemurToolSquareTile(
-                toolsGrid,
-                createLemurVectorIcon(
-                        ICON_VIDEO_ENHANCE, autoDarkEnabled ? accentColor : textPrimaryColor, 24),
-                "视频增强",
-                hasWebContents,
-                autoDarkEnabled,
-                tileSurfaceColor,
-                activeSurfaceColor,
-                textPrimaryColor,
-                textSecondaryColor,
-                accentColor,
-                rippleColor,
-                v -> triggerMenuAction(dialog, R.id.auto_dark_web_contents_id));
-
-        // Tool 7: 默认缩放设置
+        // Tool 6: 默认缩放设置
         addLemurToolSquareTile(
                 toolsGrid,
                 createLemurVectorIcon(ICON_ZOOM_PLUS, textPrimaryColor, 24),
@@ -1668,7 +1645,7 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
                                     mContext, SettingsNavigation.SettingsFragment.ACCESSIBILITY);
                 });
 
-        // Tool 8: Devtools
+        // Tool 7: Devtools
         addLemurToolSquareTile(
                 toolsGrid,
                 createLemurVectorIcon(ICON_DEVTOOLS_CODE, textPrimaryColor, 24),
@@ -1697,7 +1674,7 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
                     }
                 });
 
-        // Tool 9: 扩展商店 (Chrome Web Store)
+        // Tool 8: 扩展商店 (Chrome Web Store)
         addLemurToolSquareTile(
                 toolsGrid,
                 createChromeStoreDrawable(),
