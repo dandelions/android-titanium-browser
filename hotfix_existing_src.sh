@@ -613,12 +613,16 @@ if ! grep -q 'Helium: follow the toolbar preference on the NTP and while editing
                 \|\| tabSwitcherShowing
                 \|\| isOmniboxFocused
                 \|\| isFindInPageShowing
-                \|\| doesUserPreferTopToolbar\) \{
+                ((?:\|\| \(isPictureInPictureShowing
+                        && ChromeFeatureList\.sPictureInPictureMovesToolbarAndroid\.isEnabled\(\)\)
+                )?)\|\| doesUserPreferTopToolbar\) \{
             newControlsPosition = ControlsPosition\.TOP;
         \} else \{
             newControlsPosition = ControlsPosition\.BOTTOM;
         \}~        // Helium: follow the toolbar preference on the NTP and while editing.
-        if (tabSwitcherShowing || isFindInPageShowing || doesUserPreferTopToolbar) {
+        if (tabSwitcherShowing
+                || isFindInPageShowing
+                $1|| doesUserPreferTopToolbar) {
             newControlsPosition = ControlsPosition.TOP;
         } else {
             newControlsPosition = ControlsPosition.BOTTOM;
