@@ -7,3 +7,5 @@ keys/
 
 *.aab
 *.apk
+__pycache__/
+*.pyc
