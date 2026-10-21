@@ -172,6 +172,10 @@ def patch_manifest_sdk_and_features(src_dir: str) -> None:
 
 
 def main() -> None:
+    if os.environ.get("CAR_COMPAT", "1").lower() in ("0", "false", "no"):
+        print("CAR_COMPAT is disabled (0). Skipping car head-unit patches.")
+        return
+
     src_dir = sys.argv[1] if len(sys.argv) > 1 else "."
 
     # 1. Clean clobbering variables in build/config/android

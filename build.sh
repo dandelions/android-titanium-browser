@@ -250,6 +250,11 @@ configure_out_dir() {
     set_gn_arg "$desired_args" ext_version_enabled true
     set_gn_arg "$desired_args" ext_version_increment "\"$BUILD_VERSION_INCREMENT\""
     append_common_gn_args "$desired_args"
+    if [ "${CAR_COMPAT:-1}" != "0" ]; then
+        set_gn_arg "$desired_args" default_min_sdk_version 29
+    else
+        sed -i "/^default_min_sdk_version/d" "$desired_args"
+    fi
 
     if [ "${BUILD_STATE_RESTORED:-0}" = "1" ] && [ -f "$out_dir/build.ninja" ] && cmp -s "$desired_args" "$out_dir/args.gn"; then
         echo "Reusing restored GN output in $out_dir"
@@ -519,7 +524,9 @@ else
     rm -f $VANADIUM_PATCH_DIR/*javascript-optimizer-{site-setting,settings-UI}.patch
     rm -f $VANADIUM_PATCH_DIR/*component-updates.patch
     rm -f $VANADIUM_PATCH_DIR/*{pdf,PDF,for-content-public,toolbar-button,configs-from-config-app,config-app-parsing,new-tab-card,predictive-back}*.patch
-    rm -f $VANADIUM_PATCH_DIR/*original-package*.patch
+    if [ "${CAR_COMPAT:-1}" != "0" ]; then
+        rm -f $VANADIUM_PATCH_DIR/*original-package*.patch
+    fi
     # rm -rf $SCRIPT_DIR/vanadium/patches/*crashpad*.patch
     replace "$VANADIUM_PATCH_DIR" "VANADIUM" "HELIUM"
     replace "$VANADIUM_PATCH_DIR" "Vanadium" "Helium"
