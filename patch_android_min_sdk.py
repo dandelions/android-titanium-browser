@@ -125,18 +125,11 @@ def patch_manifest_sdk_and_features(src_dir: str) -> None:
 
         new_content = content
 
-        # 1. 显式在 AndroidManifest.xml 中写入或更新 <uses-sdk>
-        if "<uses-sdk" in new_content:
-            new_content = re.sub(
-                r"<uses-sdk[^>]*/>",
-                '<uses-sdk android:minSdkVersion="29" />',
-                new_content,
-            )
-        else:
-            # 插入到 <manifest ...> 标签之后
-            def insert_uses_sdk(m):
-                return m.group(0) + '\n    <uses-sdk android:minSdkVersion="29" />'
-            new_content = re.sub(r"<manifest[^>]*>", insert_uses_sdk, new_content, count=1)
+        # 1. 清除 AndroidManifest.xml 中可能存在的硬编码 <uses-sdk>
+        # Chromium 构建系统 (manifest_merger / generate_manifest) 会根据 GN 的 min_sdk_version 自动生成合法的 uses-sdk 标签。
+        # 如果源 XML 中手动插入了 <uses-sdk>，会导致合并出的二进制清单中存在重复的 <uses-sdk> 标签，
+        # 触发 AOSP PackageParser 的 "<manifest> has more than one <uses-sdk>" (INSTALL_PARSE_FAILED_BAD_MANIFEST) 致命解析错误！
+        new_content = re.sub(r"[ \t]*<uses-sdk[^>]*/>\s*", "\n", new_content)
 
         # 2. 将强制要求的 OpenGL ES 3.0 改为兼容模式 2.0 (或 required="false")，防止车机 GPU 不支持 3.0 导致包解析失败
         new_content = re.sub(
@@ -148,7 +141,7 @@ def patch_manifest_sdk_and_features(src_dir: str) -> None:
         if new_content != content:
             with open(manifest_path, "w", encoding="utf-8") as f:
                 f.write(new_content)
-            print(f"Patched uses-sdk (minSdk=29) and glEsVersion in: {manifest_path}")
+            print(f"Cleaned duplicate uses-sdk and patched glEsVersion in: {manifest_path}")
 
 
 def patch_expectations(src_dir: str) -> None:
