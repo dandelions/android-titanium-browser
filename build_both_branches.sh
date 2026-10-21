@@ -6,6 +6,7 @@ cd "$SCRIPT_DIR"
 
 DEFAULT_PROXY="${BUILD_PROXY:-${https_proxy:-${http_proxy:-${HTTPS_PROXY:-${HTTP_PROXY:-http://192.168.2.1:37896}}}}}"
 CAR_COMPAT="${CAR_COMPAT:-1}"
+BUILD_OLD_ANDROID="${BUILD_OLD_ANDROID:-$CAR_COMPAT}"
 BUILD_ARM="${BUILD_ARM:-1}"
 BUILD_ARM64="${BUILD_ARM64:-1}"
 BUILD_AAB="${BUILD_AAB:-0}"
@@ -23,6 +24,36 @@ export http_proxy="$DEFAULT_PROXY"
 export https_proxy="$DEFAULT_PROXY"
 export all_proxy="$DEFAULT_PROXY"
 export ALL_PROXY="$DEFAULT_PROXY"
+
+# 解析需要编译的目标分支列表
+# 优先级：
+# 1. 命令行参数（如：./build_both_branches.sh main old-android）
+# 2. 环境变量 BUILD_BRANCHES（如：BUILD_BRANCHES="main lemur-style-app-menu old-android"）
+# 3. 默认分支：main 与 lemur-style-app-menu；若 BUILD_OLD_ANDROID=1（或 CAR_COMPAT=1），则追加 old-android 分支
+TARGET_BRANCHES=()
+if [ "$#" -gt 0 ]; then
+    TARGET_BRANCHES=("$@")
+elif [ -n "${BUILD_BRANCHES:-}" ]; then
+    IFS=', ' read -r -a TARGET_BRANCHES <<< "$BUILD_BRANCHES"
+else
+    TARGET_BRANCHES=("main" "lemur-style-app-menu")
+    if [ "$BUILD_OLD_ANDROID" = "1" ]; then
+        TARGET_BRANCHES+=("old-android")
+    fi
+fi
+
+BRANCHES=()
+for b in "${TARGET_BRANCHES[@]}"; do
+    b_trimmed="$(echo "$b" | xargs)"
+    if [ -n "$b_trimmed" ]; then
+        BRANCHES+=("$b_trimmed")
+    fi
+done
+
+if [ "${#BRANCHES[@]}" -eq 0 ]; then
+    echo "ERROR: No branches specified to build." >&2
+    exit 1
+fi
 
 VERSION_ARGS="$SCRIPT_DIR/vanadium/args.gn"
 VERSION=$(grep -m1 -o '[0-9]\+\(\.[0-9]\+\)\{3\}' "$VERSION_ARGS" || true)
@@ -185,7 +216,7 @@ sync_git_from_remote() {
     echo "Fetching remote references from origin (proxy: $DEFAULT_PROXY)..."
     git -c "http.proxy=$DEFAULT_PROXY" -c "https.proxy=$DEFAULT_PROXY" fetch origin '+refs/heads/*:refs/remotes/origin/*' --tags --prune
 
-    for br in "main" "lemur-style-app-menu"; do
+    for br in "${BRANCHES[@]}"; do
         if git show-ref --verify --quiet "refs/remotes/origin/$br"; then
             echo "Syncing branch '$br' with 'origin/$br'..."
             if git show-ref --verify --quiet "refs/heads/$br"; then
@@ -197,6 +228,8 @@ sync_git_from_remote() {
             else
                 git -c "http.proxy=$DEFAULT_PROXY" -c "https.proxy=$DEFAULT_PROXY" branch --track "$br" "origin/$br"
             fi
+        else
+            echo "Notice: Remote branch 'origin/$br' not found. Using local '$br' branch."
         fi
     done
 
@@ -229,9 +262,10 @@ sync_git_from_remote() {
 build_branch() {
     local branch="$1"
     local step_num="$2"
+    local total_steps="${3:-${#BRANCHES[@]}}"
 
     echo "=========================================================="
-    echo " [$step_num/2] Checking '$branch' branch..."
+    echo " [$step_num/$total_steps] Checking '$branch' branch..."
     echo "=========================================================="
 
     if is_branch_up_to_date "$branch"; then
@@ -286,13 +320,14 @@ build_branch() {
 }
 
 echo "=== Build Configuration ==="
-echo "BUILD_PROXY : $DEFAULT_PROXY"
-echo "AUTO_PULL   : $AUTO_PULL"
-echo "BUILD_ARM   : $BUILD_ARM"
-echo "BUILD_ARM64 : $BUILD_ARM64"
-echo "BUILD_AAB   : $BUILD_AAB"
-echo "CAR_COMPAT  : $CAR_COMPAT"
-echo "AUTO_RELEASE: $AUTO_RELEASE"
+echo "BUILD_PROXY       : $DEFAULT_PROXY"
+echo "AUTO_PULL         : $AUTO_PULL"
+echo "BUILD_ARM         : $BUILD_ARM"
+echo "BUILD_ARM64       : $BUILD_ARM64"
+echo "BUILD_AAB         : $BUILD_AAB"
+echo "BUILD_OLD_ANDROID : $BUILD_OLD_ANDROID"
+echo "BRANCHES          : ${BRANCHES[*]}"
+echo "AUTO_RELEASE      : $AUTO_RELEASE"
 echo "==========================="
 echo ""
 
@@ -301,14 +336,20 @@ if [ "$AUTO_PULL" = "1" ]; then
     echo ""
 fi
 
-build_branch "main" "1"
-
-echo ""
-build_branch "lemur-style-app-menu" "2"
+total_branches="${#BRANCHES[@]}"
+for i in "${!BRANCHES[@]}"; do
+    branch="${BRANCHES[$i]}"
+    step_num=$((i + 1))
+    if [ "$i" -gt 0 ]; then
+        echo ""
+    fi
+    build_branch "$branch" "$step_num" "$total_branches"
+done
 
 echo ""
 echo "=========================================================="
-echo " SUCCESS: Both branches process finished!"
+echo " SUCCESS: Multi-branch build process finished!"
+echo " Branches: ${BRANCHES[*]}"
 echo " Output files in chromium/src/out/release/:"
 echo "=========================================================="
 ls -lh "$SCRIPT_DIR/chromium/src/out/release"/*.apk 2>/dev/null || true
