@@ -102,9 +102,21 @@ def patch_manifest_extract_native_libs(src_dir: str) -> None:
     with open(manifest_path, "r", encoding="utf-8") as f:
         content = f.read()
 
-    new_content = content.replace(
-        'android:extractNativeLibs="false"', 'android:extractNativeLibs="true"'
-    )
+    new_content = content
+    if 'android:extractNativeLibs="false"' in new_content:
+        new_content = new_content.replace(
+            'android:extractNativeLibs="false"', 'android:extractNativeLibs="true"'
+        )
+    elif 'android:extractNativeLibs=' not in new_content:
+        # 在 Android 10 上，如果 extractNativeLibs="false"，要求所有 SO 零压缩且页对齐，否则 PackageParser 直接报错；
+        # 显式在 <application 标签中设置 android:extractNativeLibs="true"，让 Android 10 安装时将 SO 提取到本地目录，规避解析崩溃
+        new_content = re.sub(
+            r'(<application\b)',
+            r'\1 android:extractNativeLibs="true"',
+            new_content,
+            count=1,
+        )
+
     if new_content != content:
         with open(manifest_path, "w", encoding="utf-8") as f:
             f.write(new_content)
