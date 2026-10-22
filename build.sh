@@ -649,6 +649,15 @@ if [ "$BUILD_ARM" = "1" ]; then
         sign_apk "out/tmp/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk" "out/release/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk"
         release_outputs="$release_outputs out/release/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk"
     elif [ -s "out/release/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk" ]; then
+        if [ "${CAR_COMPAT:-0}" = "1" ] || [ "${DISABLE_V3_SIGNING:-0}" = "1" ]; then
+            local_apksigner=$(find "$ANDROID_HOME/build-tools" -name apksigner 2>/dev/null | sort | tail -n 1 || true)
+            if [ -n "$local_apksigner" ] && [ -x "$local_apksigner" ]; then
+                if ! "$local_apksigner" verify --verbose "out/release/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk" 2>&1 | grep -q "Verified using v2 scheme (APK Signature Scheme v2): true"; then
+                    echo "Notice: Existing out/release/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk is missing V2 signature; re-signing in place..."
+                    sign_apk "out/release/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk" "out/release/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk"
+                fi
+            fi
+        fi
         release_outputs="$release_outputs out/release/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk"
     fi
 fi
@@ -657,6 +666,15 @@ if [ "$BUILD_ARM64" = "1" ]; then
         sign_apk "out/tmp/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk" "out/release/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk"
         release_outputs="$release_outputs out/release/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk"
     elif [ -s "out/release/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk" ]; then
+        if [ "${CAR_COMPAT:-0}" = "1" ] || [ "${DISABLE_V3_SIGNING:-0}" = "1" ]; then
+            local_apksigner=$(find "$ANDROID_HOME/build-tools" -name apksigner 2>/dev/null | sort | tail -n 1 || true)
+            if [ -n "$local_apksigner" ] && [ -x "$local_apksigner" ]; then
+                if ! "$local_apksigner" verify --verbose "out/release/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk" 2>&1 | grep -q "Verified using v2 scheme (APK Signature Scheme v2): true"; then
+                    echo "Notice: Existing out/release/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk is missing V2 signature; re-signing in place..."
+                    sign_apk "out/release/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk" "out/release/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk"
+                fi
+            fi
+        fi
         release_outputs="$release_outputs out/release/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk"
     fi
     if [ "$BUILD_AAB" = "1" ]; then
