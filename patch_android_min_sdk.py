@@ -63,10 +63,10 @@ def patch_min_sdk_in_gni(file_path: str) -> bool:
         content = f.read()
 
     new_content = content
-    # 替换 min_sdk_version = 34 为 24 (兼容 Android 7.0+ 及车机环境)
-    new_content = re.sub(r"min_sdk_version\s*=\s*34", "min_sdk_version = 24", new_content)
+    # 替换任意 min_sdk_version / default_min_sdk_version 为 24 (兼容 Android 7.0+ 及车机环境)
+    new_content = re.sub(r"min_sdk_version\s*=\s*\d+", "min_sdk_version = 24", new_content)
     new_content = re.sub(
-        r"default_min_sdk_version\s*=\s*34", "default_min_sdk_version = 24", new_content
+        r"default_min_sdk_version\s*=\s*\d+", "default_min_sdk_version = 24", new_content
     )
     # 清除 target_sdk_version 赋值以防止 GN "Assignment had no effect"
     new_content = re.sub(r"^[ \t]*target_sdk_version\s*=\s*\d+.*$\n?", "", new_content, flags=re.MULTILINE)
@@ -137,11 +137,11 @@ def patch_manifest_sdk_and_features(src_dir: str) -> None:
 
         new_content = content
 
-        # 1. 清除 AndroidManifest.xml 中可能存在的硬编码 <uses-sdk>
+        # 1. 清除 AndroidManifest.xml 中可能存在的硬编码 <uses-sdk>（兼容单行与多行格式）
         # Chromium 构建系统 (manifest_merger / generate_manifest) 会根据 GN 的 min_sdk_version 自动生成合法的 uses-sdk 标签。
         # 如果源 XML 中手动插入了 <uses-sdk>，会导致合并出的二进制清单中存在重复的 <uses-sdk> 标签，
         # 触发 AOSP PackageParser 的 "<manifest> has more than one <uses-sdk>" (INSTALL_PARSE_FAILED_BAD_MANIFEST) 致命解析错误！
-        new_content = re.sub(r"[ \t]*<uses-sdk[^>]*/>\s*", "\n", new_content)
+        new_content = re.sub(r"[ \t]*<uses-sdk\b.*?(?:/>|</uses-sdk>)\s*", "\n", new_content, flags=re.DOTALL)
 
         # 2. 将强制要求的 OpenGL ES 3.0 改为兼容模式 2.0 (或 required="false")，防止车机 GPU 不支持 3.0 导致包解析失败
         new_content = re.sub(
@@ -188,12 +188,30 @@ def patch_expectations(src_dir: str) -> None:
                         print(f"Patched AndroidManifest expectations in: {exp_path}")
 
 
-def main() -> None:
-    if os.environ.get("CAR_COMPAT", "1").lower() in ("0", "false", "no"):
-        print("CAR_COMPAT is disabled (0). Skipping car head-unit patches.")
-        return
+def is_old_android_branch(src_dir: str) -> bool:
+    if os.environ.get("CAR_COMPAT") == "1" or os.environ.get("BUILD_OLD_ANDROID") == "1" or os.environ.get("DISABLE_V3_SIGNING") == "1":
+        return True
+    if os.environ.get("CAR_COMPAT") == "0":
+        return False
+    try:
+        import subprocess
+        res = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True, text=True, cwd=src_dir)
+        if "old-android" in res.stdout:
+            return True
+        res_root = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True, text=True)
+        if "old-android" in res_root.stdout:
+            return True
+    except Exception:
+        pass
+    return True
 
+
+def main() -> None:
     src_dir = sys.argv[1] if len(sys.argv) > 1 else "."
+
+    if not is_old_android_branch(src_dir):
+        print("Not old-android branch and CAR_COMPAT is disabled. Skipping car head-unit patches.")
+        return
 
     # 1. 清理所有 .gn / .gni 中未被使用的 target_sdk_version 赋值（避免 GN Assignment had no effect 致命错误）
     clean_target_sdk_assignments_in_gn(src_dir)
@@ -228,14 +246,18 @@ def main() -> None:
                 if file_name.endswith((".gni", ".gn")):
                     patch_min_sdk_in_gni(full_path)
                 elif file_name == "AndroidManifest.xml":
-                    patch_file(
-                        full_path,
-                        [
-                            ('android:minSdkVersion="34"', 'android:minSdkVersion="24"'),
-                            ('android:minSdkVersion="29"', 'android:minSdkVersion="24"'),
-                            ('android:glEsVersion="0x00030000"', 'android:glEsVersion="0x00020000" android:required="false"'),
-                        ],
+                    with open(full_path, "r", encoding="utf-8") as f:
+                        c = f.read()
+                    nc = re.sub(r'android:minSdkVersion="\d+"', 'android:minSdkVersion="24"', c)
+                    nc = re.sub(
+                        r'<uses-feature\s+android:glEsVersion="0x00030000"\s*/>',
+                        '<uses-feature android:glEsVersion="0x00020000" android:required="false" />',
+                        nc,
                     )
+                    if nc != c:
+                        with open(full_path, "w", encoding="utf-8") as f:
+                            f.write(nc)
+                        print(f"Patched AndroidManifest.xml: {full_path}")
 
     # 5. Manifest 属性调整
     patch_manifest_extract_native_libs(src_dir)
