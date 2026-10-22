@@ -63,10 +63,10 @@ def patch_min_sdk_in_gni(file_path: str) -> bool:
         content = f.read()
 
     new_content = content
-    # 替换任意 min_sdk_version / default_min_sdk_version 为 24 (兼容 Android 7.0+ 及车机环境)
-    new_content = re.sub(r"min_sdk_version\s*=\s*\d+", "min_sdk_version = 24", new_content)
+    # 替换任意 min_sdk_version / default_min_sdk_version 为 29 (匹配 Android 10 车机基线并确保 native AIDL libbinder_ndk 工具链正常)
+    new_content = re.sub(r"min_sdk_version\s*=\s*\d+", "min_sdk_version = 29", new_content)
     new_content = re.sub(
-        r"default_min_sdk_version\s*=\s*\d+", "default_min_sdk_version = 24", new_content
+        r"default_min_sdk_version\s*=\s*\d+", "default_min_sdk_version = 29", new_content
     )
     # 清除 target_sdk_version 赋值以防止 GN "Assignment had no effect"
     new_content = re.sub(r"^[ \t]*target_sdk_version\s*=\s*\d+.*$\n?", "", new_content, flags=re.MULTILINE)
@@ -74,7 +74,7 @@ def patch_min_sdk_in_gni(file_path: str) -> bool:
     if new_content != content:
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(new_content)
-        print(f"Patched minSdk=24 in: {file_path}")
+        print(f"Patched minSdk=29 in: {file_path}")
         return True
     return False
 
@@ -182,10 +182,10 @@ def patch_expectations(src_dir: str) -> None:
                     exp_path = os.path.join(root, file_name)
                     with open(exp_path, "r", encoding="utf-8") as f:
                         c = f.read()
-                    # 将期待的 minSdkVersion 降到 24
+                    # 将期待的 minSdkVersion 降到 29 (Android 10 车机基线)
                     nc = re.sub(
                         r'android:minSdkVersion="\d+"',
-                        'android:minSdkVersion="24"',
+                        'android:minSdkVersion="29"',
                         c,
                     )
                     # 恢复之前被改成 34 的 targetSdkVersion 回 37（匹配 Chromium 原生输出，防止比对失败）
@@ -286,7 +286,7 @@ def main() -> None:
     # 4. 修正 expectations 以免检查比对失败
     patch_expectations(src_dir)
 
-    # 5. 扫描相关目录，确保 min_sdk_version 降为 24，并清除 target_sdk_version
+    # 5. 扫描相关目录，确保 min_sdk_version 降为 29，并清除 target_sdk_version
     scan_dirs = [
         os.path.join(src_dir, "chrome/android"),
         os.path.join(src_dir, "android_webview"),
@@ -304,7 +304,7 @@ def main() -> None:
                 elif "AndroidManifest" in file_name and file_name.endswith(".xml"):
                     with open(full_path, "r", encoding="utf-8") as f:
                         c = f.read()
-                    nc = re.sub(r'android:minSdkVersion="\d+"', 'android:minSdkVersion="24"', c)
+                    nc = re.sub(r'android:minSdkVersion="\d+"', 'android:minSdkVersion="29"', c)
                     nc = re.sub(
                         r'<uses-feature\s+android:glEsVersion="0x00030000"\s*/>',
                         '<uses-feature android:glEsVersion="0x00020000" android:required="false" />',
@@ -321,7 +321,7 @@ def main() -> None:
     patch_manifest_sdk_and_features(src_dir)
     clean_manifest_zygote_and_modern_attributes(src_dir)
 
-    print("SDK version patch (minSdk: 24) & extractNativeLibs check complete.")
+    print("SDK version patch (minSdk: 29) & extractNativeLibs check complete.")
 
 
 if __name__ == "__main__":

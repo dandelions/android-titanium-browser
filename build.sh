@@ -251,7 +251,7 @@ configure_out_dir() {
     set_gn_arg "$desired_args" ext_version_increment "\"$BUILD_VERSION_INCREMENT\""
     append_common_gn_args "$desired_args"
     if [ "${CAR_COMPAT:-1}" != "0" ]; then
-        set_gn_arg "$desired_args" default_min_sdk_version 24
+        set_gn_arg "$desired_args" default_min_sdk_version 29
     else
         sed -i "/^default_min_sdk_version/d" "$desired_args"
     fi
