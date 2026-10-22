@@ -67,12 +67,15 @@ sign_apk() {
         to_sign="$tmp_aligned"
     fi
 
-    # 针对低版本/车机环境（或显式开启 ENABLE_V2_SIGNING / CAR_COMPAT 时），
-    # 传递 --min-sdk-version 21，激活 apksigner 同时写入 V1 (JAR) 与 V2 (APK Signature Scheme v2) 签名块。
-    # 对于高版本亦安全兼容 V1 + V2 + V3 完整三重签名。
+    # 针对低版本/车机环境（或显式开启 ENABLE_V2_SIGNING / CAR_COMPAT 时）：
+    # Android 9+ 的 V3 签名会导致 apksigner 自动跳过/抑制 V1 和 V2；
+    # 并且老车机/低版本 PackageParser 不支持 V3 甚至会解析崩溃。
+    # 显式关闭 V3，强制生成工业级兼容的 V1 (JAR) + V2 (APK Signature Scheme v2) 双签名。
+    local v3_signing="true"
     local extra_sign_args=()
     if [ "${ENABLE_V2_SIGNING:-1}" = "1" ] || [ "${CAR_COMPAT:-0}" = "1" ]; then
-        extra_sign_args+=(--min-sdk-version 21)
+        v3_signing="false"
+        extra_sign_args+=(--min-sdk-version 24)
     fi
 
     if [ -n "${storeType:-}" ]; then
@@ -84,7 +87,8 @@ sign_apk() {
             --ks-key-alias "$keyAlias" \
             --v1-signing-enabled true \
             --v2-signing-enabled true \
-            --v3-signing-enabled true \
+            --v3-signing-enabled "$v3_signing" \
+            --v4-signing-enabled false \
             "${extra_sign_args[@]}" \
             --out "$output_apk" \
             "$to_sign" || { rm -f "$tmp_aligned"; exit 1; }
@@ -96,7 +100,8 @@ sign_apk() {
             --ks-key-alias "$keyAlias" \
             --v1-signing-enabled true \
             --v2-signing-enabled true \
-            --v3-signing-enabled true \
+            --v3-signing-enabled "$v3_signing" \
+            --v4-signing-enabled false \
             "${extra_sign_args[@]}" \
             --out "$output_apk" \
             "$to_sign" || { rm -f "$tmp_aligned"; exit 1; }
