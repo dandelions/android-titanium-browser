@@ -68,28 +68,33 @@ sign_apk() {
     local tmp_aligned=""
     local tmp_source=""
 
-    if [ -n "$zipalign" ] && [ -x "$zipalign" ]; then
-        tmp_aligned="$(mktemp --suffix=-aligned.apk)"
-        "$zipalign" -p -f 4 "$input_apk" "$tmp_aligned"
-        to_sign="$tmp_aligned"
-    elif [ "$(realpath "$input_apk" 2>/dev/null || echo "$input_apk")" = "$(realpath "$output_apk" 2>/dev/null || echo "$output_apk")" ]; then
-        tmp_source="$(mktemp --suffix=-source.apk)"
-        cp "$input_apk" "$tmp_source"
-        to_sign="$tmp_source"
-    fi
-
-    # 针对 old-android 分支（或显式开启 DISABLE_V3_SIGNING=1 / CAR_COMPAT=1 时）：
-    # Android 9+ 的 V3 签名会导致老车机/低版本 PackageParser 解析崩溃，
-    # 并且 apksigner 在 V3 开启时不会为老车机生成/验证 V2 签名。
-    # 因此对 old-android 分支关闭 V3 (--v3-signing-enabled false)，
-    # 强制生成工业级兼容的 V1 (JAR) + V2 (APK Signature Scheme v2) 双签名；
-    # 而 main 与 lemur-style-app-menu 等高版本分支保持开启 V3 签名。
     local current_git_branch=""
     current_git_branch="$(git -C "$SCRIPT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
 
     local is_old_android=0
     if [ "${DISABLE_V3_SIGNING:-0}" = "1" ] || [ "${CAR_COMPAT:-0}" = "1" ] || [ "$current_git_branch" = "old-android" ] || [[ "$input_apk" == *"old-android"* ]] || [[ "$output_apk" == *"old-android"* ]]; then
         is_old_android=1
+    fi
+
+    local to_prepare="$input_apk"
+    local tmp_prepared=""
+    if [ "$is_old_android" = "1" ] && [ -f "$SCRIPT_DIR/patch_apk_manifest.py" ]; then
+        tmp_prepared="$(mktemp --suffix=-manifest-patched.apk)"
+        cp "$input_apk" "$tmp_prepared"
+        python3 "$SCRIPT_DIR/patch_apk_manifest.py" "$tmp_prepared" 24 34 34 || true
+        to_prepare="$tmp_prepared"
+    fi
+
+    if [ -n "$zipalign" ] && [ -x "$zipalign" ]; then
+        tmp_aligned="$(mktemp --suffix=-aligned.apk)"
+        "$zipalign" -p -f 4 "$to_prepare" "$tmp_aligned"
+        to_sign="$tmp_aligned"
+    elif [ "$(realpath "$to_prepare" 2>/dev/null || echo "$to_prepare")" = "$(realpath "$output_apk" 2>/dev/null || echo "$output_apk")" ]; then
+        tmp_source="$(mktemp --suffix=-source.apk)"
+        cp "$to_prepare" "$tmp_source"
+        to_sign="$tmp_source"
+    else
+        to_sign="$to_prepare"
     fi
 
     local v3_signing="true"
@@ -114,7 +119,7 @@ sign_apk() {
             --v4-signing-enabled false \
             "${extra_sign_args[@]}" \
             --out "$output_apk" \
-            "$to_sign" || { rm -f "$tmp_aligned" "$tmp_source"; exit 1; }
+            "$to_sign" || { rm -f "$tmp_aligned" "$tmp_source" "$tmp_prepared"; exit 1; }
     else
         "$apksigner" sign --verbose \
             --ks "$SCRIPT_DIR/keys/test.jks" \
@@ -127,13 +132,16 @@ sign_apk() {
             --v4-signing-enabled false \
             "${extra_sign_args[@]}" \
             --out "$output_apk" \
-            "$to_sign" || { rm -f "$tmp_aligned" "$tmp_source"; exit 1; }
+            "$to_sign" || { rm -f "$tmp_aligned" "$tmp_source" "$tmp_prepared"; exit 1; }
     fi
     if [ -n "$tmp_aligned" ]; then
         rm -f "$tmp_aligned"
     fi
     if [ -n "$tmp_source" ]; then
         rm -f "$tmp_source"
+    fi
+    if [ -n "$tmp_prepared" ]; then
+        rm -f "$tmp_prepared"
     fi
     echo "[sign_apk] Signature schemes for $(basename "$output_apk"):"
     "$apksigner" verify --verbose "$output_apk" 2>&1 | grep -E "Verifies|Verified using" || true

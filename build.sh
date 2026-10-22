@@ -650,11 +650,25 @@ if [ "$BUILD_ARM" = "1" ]; then
     elif [ -s "out/release/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk" ]; then
         if [ "${CAR_COMPAT:-0}" = "1" ] || [ "${DISABLE_V3_SIGNING:-0}" = "1" ]; then
             local_apksigner=$(find "$ANDROID_HOME/build-tools" -name apksigner 2>/dev/null | sort | tail -n 1 || true)
+            local_aapt=$(find "$ANDROID_HOME" -name aapt -o -name aapt2 2>/dev/null | sort | tail -n 1 || true)
+            local needs_update=0
             if [ -n "$local_apksigner" ] && [ -x "$local_apksigner" ]; then
                 if ! "$local_apksigner" verify --verbose "out/release/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk" 2>&1 | grep -q "Verified using v2 scheme (APK Signature Scheme v2): true"; then
-                    echo "Notice: Existing out/release/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk is missing V2 signature; re-signing in place..."
-                    sign_apk "out/release/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk" "out/release/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk"
+                    needs_update=1
                 fi
+            fi
+            if [ -n "$local_aapt" ] && [ -x "$local_aapt" ]; then
+                dump_info="$("$local_aapt" dump badging "out/release/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk" 2>/dev/null || true)"
+                if ! echo "$dump_info" | grep -q "minSdkVersion:'24'"; then
+                    needs_update=1
+                fi
+                if ! echo "$dump_info" | grep -q "targetSdkVersion:'34'"; then
+                    needs_update=1
+                fi
+            fi
+            if [ "$needs_update" = "1" ]; then
+                echo "Notice: Existing out/release/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk needs manifest patch or V2 signature; updating in place..."
+                sign_apk "out/release/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk" "out/release/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk"
             fi
         fi
         release_outputs="$release_outputs out/release/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk"
@@ -667,11 +681,25 @@ if [ "$BUILD_ARM64" = "1" ]; then
     elif [ -s "out/release/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk" ]; then
         if [ "${CAR_COMPAT:-0}" = "1" ] || [ "${DISABLE_V3_SIGNING:-0}" = "1" ]; then
             local_apksigner=$(find "$ANDROID_HOME/build-tools" -name apksigner 2>/dev/null | sort | tail -n 1 || true)
+            local_aapt=$(find "$ANDROID_HOME" -name aapt -o -name aapt2 2>/dev/null | sort | tail -n 1 || true)
+            local needs_update=0
             if [ -n "$local_apksigner" ] && [ -x "$local_apksigner" ]; then
                 if ! "$local_apksigner" verify --verbose "out/release/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk" 2>&1 | grep -q "Verified using v2 scheme (APK Signature Scheme v2): true"; then
-                    echo "Notice: Existing out/release/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk is missing V2 signature; re-signing in place..."
-                    sign_apk "out/release/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk" "out/release/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk"
+                    needs_update=1
                 fi
+            fi
+            if [ -n "$local_aapt" ] && [ -x "$local_aapt" ]; then
+                dump_info="$("$local_aapt" dump badging "out/release/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk" 2>/dev/null || true)"
+                if ! echo "$dump_info" | grep -q "minSdkVersion:'24'"; then
+                    needs_update=1
+                fi
+                if ! echo "$dump_info" | grep -q "targetSdkVersion:'34'"; then
+                    needs_update=1
+                fi
+            fi
+            if [ "$needs_update" = "1" ]; then
+                echo "Notice: Existing out/release/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk needs manifest patch or V2 signature; updating in place..."
+                sign_apk "out/release/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk" "out/release/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk"
             fi
         fi
         release_outputs="$release_outputs out/release/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk"
