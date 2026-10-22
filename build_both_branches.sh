@@ -144,24 +144,36 @@ check_branch_artifacts() {
         return 1
     fi
 
-    # 仅针对 old-android 分支检查既有产物是否确实具备 V2 签名；若缺失则强制触发重新构建签名
+    # 仅针对 old-android 分支检查既有产物是否确实具备 V2 签名与正确 SDK 版本（minSdk=24, targetSdk=34）
     if [ "$branch" = "old-android" ]; then
         local apksigner_bin
         apksigner_bin=$(find "$SCRIPT_DIR/chromium/src/third_party/android_sdk" -name apksigner 2>/dev/null | sort | tail -n 1 || true)
-        if [ -n "$apksigner_bin" ] && [ -x "$apksigner_bin" ]; then
-            if [ "$BUILD_ARM64" = "1" ] && [ -s "$release_dir/${prefix}-arm64-v8a.apk" ]; then
-                if ! "$apksigner_bin" verify --verbose "$release_dir/${prefix}-arm64-v8a.apk" 2>&1 | grep -q "Verified using v2 scheme (APK Signature Scheme v2): true"; then
-                    echo "Notice: Existing ${prefix}-arm64-v8a.apk is missing V2 signature. Invalidating cache to trigger signing."
-                    return 1
+        local aapt_bin
+        aapt_bin=$(find "$SCRIPT_DIR/chromium/src/third_party/android_sdk" -name aapt -o -name aapt2 2>/dev/null | sort | tail -n 1 || true)
+        for apk_check in "$release_dir/${prefix}-arm64-v8a.apk" "$release_dir/${prefix}-armeabi-v7a.apk"; do
+            if [ -s "$apk_check" ]; then
+                if [ -n "$apksigner_bin" ] && [ -x "$apksigner_bin" ]; then
+                    if ! "$apksigner_bin" verify --verbose "$apk_check" 2>&1 | grep -q "Verified using v2 scheme (APK Signature Scheme v2): true"; then
+                        echo "Notice: Existing $(basename "$apk_check") is missing V2 signature. Invalidating cache to trigger signing."
+                        return 1
+                    fi
+                fi
+                if [ -n "$aapt_bin" ] && [ -x "$aapt_bin" ]; then
+                    local dump_info
+                    dump_info="$("$aapt_bin" dump badging "$apk_check" 2>/dev/null || true)"
+                    if [ -n "$dump_info" ]; then
+                        if echo "$dump_info" | grep -qE "targetSdkVersion:'[0-9]+'" && ! echo "$dump_info" | grep -q "targetSdkVersion:'34'"; then
+                            echo "Notice: Existing $(basename "$apk_check") targetSdkVersion is not 34. Invalidating cache to trigger rebuild."
+                            return 1
+                        fi
+                        if echo "$dump_info" | grep -qE "minSdkVersion:'[0-9]+'" && ! echo "$dump_info" | grep -q "minSdkVersion:'24'"; then
+                            echo "Notice: Existing $(basename "$apk_check") minSdkVersion is not 24. Invalidating cache to trigger rebuild."
+                            return 1
+                        fi
+                    fi
                 fi
             fi
-            if [ "$BUILD_ARM" = "1" ] && [ -s "$release_dir/${prefix}-armeabi-v7a.apk" ]; then
-                if ! "$apksigner_bin" verify --verbose "$release_dir/${prefix}-armeabi-v7a.apk" 2>&1 | grep -q "Verified using v2 scheme (APK Signature Scheme v2): true"; then
-                    echo "Notice: Existing ${prefix}-armeabi-v7a.apk is missing V2 signature. Invalidating cache to trigger signing."
-                    return 1
-                fi
-            fi
-        fi
+        done
     fi
 
     return 0
