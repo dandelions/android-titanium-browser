@@ -5,8 +5,8 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 cd "$SCRIPT_DIR"
 
 DEFAULT_PROXY="${BUILD_PROXY:-${https_proxy:-${http_proxy:-${HTTPS_PROXY:-${HTTP_PROXY:-http://192.168.2.1:37896}}}}}"
-CAR_COMPAT="${CAR_COMPAT:-1}"
-BUILD_OLD_ANDROID="${BUILD_OLD_ANDROID:-$CAR_COMPAT}"
+CAR_COMPAT="${CAR_COMPAT:-0}"
+BUILD_OLD_ANDROID="${BUILD_OLD_ANDROID:-1}"
 BUILD_ARM="${BUILD_ARM:-1}"
 BUILD_ARM64="${BUILD_ARM64:-1}"
 BUILD_AAB="${BUILD_AAB:-0}"
@@ -144,8 +144,8 @@ check_branch_artifacts() {
         return 1
     fi
 
-    # 若要求 V2 签名（如 old-android 或 ENABLE_V2_SIGNING=1），检查既有产物是否确实具备 V2 签名；若缺失则强制触发重新构建签名
-    if [ "${ENABLE_V2_SIGNING:-1}" = "1" ] || [ "$branch" = "old-android" ]; then
+    # 仅针对 old-android 分支检查既有产物是否确实具备 V2 签名；若缺失则强制触发重新构建签名
+    if [ "$branch" = "old-android" ]; then
         local apksigner_bin
         apksigner_bin=$(find "$SCRIPT_DIR/chromium/src/third_party/android_sdk" -name apksigner 2>/dev/null | sort | tail -n 1 || true)
         if [ -n "$apksigner_bin" ] && [ -x "$apksigner_bin" ]; then
@@ -325,14 +325,16 @@ build_branch() {
         fi
     fi
 
-    # 针对 old-android 分支自动启用 CAR_COMPAT=1 与 V2 签名；其他分支保持对应分支原样配置
+    # 仅针对 old-android 分支自动启用 CAR_COMPAT=1 与 DISABLE_V3_SIGNING=1；main 与 lemur-style-app-menu 保持原样开启 V3
     local branch_car_compat="${CAR_COMPAT:-0}"
+    local branch_disable_v3="${DISABLE_V3_SIGNING:-0}"
     if [ "$branch" = "old-android" ]; then
         branch_car_compat="1"
+        branch_disable_v3="1"
     fi
 
     CAR_COMPAT="$branch_car_compat" \
-    ENABLE_V2_SIGNING="$ENABLE_V2_SIGNING" \
+    DISABLE_V3_SIGNING="$branch_disable_v3" \
     FAST_LOCAL_BUILD="$effective_fast_local" \
     BUILD_PROXY="$DEFAULT_PROXY" \
     http_proxy="$DEFAULT_PROXY" \

@@ -67,13 +67,21 @@ sign_apk() {
         to_sign="$tmp_aligned"
     fi
 
-    # 针对低版本/车机环境（或显式开启 ENABLE_V2_SIGNING / CAR_COMPAT 时）：
-    # Android 9+ 的 V3 签名会导致 apksigner 自动跳过/抑制 V1 和 V2；
-    # 并且老车机/低版本 PackageParser 不支持 V3 甚至会解析崩溃。
-    # 显式关闭 V3，强制生成工业级兼容的 V1 (JAR) + V2 (APK Signature Scheme v2) 双签名。
+    # 仅针对 old-android 分支（或显式开启 DISABLE_V3_SIGNING=1 / CAR_COMPAT=1 时）：
+    # Android 9+ 的 V3 签名会导致 apksigner 自动跳过/抑制 V1 和 V2 导致老车机解析崩溃；
+    # 因此仅对 old-android 分支关闭 V3，强制生成兼容老车机的 V1 (JAR) + V2 (APK Signature Scheme v2) 签名；
+    # 而 main 与 lemur-style-app-menu 等高版本分支保持开启 V3 签名。
+    local current_git_branch=""
+    current_git_branch="$(git -C "$SCRIPT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+
+    local is_old_android=0
+    if [ "${DISABLE_V3_SIGNING:-0}" = "1" ] || [ "${CAR_COMPAT:-0}" = "1" ] || [ "$current_git_branch" = "old-android" ] || [[ "$input_apk" == *"old-android"* ]] || [[ "$output_apk" == *"old-android"* ]]; then
+        is_old_android=1
+    fi
+
     local v3_signing="true"
     local extra_sign_args=()
-    if [ "${ENABLE_V2_SIGNING:-1}" = "1" ] || [ "${CAR_COMPAT:-0}" = "1" ]; then
+    if [ "$is_old_android" = "1" ]; then
         v3_signing="false"
         extra_sign_args+=(--min-sdk-version 24)
     fi
