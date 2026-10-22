@@ -156,6 +156,26 @@ def patch_manifest_sdk_and_features(src_dir: str) -> None:
             print(f"Cleaned duplicate uses-sdk and patched glEsVersion in: {manifest_path}")
 
 
+def patch_default_android_sdk_version(src_dir: str) -> None:
+    config_gni = os.path.join(src_dir, "build/config/android/config.gni")
+    if not os.path.isfile(config_gni):
+        return
+    try:
+        with open(config_gni, "r", encoding="utf-8") as f:
+            cfg = f.read()
+        new_cfg = re.sub(
+            r"default_android_sdk_version\s*=\s*\d+",
+            "default_android_sdk_version = 34",
+            cfg,
+        )
+        if new_cfg != cfg:
+            with open(config_gni, "w", encoding="utf-8") as f:
+                f.write(new_cfg)
+            print(f"Patched default_android_sdk_version to 34 in: {config_gni}")
+    except Exception as e:
+        print(f"Warning: could not patch config.gni: {e}", file=sys.stderr)
+
+
 def patch_expectations(src_dir: str) -> None:
     expectations_dirs = [
         os.path.join(src_dir, "chrome/android/expectations"),
@@ -170,18 +190,23 @@ def patch_expectations(src_dir: str) -> None:
                     exp_path = os.path.join(root, file_name)
                     with open(exp_path, "r", encoding="utf-8") as f:
                         c = f.read()
-                    # 将期待的 minSdkVersion 从 34 降到 24
+                    # 将期待的 minSdkVersion 降到 24
                     nc = re.sub(
                         r'android:minSdkVersion="\d+"',
                         'android:minSdkVersion="24"',
                         c,
                     )
-                    # 恢复之前被误改成 34 的 targetSdkVersion 回 37（匹配 Chromium 输出）
+                    # 将期待的 targetSdkVersion 统一锁定为 34（车机系统兼容基线）
                     nc = re.sub(
-                        r'android:targetSdkVersion="34"',
-                        'android:targetSdkVersion="37"',
+                        r'android:targetSdkVersion="\d+"',
+                        'android:targetSdkVersion="34"',
                         nc,
                     )
+                    # 清理 zygotePreload 及现代属性期待项
+                    nc = re.sub(r'[ \t]*android:zygotePreloadName="[^"]*"', '', nc)
+                    nc = re.sub(r'[ \t]*android:zygotePreloadNativeLib="[^"]*"', '', nc)
+                    nc = re.sub(r'[ \t]*android:memtagMode="[^"]*"', '', nc)
+                    nc = re.sub(r'[ \t]*android:enableOnBackInvokedCallback="[^"]*"', '', nc)
                     if nc != c:
                         with open(exp_path, "w", encoding="utf-8") as f:
                             f.write(nc)
@@ -210,6 +235,17 @@ def clean_manifest_zygote_and_modern_attributes(src_dir: str) -> None:
     manifest_paths = [
         os.path.join(src_dir, "chrome/android/java/AndroidManifest.xml"),
     ]
+    # 额外扫描 chrome/android 与 android_webview 下可能存在的所有 AndroidManifest 文件
+    for sub in ["chrome/android", "android_webview"]:
+        target_dir = os.path.join(src_dir, sub)
+        if os.path.isdir(target_dir):
+            for root, _, files in os.walk(target_dir):
+                for file_name in files:
+                    if "AndroidManifest" in file_name and file_name.endswith(".xml"):
+                        p = os.path.join(root, file_name)
+                        if p not in manifest_paths:
+                            manifest_paths.append(p)
+
     for manifest_path in manifest_paths:
         if not os.path.isfile(manifest_path):
             continue
@@ -241,7 +277,10 @@ def main() -> None:
     # 1. 清理所有 .gn / .gni 中未被使用的 target_sdk_version 赋值（避免 GN Assignment had no effect 致命错误）
     clean_target_sdk_assignments_in_gn(src_dir)
 
-    # 2. 修改关键 GN 模板的 min_sdk_version
+    # 2. 锁定 default_android_sdk_version = 34（使 targetSdkVersion 与 compileSdkVersion 均为 34）
+    patch_default_android_sdk_version(src_dir)
+
+    # 3. 修改关键 GN 模板的 min_sdk_version
     key_gni_targets = [
         os.path.join(src_dir, "chrome/android/chrome_public_apk_tmpl.gni"),
         os.path.join(src_dir, "chrome/android/trichrome.gni"),
@@ -252,10 +291,10 @@ def main() -> None:
     for gni_file in key_gni_targets:
         patch_min_sdk_in_gni(gni_file)
 
-    # 3. 修正 expectations 以免检查比对失败
+    # 4. 修正 expectations 以免检查比对失败（锁定 minSdk=24, targetSdk=34）
     patch_expectations(src_dir)
 
-    # 4. 扫描相关目录，确保 min_sdk_version 降为 24，并清除 target_sdk_version
+    # 5. 扫描相关目录，确保 min_sdk_version 降为 24，并清除 target_sdk_version
     scan_dirs = [
         os.path.join(src_dir, "chrome/android"),
         os.path.join(src_dir, "android_webview"),
@@ -270,7 +309,7 @@ def main() -> None:
                 full_path = os.path.join(root, file_name)
                 if file_name.endswith((".gni", ".gn")):
                     patch_min_sdk_in_gni(full_path)
-                elif file_name == "AndroidManifest.xml":
+                elif "AndroidManifest" in file_name and file_name.endswith(".xml"):
                     with open(full_path, "r", encoding="utf-8") as f:
                         c = f.read()
                     nc = re.sub(r'android:minSdkVersion="\d+"', 'android:minSdkVersion="24"', c)
@@ -284,13 +323,13 @@ def main() -> None:
                             f.write(nc)
                         print(f"Patched AndroidManifest.xml: {full_path}")
 
-    # 5. Manifest 属性调整
+    # 6. Manifest 属性调整
     patch_manifest_extract_native_libs(src_dir)
     remove_original_package_from_manifest(src_dir)
     patch_manifest_sdk_and_features(src_dir)
     clean_manifest_zygote_and_modern_attributes(src_dir)
 
-    print("SDK version patch (minSdk: 24) & extractNativeLibs check complete.")
+    print("SDK version patch (minSdk: 24, targetSdk: 34) & extractNativeLibs check complete.")
 
 
 if __name__ == "__main__":
