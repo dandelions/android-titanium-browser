@@ -70,45 +70,82 @@ add_release_file() {
     fi
 }
 
-# 1. Main branch builds for the current $VERSION
-for abi in arm64-v8a armeabi-v7a x86_64 x86; do
-    add_release_file "$RELEASE_DIR/$VERSION-$abi.apk"
-    add_release_file "$RELEASE_DIR/$VERSION-$abi.aab"
-done
+# 收集需要发布的安装包产物
+# 支持通过环境变量 RELEASE_BRANCHES 指定当前构建发布的分支，
+# 若未指定则自动检测当前 git 分支，确保“同一个分支覆盖/上传，不同分支不跨界操作”。
+CURRENT_GIT_BRANCH="$(git_repo rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+TARGET_RELEASE_BRANCHES="${RELEASE_BRANCHES:-${CURRENT_GIT_BRANCH:-all}}"
 
-# 2. Current $VERSION branch builds and current $VERSION lemur/lemon builds only
-for file in \
-    "$RELEASE_DIR/$VERSION"-*.apk \
-    "$RELEASE_DIR/$VERSION"-*.aab \
-    "$RELEASE_DIR"/*"$VERSION"*.apk \
-    "$RELEASE_DIR"/*"$VERSION"*.aab; do
-    [ -f "$file" ] || continue
-    base_lower=$(basename "$file" | tr '[:upper:]' '[:lower:]')
-    case "$base_lower" in
-        "$VERSION"-arm64-v8a.apk|"$VERSION"-armeabi-v7a.apk|"$VERSION"-x86_64.apk|"$VERSION"-x86.apk|"$VERSION"-arm64-v8a.aab|"$VERSION"-armeabi-v7a.aab)
-            add_release_file "$file"
-            ;;
-        "$VERSION"-*lemur*.*|"$VERSION"-*lemon*.*|*"$VERSION"*lemur*.*|*"$VERSION"*lemon*.*)
-            add_release_file "$file"
-            ;;
-        "$VERSION"-*.apk|"$VERSION"-*.aab)
-            add_release_file "$file"
-            ;;
-    esac
-done
+if [ -n "$TARGET_RELEASE_BRANCHES" ] && [ "$TARGET_RELEASE_BRANCHES" != "all" ]; then
+    echo "Filtering release artifacts for branch(es): $TARGET_RELEASE_BRANCHES"
+    for br in $TARGET_RELEASE_BRANCHES; do
+        if [ "$br" = "main" ]; then
+            for abi in arm64-v8a armeabi-v7a x86_64 x86; do
+                add_release_file "$RELEASE_DIR/$VERSION-$abi.apk"
+                add_release_file "$RELEASE_DIR/$VERSION-$abi.aab"
+            done
+        else
+            branch_tag="$(printf '%s' "$br" | tr -c 'A-Za-z0-9._-' '-' | sed 's/^-*//; s/-*$//')"
+            for file in \
+                "$RELEASE_DIR/$VERSION-$branch_tag"-*.apk \
+                "$RELEASE_DIR/$VERSION-$branch_tag"-*.aab; do
+                add_release_file "$file"
+            done
+        fi
+    done
+else
+    # 1. Main branch builds for the current $VERSION
+    for abi in arm64-v8a armeabi-v7a x86_64 x86; do
+        add_release_file "$RELEASE_DIR/$VERSION-$abi.apk"
+        add_release_file "$RELEASE_DIR/$VERSION-$abi.aab"
+    done
+
+    # 2. Current $VERSION branch builds and current $VERSION lemur/lemon builds only
+    for file in \
+        "$RELEASE_DIR/$VERSION"-*.apk \
+        "$RELEASE_DIR/$VERSION"-*.aab \
+        "$RELEASE_DIR"/*"$VERSION"*.apk \
+        "$RELEASE_DIR"/*"$VERSION"*.aab; do
+        [ -f "$file" ] || continue
+        base_lower=$(basename "$file" | tr '[:upper:]' '[:lower:]')
+        case "$base_lower" in
+            "$VERSION"-arm64-v8a.apk|"$VERSION"-armeabi-v7a.apk|"$VERSION"-x86_64.apk|"$VERSION"-x86.apk|"$VERSION"-arm64-v8a.aab|"$VERSION"-armeabi-v7a.aab)
+                add_release_file "$file"
+                ;;
+            "$VERSION"-*lemur*.*|"$VERSION"-*lemon*.*|*"$VERSION"*lemur*.*|*"$VERSION"*lemon*.*)
+                add_release_file "$file"
+                ;;
+            "$VERSION"-*.apk|"$VERSION"-*.aab)
+                add_release_file "$file"
+                ;;
+        esac
+    done
+fi
 
 if [ "$found" -ne 1 ]; then
-    echo "No APK/AAB files found for version $VERSION in $RELEASE_DIR" >&2
+    echo "No APK/AAB files found for branch(es) '$TARGET_RELEASE_BRANCHES' (version $VERSION) in $RELEASE_DIR" >&2
     exit 1
 fi
 
 sha_file="$RELEASE_DIR/$VERSION-SHA256SUMS.txt"
 (
     cd "$RELEASE_DIR"
-    : > "$sha_file"
+    temp_sha="$(mktemp)"
+    # 保留已有 SHA256SUMS.txt 中其他分支/文件的校验和，仅覆盖当前发布文件的记录
+    if [ -f "$sha_file" ]; then
+        current_basenames="$(while IFS= read -r f; do basename "$f"; done < "$files_list")"
+        while IFS= read -r line; do
+            entry_file=$(printf '%s' "$line" | awk '{print $2}' | sed 's/^\*//')
+            if ! printf '%s\n' "$current_basenames" | grep -Fqx "$entry_file" 2>/dev/null; then
+                printf '%s\n' "$line" >> "$temp_sha"
+            fi
+        done < "$sha_file"
+    fi
     while IFS= read -r file; do
-        sha256sum "$(basename "$file")" >> "$sha_file"
+        sha256sum "$(basename "$file")" >> "$temp_sha"
     done < "$files_list"
+    sort -k2 -u "$temp_sha" > "$sha_file"
+    rm -f "$temp_sha"
 )
 printf '%s\n' "$sha_file" >> "$files_list"
 
@@ -120,20 +157,31 @@ git_repo fetch origin "refs/tags/$TAG:refs/tags/$TAG" >/dev/null 2>&1 || true
 if git_repo rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
     tag_commit=$(git_repo rev-list -n 1 "$TAG")
     if [ "$tag_commit" != "$head_commit" ]; then
-        if [ "$MOVE_TAG" = "1" ]; then
-            git_repo tag -f "$TAG" "$head_commit"
+        # 仅当现有 tag 属于当前分支（或是当前 HEAD 的祖先）时才允许移动/覆盖 tag；
+        # 若现有 tag 指向其他分支（例如 tag 在 main 上，而当前在 old-android），严禁跨分支覆盖 tag
+        tag_is_same_branch=0
+        if git_repo merge-base --is-ancestor "$tag_commit" "$head_commit" 2>/dev/null; then
+            tag_is_same_branch=1
+        elif [ -n "$CURRENT_GIT_BRANCH" ] && [ "$CURRENT_GIT_BRANCH" != "HEAD" ]; then
+            if git_repo branch --contains "$tag_commit" 2>/dev/null | grep -qE "(^|[[:space:]])\*?${CURRENT_GIT_BRANCH}$"; then
+                tag_is_same_branch=1
+            fi
+        fi
+
+        if [ "$tag_is_same_branch" = "1" ]; then
+            if [ "$MOVE_TAG" = "1" ]; then
+                git_repo tag -f "$TAG" "$head_commit"
+                git_repo push --force origin "refs/tags/$TAG"
+            else
+                echo "Tag $TAG already exists at $tag_commit on this branch. Set MOVE_TAG=1 to move it to $head_commit." >&2
+                exit 1
+            fi
         else
-            echo "Tag $TAG already exists at $tag_commit. Set MOVE_TAG=1 to move it to $head_commit." >&2
-            exit 1
+            echo "Notice: Tag $TAG ($tag_commit) points to another branch. Preserving existing tag to avoid cross-branch modifications."
         fi
     fi
 else
     git_repo tag "$TAG" "$head_commit"
-fi
-
-if [ "$MOVE_TAG" = "1" ]; then
-    git_repo push --force origin "refs/tags/$TAG"
-else
     git_repo push origin "refs/tags/$TAG"
 fi
 

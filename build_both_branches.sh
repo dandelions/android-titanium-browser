@@ -415,5 +415,6 @@ if [ "$AUTO_RELEASE" = "1" ]; then
     HTTP_PROXY="$DEFAULT_PROXY" \
     HTTPS_PROXY="$DEFAULT_PROXY" \
     MOVE=1 \
+    RELEASE_BRANCHES="${BRANCHES[*]}" \
     "$SCRIPT_DIR/release.sh"
 fi
