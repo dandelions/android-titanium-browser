@@ -79,10 +79,10 @@ sign_apk() {
         is_old_android=1
     fi
 
-    local v3_signing="true"
+    # 传递 --min-sdk-version 24，激活 apksigner 写入 V2 签名块 (APK Signature Scheme v2)；
+    # 并同时保留 V3 签名（V2 + V3 双签名），确保车机系统既能识别 V2，又具备完整的 V3 签名通过系统校验。
     local extra_sign_args=()
-    if [ "$is_old_android" = "1" ]; then
-        v3_signing="false"
+    if [ "$is_old_android" = "1" ] || [ "${ENABLE_V2_SIGNING:-1}" = "1" ]; then
         extra_sign_args+=(--min-sdk-version 24)
     fi
 
@@ -95,7 +95,7 @@ sign_apk() {
             --ks-key-alias "$keyAlias" \
             --v1-signing-enabled true \
             --v2-signing-enabled true \
-            --v3-signing-enabled "$v3_signing" \
+            --v3-signing-enabled true \
             --v4-signing-enabled false \
             "${extra_sign_args[@]}" \
             --out "$output_apk" \
@@ -108,7 +108,7 @@ sign_apk() {
             --ks-key-alias "$keyAlias" \
             --v1-signing-enabled true \
             --v2-signing-enabled true \
-            --v3-signing-enabled "$v3_signing" \
+            --v3-signing-enabled true \
             --v4-signing-enabled false \
             "${extra_sign_args[@]}" \
             --out "$output_apk" \

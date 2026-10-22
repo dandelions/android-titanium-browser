@@ -206,6 +206,31 @@ def is_old_android_branch(src_dir: str) -> bool:
     return True
 
 
+def clean_manifest_zygote_and_modern_attributes(src_dir: str) -> None:
+    manifest_paths = [
+        os.path.join(src_dir, "chrome/android/java/AndroidManifest.xml"),
+    ]
+    for manifest_path in manifest_paths:
+        if not os.path.isfile(manifest_path):
+            continue
+        with open(manifest_path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        new_content = content
+        # 1. 移除 zygotePreloadName 与 zygotePreloadNativeLib，避免车机 App Zygote 阻塞卡死
+        new_content = re.sub(r'[ \t]*android:zygotePreloadName="[^"]*"', '', new_content)
+        new_content = re.sub(r'[ \t]*android:zygotePreloadNativeLib="[^"]*"', '', new_content)
+        # 2. 移除 memtagMode，避免老旧车机 CPU/libc 内存保护错乱
+        new_content = re.sub(r'[ \t]*android:memtagMode="[^"]*"', '', new_content)
+        # 3. 移除 enableOnBackInvokedCallback
+        new_content = re.sub(r'[ \t]*android:enableOnBackInvokedCallback="[^"]*"', '', new_content)
+
+        if new_content != content:
+            with open(manifest_path, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            print(f"Cleaned zygotePreload and modern attributes to prevent car head-unit hang in: {manifest_path}")
+
+
 def main() -> None:
     src_dir = sys.argv[1] if len(sys.argv) > 1 else "."
 
@@ -263,6 +288,7 @@ def main() -> None:
     patch_manifest_extract_native_libs(src_dir)
     remove_original_package_from_manifest(src_dir)
     patch_manifest_sdk_and_features(src_dir)
+    clean_manifest_zygote_and_modern_attributes(src_dir)
 
     print("SDK version patch (minSdk: 24) & extractNativeLibs check complete.")
 
