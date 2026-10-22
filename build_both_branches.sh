@@ -16,6 +16,7 @@ USER_FAST_LOCAL_BUILD="${FAST_LOCAL_BUILD:-}"
 AUTO_RELEASE="${AUTO_RELEASE:-1}"
 SKIP_IF_EXISTS="${SKIP_IF_EXISTS:-1}"
 FORCE_REBUILD="${FORCE_REBUILD:-0}"
+ENABLE_V2_SIGNING="${ENABLE_V2_SIGNING:-1}"
 
 # 导出代理环境变量，供后续 git / gh / curl 等工具使用
 export HTTP_PROXY="$DEFAULT_PROXY"
@@ -27,8 +28,8 @@ export ALL_PROXY="$DEFAULT_PROXY"
 
 # 解析需要编译的目标分支列表
 # 优先级：
-# 1. 命令行参数（如：./build_both_branches.sh main old-android）
-# 2. 环境变量 BUILD_BRANCHES（如：BUILD_BRANCHES="main lemur-style-app-menu old-android"）
+# 1. 命令行参数（如：./build_both_branches.sh old-android 或 ./build_both_branches.sh main old-android）
+# 2. 环境变量 BUILD_BRANCHES（如：BUILD_BRANCHES="old-android"）
 # 3. 默认分支：main 与 lemur-style-app-menu；若 BUILD_OLD_ANDROID=1（或 CAR_COMPAT=1），则追加 old-android 分支
 TARGET_BRANCHES=()
 if [ "$#" -gt 0 ]; then
@@ -45,6 +46,10 @@ fi
 BRANCHES=()
 for b in "${TARGET_BRANCHES[@]}"; do
     b_trimmed="$(echo "$b" | xargs)"
+    # 兼容下划线输入 old_android 自动映射为规范分支名 old-android
+    if [ "$b_trimmed" = "old_android" ]; then
+        b_trimmed="old-android"
+    fi
     if [ -n "$b_trimmed" ]; then
         BRANCHES+=("$b_trimmed")
     fi
@@ -159,7 +164,6 @@ is_branch_up_to_date() {
 
     # 2. 检查记录的 commit stamp 文件是否存在
     if [ ! -f "$stamp_file" ]; then
-        # 没有 stamp 文件，无法证明既有产物是针对当前 commit 构建的，必须重新编译
         return 1
     fi
 
@@ -177,7 +181,6 @@ is_branch_up_to_date() {
         return 0
     fi
 
-    # commit 不一致（代码有更新），必须重新编译
     return 1
 }
 
@@ -301,6 +304,14 @@ build_branch() {
         fi
     fi
 
+    # 针对 old-android 分支自动启用 CAR_COMPAT=1 与 V2 签名；其他分支保持对应分支原样配置
+    local branch_car_compat="${CAR_COMPAT:-0}"
+    if [ "$branch" = "old-android" ]; then
+        branch_car_compat="1"
+    fi
+
+    CAR_COMPAT="$branch_car_compat" \
+    ENABLE_V2_SIGNING="$ENABLE_V2_SIGNING" \
     FAST_LOCAL_BUILD="$effective_fast_local" \
     BUILD_PROXY="$DEFAULT_PROXY" \
     http_proxy="$DEFAULT_PROXY" \
@@ -326,6 +337,7 @@ echo "BUILD_ARM         : $BUILD_ARM"
 echo "BUILD_ARM64       : $BUILD_ARM64"
 echo "BUILD_AAB         : $BUILD_AAB"
 echo "BUILD_OLD_ANDROID : $BUILD_OLD_ANDROID"
+echo "ENABLE_V2_SIGNING : $ENABLE_V2_SIGNING"
 echo "BRANCHES          : ${BRANCHES[*]}"
 echo "AUTO_RELEASE      : $AUTO_RELEASE"
 echo "==========================="
@@ -348,7 +360,7 @@ done
 
 echo ""
 echo "=========================================================="
-echo " SUCCESS: Multi-branch build process finished!"
+echo " SUCCESS: Build process finished!"
 echo " Branches: ${BRANCHES[*]}"
 echo " Output files in chromium/src/out/release/:"
 echo "=========================================================="
