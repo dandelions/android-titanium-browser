@@ -143,6 +143,27 @@ check_branch_artifacts() {
     if [ "$BUILD_AAB" = "1" ] && [ ! -s "$release_dir/${prefix}-arm64-v8a.aab" ]; then
         return 1
     fi
+
+    # 若要求 V2 签名（如 old-android 或 ENABLE_V2_SIGNING=1），检查既有产物是否确实具备 V2 签名；若缺失则强制触发重新构建签名
+    if [ "${ENABLE_V2_SIGNING:-1}" = "1" ] || [ "$branch" = "old-android" ]; then
+        local apksigner_bin
+        apksigner_bin=$(find "$SCRIPT_DIR/chromium/src/third_party/android_sdk" -name apksigner 2>/dev/null | sort | tail -n 1 || true)
+        if [ -n "$apksigner_bin" ] && [ -x "$apksigner_bin" ]; then
+            if [ "$BUILD_ARM64" = "1" ] && [ -s "$release_dir/${prefix}-arm64-v8a.apk" ]; then
+                if ! "$apksigner_bin" verify --verbose "$release_dir/${prefix}-arm64-v8a.apk" 2>&1 | grep -q "Verified using v2 scheme (APK Signature Scheme v2): true"; then
+                    echo "Notice: Existing ${prefix}-arm64-v8a.apk is missing V2 signature. Invalidating cache to trigger signing."
+                    return 1
+                fi
+            fi
+            if [ "$BUILD_ARM" = "1" ] && [ -s "$release_dir/${prefix}-armeabi-v7a.apk" ]; then
+                if ! "$apksigner_bin" verify --verbose "$release_dir/${prefix}-armeabi-v7a.apk" 2>&1 | grep -q "Verified using v2 scheme (APK Signature Scheme v2): true"; then
+                    echo "Notice: Existing ${prefix}-armeabi-v7a.apk is missing V2 signature. Invalidating cache to trigger signing."
+                    return 1
+                fi
+            fi
+        fi
+    fi
+
     return 0
 }
 
@@ -365,6 +386,20 @@ echo " Branches: ${BRANCHES[*]}"
 echo " Output files in chromium/src/out/release/:"
 echo "=========================================================="
 ls -lh "$SCRIPT_DIR/chromium/src/out/release"/*.apk 2>/dev/null || true
+
+local_apksigner=$(find "$SCRIPT_DIR/chromium/src/third_party/android_sdk" -name apksigner 2>/dev/null | sort | tail -n 1 || true)
+if [ -n "$local_apksigner" ] && [ -x "$local_apksigner" ]; then
+    echo ""
+    echo "=========================================================="
+    echo " Signature Scheme Verification:"
+    echo "=========================================================="
+    for apk_file in "$SCRIPT_DIR/chromium/src/out/release"/*.apk; do
+        if [ -f "$apk_file" ]; then
+            echo "--- $(basename "$apk_file") ---"
+            "$local_apksigner" verify --verbose "$apk_file" 2>&1 | grep -E "Verifies|Verified using" || true
+        fi
+    done
+fi
 
 if [ "$AUTO_RELEASE" = "1" ]; then
     echo ""

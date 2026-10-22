@@ -68,11 +68,11 @@ sign_apk() {
     fi
 
     # 针对低版本/车机环境（或显式开启 ENABLE_V2_SIGNING / CAR_COMPAT 时），
-    # 传递 --min-sdk-version 24，激活 apksigner 写入 V2 签名块 (APK Signature Scheme v2)。
-    # 对于高版本亦安全兼容 V2 + V3 签名。
+    # 传递 --min-sdk-version 21，激活 apksigner 同时写入 V1 (JAR) 与 V2 (APK Signature Scheme v2) 签名块。
+    # 对于高版本亦安全兼容 V1 + V2 + V3 完整三重签名。
     local extra_sign_args=()
     if [ "${ENABLE_V2_SIGNING:-1}" = "1" ] || [ "${CAR_COMPAT:-0}" = "1" ]; then
-        extra_sign_args+=(--min-sdk-version 24)
+        extra_sign_args+=(--min-sdk-version 21)
     fi
 
     if [ -n "${storeType:-}" ]; then
@@ -104,6 +104,8 @@ sign_apk() {
     if [ -n "$tmp_aligned" ]; then
         rm -f "$tmp_aligned"
     fi
+    echo "[sign_apk] Signature schemes for $(basename "$output_apk"):"
+    "$apksigner" verify --verbose "$output_apk" 2>&1 | grep -E "Verifies|Verified using" || true
 }
 
 sign_aab() {
