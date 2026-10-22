@@ -162,10 +162,6 @@ check_branch_artifacts() {
                     local dump_info
                     dump_info="$("$aapt_bin" dump badging "$apk_check" 2>/dev/null || true)"
                     if [ -n "$dump_info" ]; then
-                        if echo "$dump_info" | grep -qE "targetSdkVersion:'[0-9]+'" && ! echo "$dump_info" | grep -q "targetSdkVersion:'34'"; then
-                            echo "Notice: Existing $(basename "$apk_check") targetSdkVersion is not 34. Invalidating cache to trigger rebuild."
-                            return 1
-                        fi
                         if echo "$dump_info" | grep -qE "minSdkVersion:'[0-9]+'" && ! echo "$dump_info" | grep -q "minSdkVersion:'24'"; then
                             echo "Notice: Existing $(basename "$apk_check") minSdkVersion is not 24. Invalidating cache to trigger rebuild."
                             return 1

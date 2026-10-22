@@ -252,11 +252,10 @@ configure_out_dir() {
     append_common_gn_args "$desired_args"
     if [ "${CAR_COMPAT:-1}" != "0" ]; then
         set_gn_arg "$desired_args" default_min_sdk_version 24
-        set_gn_arg "$desired_args" default_android_sdk_version 34
     else
         sed -i "/^default_min_sdk_version/d" "$desired_args"
-        sed -i "/^default_android_sdk_version/d" "$desired_args"
     fi
+    sed -i "/^default_android_sdk_version/d" "$desired_args"
 
     if [ "${BUILD_STATE_RESTORED:-0}" = "1" ] && [ -f "$out_dir/build.ninja" ] && cmp -s "$desired_args" "$out_dir/args.gn"; then
         echo "Reusing restored GN output in $out_dir"

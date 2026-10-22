@@ -156,24 +156,16 @@ def patch_manifest_sdk_and_features(src_dir: str) -> None:
             print(f"Cleaned duplicate uses-sdk and patched glEsVersion in: {manifest_path}")
 
 
-def patch_default_android_sdk_version(src_dir: str) -> None:
+def restore_default_android_sdk_version(src_dir: str) -> None:
     config_gni = os.path.join(src_dir, "build/config/android/config.gni")
     if not os.path.isfile(config_gni):
         return
     try:
-        with open(config_gni, "r", encoding="utf-8") as f:
-            cfg = f.read()
-        new_cfg = re.sub(
-            r"default_android_sdk_version\s*=\s*\d+",
-            "default_android_sdk_version = 34",
-            cfg,
-        )
-        if new_cfg != cfg:
-            with open(config_gni, "w", encoding="utf-8") as f:
-                f.write(new_cfg)
-            print(f"Patched default_android_sdk_version to 34 in: {config_gni}")
+        import subprocess
+        subprocess.run(["git", "checkout", "--", "build/config/android/config.gni"], cwd=src_dir, capture_output=True)
+        print("Restored default build/config/android/config.gni to avoid breaking native AIDL toolchain.")
     except Exception as e:
-        print(f"Warning: could not patch config.gni: {e}", file=sys.stderr)
+        print(f"Warning: could not restore config.gni: {e}", file=sys.stderr)
 
 
 def patch_expectations(src_dir: str) -> None:
@@ -196,10 +188,10 @@ def patch_expectations(src_dir: str) -> None:
                         'android:minSdkVersion="24"',
                         c,
                     )
-                    # 将期待的 targetSdkVersion 统一锁定为 34（车机系统兼容基线）
+                    # 恢复之前被改成 34 的 targetSdkVersion 回 37（匹配 Chromium 原生输出，防止比对失败）
                     nc = re.sub(
-                        r'android:targetSdkVersion="\d+"',
-                        'android:targetSdkVersion="34"',
+                        r'android:targetSdkVersion="34"',
+                        'android:targetSdkVersion="37"',
                         nc,
                     )
                     # 清理 zygotePreload 及现代属性期待项
@@ -277,8 +269,8 @@ def main() -> None:
     # 1. 清理所有 .gn / .gni 中未被使用的 target_sdk_version 赋值（避免 GN Assignment had no effect 致命错误）
     clean_target_sdk_assignments_in_gn(src_dir)
 
-    # 2. 锁定 default_android_sdk_version = 34（使 targetSdkVersion 与 compileSdkVersion 均为 34）
-    patch_default_android_sdk_version(src_dir)
+    # 2. 恢复 build/config/android/config.gni 的默认 SDK 版本，避免破坏原生 AIDL 编译工具链
+    restore_default_android_sdk_version(src_dir)
 
     # 3. 修改关键 GN 模板的 min_sdk_version
     key_gni_targets = [
@@ -291,7 +283,7 @@ def main() -> None:
     for gni_file in key_gni_targets:
         patch_min_sdk_in_gni(gni_file)
 
-    # 4. 修正 expectations 以免检查比对失败（锁定 minSdk=24, targetSdk=34）
+    # 4. 修正 expectations 以免检查比对失败
     patch_expectations(src_dir)
 
     # 5. 扫描相关目录，确保 min_sdk_version 降为 24，并清除 target_sdk_version
@@ -329,7 +321,7 @@ def main() -> None:
     patch_manifest_sdk_and_features(src_dir)
     clean_manifest_zygote_and_modern_attributes(src_dir)
 
-    print("SDK version patch (minSdk: 24, targetSdk: 34) & extractNativeLibs check complete.")
+    print("SDK version patch (minSdk: 24) & extractNativeLibs check complete.")
 
 
 if __name__ == "__main__":
