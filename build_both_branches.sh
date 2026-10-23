@@ -97,7 +97,10 @@ can_use_fast_local_build() {
 
     local local_ver
     local_ver="$(read_chromium_version "$version_file" 2>/dev/null || true)"
-    if [ "$local_ver" != "$VERSION" ]; then
+    local target_ver
+    target_ver="$(grep -m1 -o '[0-9]\+\(\.[0-9]\+\)\{3\}' "$VERSION_ARGS" 2>/dev/null || true)"
+    target_ver="${target_ver:-$VERSION}"
+    if [ "$local_ver" != "$target_ver" ]; then
         return 1
     fi
 
@@ -105,7 +108,14 @@ can_use_fast_local_build() {
 }
 
 get_effective_fast_local_build() {
-    if [ -n "$USER_FAST_LOCAL_BUILD" ]; then
+    if [ "$USER_FAST_LOCAL_BUILD" = "1" ]; then
+        if ! can_use_fast_local_build; then
+            echo "0"
+            return 0
+        fi
+        echo "1"
+        return 0
+    elif [ -n "$USER_FAST_LOCAL_BUILD" ]; then
         echo "$USER_FAST_LOCAL_BUILD"
         return 0
     fi
@@ -221,16 +231,28 @@ switch_branch() {
     local target_branch="$1"
     local current_branch
     current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
-    if [ "$current_branch" = "$target_branch" ]; then
-        return 0
+    if [ "$current_branch" != "$target_branch" ]; then
+        if [ -n "$(git status --porcelain -uno --ignore-submodules=dirty)" ]; then
+            echo "WARNING: Working tree has uncommitted modifications before switching to '$target_branch':" >&2
+            git status --short --ignore-submodules=dirty >&2
+        fi
+        git checkout "$target_branch"
     fi
 
-    if [ -n "$(git status --porcelain -uno)" ]; then
-        echo "WARNING: Working tree has uncommitted modifications before switching to '$target_branch':" >&2
-        git status --short >&2
+    # 切换分支后，自动重置并对齐当前分支所要求的 submodule commit，防止跨分支构建时子模块游离或版本滞后
+    if [ -d "$SCRIPT_DIR/vanadium" ]; then
+        if [ -n "$(git -C "$SCRIPT_DIR/vanadium" status --porcelain 2>/dev/null || true)" ]; then
+            git -C "$SCRIPT_DIR/vanadium" reset --hard >/dev/null 2>&1 || true
+            git -C "$SCRIPT_DIR/vanadium" clean -fd >/dev/null 2>&1 || true
+        fi
+        local expected_v_commit actual_v_commit
+        expected_v_commit="$(git ls-tree HEAD vanadium 2>/dev/null | awk '{print $3}' || true)"
+        actual_v_commit="$(git -C "$SCRIPT_DIR/vanadium" rev-parse HEAD 2>/dev/null || true)"
+        if [ -n "$expected_v_commit" ] && [ "$actual_v_commit" != "$expected_v_commit" ]; then
+            echo "Aligning vanadium submodule to commit required by '$target_branch' ($expected_v_commit)..."
+            git -c "http.proxy=$DEFAULT_PROXY" -c "https.proxy=$DEFAULT_PROXY" submodule update --init --recursive vanadium
+        fi
     fi
-
-    git checkout "$target_branch"
 }
 
 sync_git_from_remote() {
@@ -238,7 +260,7 @@ sync_git_from_remote() {
     echo " [Git Sync] Checking and pulling latest updates from GitHub..."
     echo "=========================================================="
 
-    if [ -n "$(git status --porcelain -uno 2>/dev/null || true)" ]; then
+    if [ -n "$(git status --porcelain -uno --ignore-submodules=dirty 2>/dev/null || true)" ]; then
         echo "WARNING: Working tree has uncommitted changes. Skipping git sync to protect local files." >&2
         return 0
     fi
@@ -250,7 +272,9 @@ sync_git_from_remote() {
     fi
 
     echo "Fetching remote references from origin (proxy: $DEFAULT_PROXY)..."
-    git -c "http.proxy=$DEFAULT_PROXY" -c "https.proxy=$DEFAULT_PROXY" fetch origin '+refs/heads/*:refs/remotes/origin/*' --tags --prune
+    if ! git -c "http.proxy=$DEFAULT_PROXY" -c "https.proxy=$DEFAULT_PROXY" fetch origin '+refs/heads/*:refs/remotes/origin/*' --tags --force --prune; then
+        echo "WARNING: git fetch encountered an issue. Proceeding with available local and remote references..." >&2
+    fi
 
     for br in "${BRANCHES[@]}"; do
         if git show-ref --verify --quiet "refs/remotes/origin/$br"; then
@@ -259,7 +283,7 @@ sync_git_from_remote() {
                 switch_branch "$br"
                 git -c "http.proxy=$DEFAULT_PROXY" -c "https.proxy=$DEFAULT_PROXY" merge --ff-only "origin/$br" || {
                     echo "Notice: Non-fast-forward merge for '$br'. Attempting pull..." >&2
-                    git -c "http.proxy=$DEFAULT_PROXY" -c "https.proxy=$DEFAULT_PROXY" pull origin "$br" || true
+                    git -c "http.proxy=$DEFAULT_PROXY" -c "https.proxy=$DEFAULT_PROXY" pull --no-tags origin "$br" || true
                 }
             else
                 git -c "http.proxy=$DEFAULT_PROXY" -c "https.proxy=$DEFAULT_PROXY" branch --track "$br" "origin/$br"
@@ -276,6 +300,11 @@ sync_git_from_remote() {
             git -C "$SCRIPT_DIR/vanadium" reset --hard >/dev/null 2>&1 || true
             git -C "$SCRIPT_DIR/vanadium" clean -fd >/dev/null 2>&1 || true
         fi
+    fi
+
+    # 同步完成后切回第一个目标分支（通常为 main），确保后续构建从预期分支开始
+    if [ "${#BRANCHES[@]}" -gt 0 ]; then
+        switch_branch "${BRANCHES[0]}"
     fi
     echo "Syncing git submodules..."
     git -c "http.proxy=$DEFAULT_PROXY" -c "https.proxy=$DEFAULT_PROXY" submodule update --init --recursive
@@ -328,7 +357,12 @@ build_branch() {
     effective_fast_local="$(get_effective_fast_local_build)"
 
     if [ -n "$USER_FAST_LOCAL_BUILD" ]; then
-        echo "User specified FAST_LOCAL_BUILD=$effective_fast_local"
+        if [ "$USER_FAST_LOCAL_BUILD" = "1" ] && [ "$effective_fast_local" = "0" ]; then
+            echo "Notice: FAST_LOCAL_BUILD=1 was requested, but local Chromium source tree is not ready or does not match repository target ($VERSION)."
+            echo "Falling back to FAST_LOCAL_BUILD=0 for full upgrade/sync on this branch."
+        else
+            echo "User specified FAST_LOCAL_BUILD=$effective_fast_local"
+        fi
     else
         if [ "$effective_fast_local" = "1" ]; then
             echo "Auto-detected: Chromium source tree and depot_tools are ready. Enabling FAST_LOCAL_BUILD=1 (fast incremental build)."
