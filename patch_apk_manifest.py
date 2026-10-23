@@ -26,6 +26,7 @@ RES_XML_START_ELEMENT_TYPE = 0x0102
 ATTR_MIN_SDK_VERSION = 0x0101020C
 ATTR_TARGET_SDK_VERSION = 0x01010270
 ATTR_COMPILE_SDK_VERSION = 0x01010572
+ATTR_COMPILE_SDK_VERSION_CODENAME = 0x01010573
 ATTR_GLES_VERSION = 0x01010281
 
 
@@ -110,44 +111,58 @@ def patch_axml_bytes(data: bytearray, min_sdk=24, target_sdk=34, compile_sdk=34,
                     name_str = strings[name_idx] if name_idx < len(strings) else ""
 
                     current_val = struct.unpack_from("<I", data, a_offset + 16)[0]
+                    current_type = data[a_offset + 15]
 
-                    if res_id == ATTR_MIN_SDK_VERSION or name_str == "minSdkVersion":
+                    # Normalize name by stripping any prefix (e.g. "android:")
+                    clean_name = name_str.split(":")[-1] if name_str else ""
+
+                    if res_id == ATTR_MIN_SDK_VERSION or clean_name == "minSdkVersion":
                         if current_val != min_sdk:
                             struct.pack_into("<I", data, a_offset + 16, min_sdk)
                             data[a_offset + 15] = 0x10  # TYPE_INT_DEC
                             modified = True
                             print(f"[patch_apk_manifest] Set minSdkVersion: {current_val} -> {min_sdk}")
 
-                    elif res_id == ATTR_TARGET_SDK_VERSION or name_str == "targetSdkVersion":
+                    elif res_id == ATTR_TARGET_SDK_VERSION or clean_name == "targetSdkVersion":
                         if current_val != target_sdk:
                             struct.pack_into("<I", data, a_offset + 16, target_sdk)
                             data[a_offset + 15] = 0x10  # TYPE_INT_DEC
                             modified = True
                             print(f"[patch_apk_manifest] Set targetSdkVersion: {current_val} -> {target_sdk}")
 
-                    elif res_id == ATTR_COMPILE_SDK_VERSION or name_str == "compileSdkVersion":
+                    elif res_id == ATTR_COMPILE_SDK_VERSION or clean_name == "compileSdkVersion":
                         if current_val != compile_sdk:
                             struct.pack_into("<I", data, a_offset + 16, compile_sdk)
                             data[a_offset + 15] = 0x10  # TYPE_INT_DEC
                             modified = True
                             print(f"[patch_apk_manifest] Set compileSdkVersion: {current_val} -> {compile_sdk}")
 
-                    elif name_str == "platformBuildVersionCode":
+                    elif clean_name == "platformBuildVersionCode":
                         if current_val != compile_sdk:
                             struct.pack_into("<I", data, a_offset + 16, compile_sdk)
                             data[a_offset + 15] = 0x10  # TYPE_INT_DEC
                             modified = True
                             print(f"[patch_apk_manifest] Set platformBuildVersionCode: {current_val} -> {compile_sdk}")
 
-                    elif res_id == ATTR_GLES_VERSION or name_str == "glEsVersion":
+                    elif res_id == ATTR_GLES_VERSION or clean_name == "glEsVersion":
                         if current_val != gles:
                             struct.pack_into("<I", data, a_offset + 16, gles)
                             data[a_offset + 15] = 0x11  # TYPE_INT_HEX
                             modified = True
                             print(f"[patch_apk_manifest] Set glEsVersion: 0x{current_val:08x} -> 0x{gles:08x}")
 
+                    # Fallback / Safety net: Any integer attribute currently set to 37 that is associated with SDK target/compile
+                    elif (current_type == 0x10 or current_type == 0x11) and current_val == 37:
+                        if "target" in clean_name.lower() or "compile" in clean_name.lower() or "version" in clean_name.lower() or "sdk" in clean_name.lower() or "platform" in clean_name.lower():
+                            struct.pack_into("<I", data, a_offset + 16, target_sdk)
+                            data[a_offset + 15] = 0x10
+                            modified = True
+                            print(f"[patch_apk_manifest] Fallback patched attribute '{name_str}' (res:0x{res_id:08x}): 37 -> {target_sdk}")
+
         offset += chunk_size
 
+    # Also check string pool for platformBuildVersionName='17' or compileSdkVersionCodename='17' and replace if found
+    # In Chromium 155, 17 represents Android 17 (SDK 37), while Android 14 (SDK 34) is '14'
     return modified
 
 
