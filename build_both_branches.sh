@@ -97,7 +97,10 @@ can_use_fast_local_build() {
 
     local local_ver
     local_ver="$(read_chromium_version "$version_file" 2>/dev/null || true)"
-    if [ "$local_ver" != "$VERSION" ]; then
+    local target_ver
+    target_ver="$(grep -m1 -o '[0-9]\+\(\.[0-9]\+\)\{3\}' "$VERSION_ARGS" 2>/dev/null || true)"
+    target_ver="${target_ver:-$VERSION}"
+    if [ "$local_ver" != "$target_ver" ]; then
         return 1
     fi
 
@@ -105,7 +108,14 @@ can_use_fast_local_build() {
 }
 
 get_effective_fast_local_build() {
-    if [ -n "$USER_FAST_LOCAL_BUILD" ]; then
+    if [ "$USER_FAST_LOCAL_BUILD" = "1" ]; then
+        if ! can_use_fast_local_build; then
+            echo "0"
+            return 0
+        fi
+        echo "1"
+        return 0
+    elif [ -n "$USER_FAST_LOCAL_BUILD" ]; then
         echo "$USER_FAST_LOCAL_BUILD"
         return 0
     fi
@@ -210,9 +220,9 @@ switch_branch() {
     local current_branch
     current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
     if [ "$current_branch" != "$target_branch" ]; then
-        if [ -n "$(git status --porcelain -uno)" ]; then
+        if [ -n "$(git status --porcelain -uno --ignore-submodules=dirty)" ]; then
             echo "WARNING: Working tree has uncommitted modifications before switching to '$target_branch':" >&2
-            git status --short >&2
+            git status --short --ignore-submodules=dirty >&2
         fi
         git checkout "$target_branch"
     fi
@@ -238,7 +248,7 @@ sync_git_from_remote() {
     echo " [Git Sync] Checking and pulling latest updates from GitHub..."
     echo "=========================================================="
 
-    if [ -n "$(git status --porcelain -uno 2>/dev/null || true)" ]; then
+    if [ -n "$(git status --porcelain -uno --ignore-submodules=dirty 2>/dev/null || true)" ]; then
         echo "WARNING: Working tree has uncommitted changes. Skipping git sync to protect local files." >&2
         return 0
     fi
@@ -328,7 +338,12 @@ build_branch() {
     effective_fast_local="$(get_effective_fast_local_build)"
 
     if [ -n "$USER_FAST_LOCAL_BUILD" ]; then
-        echo "User specified FAST_LOCAL_BUILD=$effective_fast_local"
+        if [ "$USER_FAST_LOCAL_BUILD" = "1" ] && [ "$effective_fast_local" = "0" ]; then
+            echo "Notice: FAST_LOCAL_BUILD=1 was requested, but local Chromium source tree is not ready or does not match repository target ($VERSION)."
+            echo "Falling back to FAST_LOCAL_BUILD=0 for full upgrade/sync on this branch."
+        else
+            echo "User specified FAST_LOCAL_BUILD=$effective_fast_local"
+        fi
     else
         if [ "$effective_fast_local" = "1" ]; then
             echo "Auto-detected: Chromium source tree and depot_tools are ready. Enabling FAST_LOCAL_BUILD=1 (fast incremental build)."
