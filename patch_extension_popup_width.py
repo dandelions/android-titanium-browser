@@ -117,15 +117,111 @@ new_popup_size = (
     "        mPopupWindow.setMargin(popupMarginPx);\n"
     "        mPopupWindow.setElevation(\n"
 )
-popup_text = popup_text.replace(old_popup_size, new_popup_size, 1)
-popup_text = replace_if_missing(
-    popup,
-    popup_text,
-    "mContents.setMaxSize(maxContentWidthDp, maxContentHeightDp);",
+old_popup_builder_156 = (
     "        Resources resources = mActivity.getResources();\n"
-    "        mPopupWindow.setElevation(\n",
-    new_popup_size,
+    "        mPopupWindow =\n"
+    "                new AnchoredPopupWindow.Builder(\n"
+    "                                activity,\n"
+    "                                activity.getWindow().getDecorView(),\n"
+    "                                new ColorDrawable(Color.WHITE),\n"
+    "                                () -> mThinWebView.getView(),\n"
+    "                                new ViewRectProvider(anchorView))\n"
+    "                        .setHorizontalOverlapAnchor(true)\n"
+    "                        // The popup should close on focus loss only if it's not being inspected.\n"
+    "                        // Otherwise, opening the devtools window would automatically close the\n"
+    "                        // popup.\n"
+    "                        .setOutsideTouchable(!inspectWithDevTools)\n"
+    "                        .setDismissOnScreenSizeChange(!inspectWithDevTools)\n"
+    "                        .setAllowNonTouchableSize(true)\n"
+    "                        .setElevation(\n"
+    "                                resources.getDimensionPixelSize(\n"
+    "                                        R.dimen.extension_action_popup_elevation))\n"
+    "                        // Set the content size to the minimum initially.\n"
+    "                        .setDesiredContentSize(\n"
+    "                                resources.getDimensionPixelSize(\n"
+    "                                        R.dimen.extension_action_popup_min_width),\n"
+    "                                resources.getDimensionPixelSize(\n"
+    "                                        R.dimen.extension_action_popup_min_height))\n"
+    "                        .setFocusable(!inspectWithDevTools)\n"
+    "                        .build();\n"
 )
+new_popup_builder_156 = (
+    "        Resources resources = mActivity.getResources();\n"
+    "        int popupMarginPx = ViewUtils.dpToPx(mActivity, POPUP_EDGE_MARGIN_DP);\n"
+    "        View rootView = mActivity.getWindow().getDecorView();\n"
+    "        Rect visibleWindowRect = new Rect();\n"
+    "        rootView.getWindowVisibleDisplayFrame(visibleWindowRect);\n"
+    "        int[] rootLocationOnScreen = new int[2];\n"
+    "        rootView.getLocationOnScreen(rootLocationOnScreen);\n"
+    "        visibleWindowRect.offset(-rootLocationOnScreen[0], -rootLocationOnScreen[1]);\n"
+    "        if (visibleWindowRect.isEmpty()) {\n"
+    "            int rootWidthPx =\n"
+    "                    rootView.getWidth() > 0\n"
+    "                            ? rootView.getWidth()\n"
+    "                            : resources.getDisplayMetrics().widthPixels;\n"
+    "            int rootHeightPx =\n"
+    "                    rootView.getHeight() > 0\n"
+    "                            ? rootView.getHeight()\n"
+    "                            : resources.getDisplayMetrics().heightPixels;\n"
+    "            visibleWindowRect.set(0, 0, rootWidthPx, rootHeightPx);\n"
+    "        }\n"
+    "        int[] rootLocationInWindow = new int[2];\n"
+    "        int[] anchorLocationInWindow = new int[2];\n"
+    "        rootView.getLocationInWindow(rootLocationInWindow);\n"
+    "        anchorView.getLocationInWindow(anchorLocationInWindow);\n"
+    "        int anchorTopPx = anchorLocationInWindow[1] - rootLocationInWindow[1];\n"
+    "        int anchorBottomPx = anchorTopPx + anchorView.getHeight();\n"
+    "        int availableAbovePx = anchorTopPx - visibleWindowRect.top - popupMarginPx;\n"
+    "        int availableBelowPx = visibleWindowRect.bottom - anchorBottomPx - popupMarginPx;\n"
+    "        int maxContentWidthPx =\n"
+    "                Math.max(visibleWindowRect.width() - 2 * popupMarginPx, 1);\n"
+    "        int maxContentHeightPx =\n"
+    "                Math.max(Math.max(availableAbovePx, availableBelowPx), 1);\n"
+    "        float density = resources.getDisplayMetrics().density;\n"
+    "        int maxContentWidthDp = Math.max((int) (maxContentWidthPx / density), 1);\n"
+    "        int maxContentHeightDp = Math.max((int) (maxContentHeightPx / density), 1);\n"
+    "        mContents.setMaxSize(maxContentWidthDp, maxContentHeightDp);\n"
+    "        mScaledContentView = new ScaledContentView(activity, mThinWebView.getView());\n"
+    "        int initialWidthPx =\n"
+    "                resources.getDimensionPixelSize(R.dimen.extension_action_popup_min_width);\n"
+    "        int initialHeightPx =\n"
+    "                resources.getDimensionPixelSize(R.dimen.extension_action_popup_min_height);\n"
+    "        mScaledContentView.setContentSize(initialWidthPx, initialHeightPx, 1.0f);\n"
+    "        mPopupWindow =\n"
+    "                new AnchoredPopupWindow.Builder(\n"
+    "                                activity,\n"
+    "                                activity.getWindow().getDecorView(),\n"
+    "                                new ColorDrawable(Color.WHITE),\n"
+    "                                () -> mScaledContentView,\n"
+    "                                new ViewRectProvider(anchorView))\n"
+    "                        .setHorizontalOverlapAnchor(true)\n"
+    "                        // The popup should close on focus loss only if it's not being inspected.\n"
+    "                        // Otherwise, opening the devtools window would automatically close the\n"
+    "                        // popup.\n"
+    "                        .setOutsideTouchable(!inspectWithDevTools)\n"
+    "                        .setDismissOnScreenSizeChange(!inspectWithDevTools)\n"
+    "                        .setAllowNonTouchableSize(true)\n"
+    "                        .setMargin(popupMarginPx)\n"
+    "                        .setElevation(\n"
+    "                                resources.getDimensionPixelSize(\n"
+    "                                        R.dimen.extension_action_popup_elevation))\n"
+    "                        // Set the content size to the minimum initially.\n"
+    "                        .setDesiredContentSize(initialWidthPx, initialHeightPx)\n"
+    "                        .setFocusable(!inspectWithDevTools)\n"
+    "                        .build();\n"
+)
+if old_popup_builder_156 in popup_text:
+    popup_text = popup_text.replace(old_popup_builder_156, new_popup_builder_156, 1)
+else:
+    popup_text = popup_text.replace(old_popup_size, new_popup_size, 1)
+    popup_text = replace_if_missing(
+        popup,
+        popup_text,
+        "mContents.setMaxSize(maxContentWidthDp, maxContentHeightDp);",
+        "        Resources resources = mActivity.getResources();\n"
+        "        mPopupWindow.setElevation(\n",
+        new_popup_size,
+    )
 popup_text = replace_if_missing(
     popup,
     popup_text,
@@ -135,42 +231,43 @@ popup_text = replace_if_missing(
     "    /** Keeps the renderer at its original size while displaying it proportionally scaled. */\n"
     "    private final ScaledContentView mScaledContentView;\n",
 )
-popup_text = replace_if_missing(
-    popup,
-    popup_text,
-    "mScaledContentView = new ScaledContentView(activity, mThinWebView.getView());",
-    "        mPopupWindow =\n"
-    "                new AnchoredPopupWindow(\n"
-    "                        activity,\n"
-    "                        activity.getWindow().getDecorView(),\n"
-    "                        new ColorDrawable(Color.WHITE),\n"
-    "                        mThinWebView.getView(),\n"
-    "                        new ViewRectProvider(anchorView));\n",
-    "        mScaledContentView = new ScaledContentView(activity, mThinWebView.getView());\n"
-    "        mPopupWindow =\n"
-    "                new AnchoredPopupWindow(\n"
-    "                        activity,\n"
-    "                        activity.getWindow().getDecorView(),\n"
-    "                        new ColorDrawable(Color.WHITE),\n"
-    "                        mScaledContentView,\n"
-    "                        new ViewRectProvider(anchorView));\n",
-)
-old_initial_size = (
-    "        // Set the content size to the minimum initially.\n"
-    "        mPopupWindow.setDesiredContentSize(\n"
-    "                resources.getDimensionPixelSize(R.dimen.extension_action_popup_min_width),\n"
-    "                resources.getDimensionPixelSize(R.dimen.extension_action_popup_min_height));\n"
-)
-new_initial_size = (
-    "        // Set the content size to the minimum initially.\n"
-    "        int initialWidthPx =\n"
-    "                resources.getDimensionPixelSize(R.dimen.extension_action_popup_min_width);\n"
-    "        int initialHeightPx =\n"
-    "                resources.getDimensionPixelSize(R.dimen.extension_action_popup_min_height);\n"
-    "        mScaledContentView.setContentSize(initialWidthPx, initialHeightPx, 1.0f);\n"
-    "        mPopupWindow.setDesiredContentSize(initialWidthPx, initialHeightPx);\n"
-)
-popup_text = popup_text.replace(old_initial_size, new_initial_size, 1)
+if "mScaledContentView = new ScaledContentView(activity, mThinWebView.getView());" not in popup_text:
+    popup_text = replace_if_missing(
+        popup,
+        popup_text,
+        "mScaledContentView = new ScaledContentView(activity, mThinWebView.getView());",
+        "        mPopupWindow =\n"
+        "                new AnchoredPopupWindow(\n"
+        "                        activity,\n"
+        "                        activity.getWindow().getDecorView(),\n"
+        "                        new ColorDrawable(Color.WHITE),\n"
+        "                        mThinWebView.getView(),\n"
+        "                        new ViewRectProvider(anchorView));\n",
+        "        mScaledContentView = new ScaledContentView(activity, mThinWebView.getView());\n"
+        "        mPopupWindow =\n"
+        "                new AnchoredPopupWindow(\n"
+        "                        activity,\n"
+        "                        activity.getWindow().getDecorView(),\n"
+        "                        new ColorDrawable(Color.WHITE),\n"
+        "                        mScaledContentView,\n"
+        "                        new ViewRectProvider(anchorView));\n",
+    )
+    old_initial_size = (
+        "        // Set the content size to the minimum initially.\n"
+        "        mPopupWindow.setDesiredContentSize(\n"
+        "                resources.getDimensionPixelSize(R.dimen.extension_action_popup_min_width),\n"
+        "                resources.getDimensionPixelSize(R.dimen.extension_action_popup_min_height));\n"
+    )
+    new_initial_size = (
+        "        // Set the content size to the minimum initially.\n"
+        "        int initialWidthPx =\n"
+        "                resources.getDimensionPixelSize(R.dimen.extension_action_popup_min_width);\n"
+        "        int initialHeightPx =\n"
+        "                resources.getDimensionPixelSize(R.dimen.extension_action_popup_min_height);\n"
+        "        mScaledContentView.setContentSize(initialWidthPx, initialHeightPx, 1.0f);\n"
+        "        mPopupWindow.setDesiredContentSize(initialWidthPx, initialHeightPx);\n"
+    )
+    popup_text = popup_text.replace(old_initial_size, new_initial_size, 1)
 old_resize_delegate = (
     "        public void resizeDueToAutoResize(int width, int height) {\n"
     "            if (Build.VERSION.SDK_INT >= 34) {\n"
@@ -187,6 +284,32 @@ old_resize_delegate = (
     "        }\n"
 )
 old_resize_delegate_153 = (
+    "        public void resizeDueToAutoResize(int width, int height) {\n"
+    "            if (Build.VERSION.SDK_INT >= 34) {\n"
+    "                // Disable transition animations for the popup window. On Android, {@link\n"
+    "                // onLoaded()} is called first, and then {@link resizeDueToAutoResize()} is called.\n"
+    "                // A transition would result in a sliding animation from the original bounds to the\n"
+    "                // updated bounds.\n"
+    "                // TODO(crbug.com/478100096): Figure out what to do for lower API levels.\n"
+    "                ((WindowManager.LayoutParams) mContentView.getRootView().getLayoutParams())\n"
+    "                        .setCanPlayMoveAnimation(false);\n"
+    "            }\n\n"
+    "            int targetWidthPx = ViewUtils.dpToPx(mActivity, width);\n"
+    "            int targetHeightPx = ViewUtils.dpToPx(mActivity, height);\n\n"
+    "            View decorView = mActivity.getWindow().getDecorView();\n"
+    "            int maxAvailableWidthPx = decorView.getWidth();\n"
+    "            int maxAvailableHeightPx = decorView.getHeight();\n\n"
+    "            if (maxAvailableWidthPx > 0) {\n"
+    "                targetWidthPx = Math.min(targetWidthPx, maxAvailableWidthPx);\n"
+    "            }\n"
+    "            if (maxAvailableHeightPx > 0) {\n"
+    "                targetHeightPx = Math.min(targetHeightPx, maxAvailableHeightPx);\n"
+    "            }\n\n"
+    "            mPopupWindow.setDesiredContentSize(targetWidthPx, targetHeightPx);\n"
+    "        }\n"
+)
+old_resize_delegate_156 = (
+    "        @Override\n"
     "        public void resizeDueToAutoResize(int width, int height) {\n"
     "            if (Build.VERSION.SDK_INT >= 34) {\n"
     "                // Disable transition animations for the popup window. On Android, {@link\n"
@@ -230,7 +353,31 @@ new_resize_delegate = (
     "                    Math.max(Math.round(contentHeightPx * scale), 1));\n"
     "        }\n"
 )
-popup_text = popup_text.replace(old_resize_delegate, new_resize_delegate, 1).replace(old_resize_delegate_153, new_resize_delegate, 1)
+new_resize_delegate_override = (
+    "        @Override\n"
+    "        public void resizeDueToAutoResize(int width, int height, float scale) {\n"
+    "            if (Build.VERSION.SDK_INT >= 34) {\n"
+    "                // Disable transition animations for the popup window. On Android, {@link\n"
+    "                // onLoaded()} is called first, and then {@link resizeDueToAutoResize()} is called.\n"
+    "                // A transition would result in a sliding animation from the original bounds to the\n"
+    "                // updated bounds.\n"
+    "                // TODO(crbug.com/478100096): Figure out what to do for lower API levels.\n"
+    "                ((WindowManager.LayoutParams) mContentView.getRootView().getLayoutParams())\n"
+    "                        .setCanPlayMoveAnimation(false);\n"
+    "            }\n\n"
+    "            int contentWidthPx = ViewUtils.dpToPx(mActivity, width);\n"
+    "            int contentHeightPx = ViewUtils.dpToPx(mActivity, height);\n"
+    "            mScaledContentView.setContentSize(contentWidthPx, contentHeightPx, scale);\n"
+    "            mPopupWindow.setDesiredContentSize(\n"
+    "                    Math.max(Math.round(contentWidthPx * scale), 1),\n"
+    "                    Math.max(Math.round(contentHeightPx * scale), 1));\n"
+    "        }\n"
+)
+popup_text = (
+    popup_text.replace(old_resize_delegate, new_resize_delegate, 1)
+    .replace(old_resize_delegate_153, new_resize_delegate, 1)
+    .replace(old_resize_delegate_156, new_resize_delegate_override, 1)
+)
 scaled_content_view = (
     "    private static class ScaledContentView extends FrameLayout {\n"
     "        private final View mChildView;\n"
