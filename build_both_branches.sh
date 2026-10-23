@@ -260,7 +260,9 @@ sync_git_from_remote() {
     fi
 
     echo "Fetching remote references from origin (proxy: $DEFAULT_PROXY)..."
-    git -c "http.proxy=$DEFAULT_PROXY" -c "https.proxy=$DEFAULT_PROXY" fetch origin '+refs/heads/*:refs/remotes/origin/*' --tags --prune
+    if ! git -c "http.proxy=$DEFAULT_PROXY" -c "https.proxy=$DEFAULT_PROXY" fetch origin '+refs/heads/*:refs/remotes/origin/*' --tags --force --prune; then
+        echo "WARNING: git fetch encountered an issue. Proceeding with available local and remote references..." >&2
+    fi
 
     for br in "${BRANCHES[@]}"; do
         if git show-ref --verify --quiet "refs/remotes/origin/$br"; then
@@ -269,7 +271,7 @@ sync_git_from_remote() {
                 switch_branch "$br"
                 git -c "http.proxy=$DEFAULT_PROXY" -c "https.proxy=$DEFAULT_PROXY" merge --ff-only "origin/$br" || {
                     echo "Notice: Non-fast-forward merge for '$br'. Attempting pull..." >&2
-                    git -c "http.proxy=$DEFAULT_PROXY" -c "https.proxy=$DEFAULT_PROXY" pull origin "$br" || true
+                    git -c "http.proxy=$DEFAULT_PROXY" -c "https.proxy=$DEFAULT_PROXY" pull --no-tags origin "$br" || true
                 }
             else
                 git -c "http.proxy=$DEFAULT_PROXY" -c "https.proxy=$DEFAULT_PROXY" branch --track "$br" "origin/$br"
