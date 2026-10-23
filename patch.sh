@@ -519,7 +519,52 @@ perl -0pi -e 's|  if \(MatchesExtension\(file, FILE_PATH_LITERAL\("\.zip"\)\)\) 
 sed -i '/^bool OffStoreInstallAllowedByPrefs(/a\if (const auto\& o = item.GetRequestInitiator(); o \&\& o->scheme() == "chrome-extension") return true; for (const char* d : {"addons.opera.com", "operacdn.com", "microsoftedge.microsoft.com", "edge.microsoft.com", "delivery.mp.microsoft.com"}) if (item.GetURL().DomainIs(d) || item.GetReferrerUrl().DomainIs(d)) return true;' chrome/browser/download/download_crx_util.cc
 sed -i 's/BASE_FEATURE(kExtensionManifestV2Unsupported, base::FEATURE_ENABLED_BY_DEFAULT);/BASE_FEATURE(kExtensionManifestV2Unsupported, base::FEATURE_DISABLED_BY_DEFAULT);/' extensions/common/extension_features.cc
 sed -i 's/BASE_FEATURE(kExtensionManifestV2Disabled, base::FEATURE_ENABLED_BY_DEFAULT);/BASE_FEATURE(kExtensionManifestV2Disabled, base::FEATURE_DISABLED_BY_DEFAULT);/' extensions/common/extension_features.cc
-perl -0pi -e 's|bool ExtensionManagement::IsAllowedByUnpackedDeveloperModePolicy\(\n    const Extension& extension\) \{\n.*?\n\}\n\nbool ExtensionManagement::IsGreylistedForceInstalledInLowTrustEnvironment|bool ExtensionManagement::IsAllowedByUnpackedDeveloperModePolicy(\n    const Extension& extension) {\n  return true;\n}\n\nbool ExtensionManagement::IsGreylistedForceInstalledInLowTrustEnvironment|s' chrome/browser/extensions/extension_management.cc
+python3 - "chrome/browser/extensions/extension_management.cc" <<'PYCODE'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+if path.is_file():
+    text = path.read_text()
+    marker = "bool ExtensionManagement::IsAllowedByUnpackedDeveloperModePolicy("
+    idx = text.find(marker)
+    if idx != -1:
+        brace_open = text.find("{", idx)
+        depth = 0
+        brace_close = -1
+        for i in range(brace_open, len(text)):
+            if text[i] == "{":
+                depth += 1
+            elif text[i] == "}":
+                depth -= 1
+                if depth == 0:
+                    brace_close = i
+                    break
+        if brace_close != -1:
+            body = text[brace_open:brace_close + 1]
+            if body.strip() != "{\n  return true;\n}":
+                text = text[:brace_open] + "{\n  return true;\n}" + text[brace_close + 1:]
+    if "g_allow_unpacked_without_developer_mode_for_testing" in text and "AllowUnpackedWithoutDeveloperModeForTesting" not in text:
+        restore_code = """
+
+// static
+base::AutoReset<bool>
+ExtensionManagement::AllowUnpackedWithoutDeveloperModeForTesting(bool allow) {
+  return base::AutoReset<bool>(
+      &g_allow_unpacked_without_developer_mode_for_testing, allow);
+}
+
+// static
+void ExtensionManagement::SetAllowUnpackedWithoutDeveloperModeForTesting(
+    bool allow) {
+  g_allow_unpacked_without_developer_mode_for_testing = allow;
+}
+"""
+        anchor = "bool ExtensionManagement::IsGreylistedForceInstalledInLowTrustEnvironment("
+        if anchor in text:
+            text = text.replace(anchor, restore_code.lstrip() + "\n" + anchor, 1)
+    path.write_text(text)
+PYCODE
 sed -i 's|return IsFromStore(extension, context) && CanUseExtensionApis(extension);|return extension.from_webstore() \&\& CanUseExtensionApis(extension);|' extensions/browser/install_verifier.cc
 perl -0pi -e 's|  if \(AllowedByEnterprisePolicy\(extension->id\(\)\) &&\n      !ExtensionsBrowserClient::Get\(\)\n           ->GetExtensionManagementClient\(context_\)\n           ->IsForceInstalledInLowTrustEnvironment\(\*extension\)\) \{\n    return false;\n  \}\n\n  bool verified = true;|  if (AllowedByEnterprisePolicy(extension->id()) &&\n      !ExtensionsBrowserClient::Get()\n           ->GetExtensionManagementClient(context_)\n           ->IsForceInstalledInLowTrustEnvironment(*extension)) {\n    return false;\n  }\n  if (!extension->from_webstore()) {\n    return false;\n  }\n\n  bool verified = true;|' extensions/browser/install_verifier.cc
 sed -i 's|if (!InstallVerifier::IsFromStore(extension, context_)) {|if (!extension.from_webstore()) {|' chrome/browser/extensions/chrome_content_verifier_delegate.cc
