@@ -2246,12 +2246,27 @@ replace_if_missing(
         if (mMostVisitedTilesCoordinator != null) {
 """,
 )
-replace_if_missing(
-    coordinator,
-    "mCurrentNtpFakeSearchBoxTransitionStartOffset =\n"
-    "                getNtpSearchBoxTransitionStartOffset(!mSearchProviderHasLogo) + mTopInset;\n"
-    "        updateSearchBoxVisibilityForToolbarPosition();",
-    """        mCurrentNtpFakeSearchBoxTransitionStartOffset =
+coordinator_text = coordinator.read_text()
+edge_marker = "+ mTopInset;\n        updateSearchBoxVisibilityForToolbarPosition();"
+if edge_marker not in coordinator_text:
+    old_edge_156 = """        mCurrentNtpFakeSearchBoxTransitionStartOffset =
+                getNtpSearchBoxTransitionStartOffset(
+                                !mSearchProviderInfoDelegate.getSearchProviderHasLogo())
+                        + mTopInset;
+
+        int toolbarHeightNoShadow =
+                mActivity.getResources().getDimensionPixelSize(R.dimen.toolbar_height_no_shadow);
+        // Top padding is applied to the NTP layout, ensuring all UI components remain in their
+        // original positions after Status bar is hidden.
+        mModel.set(NewTabPageLayoutProperties.TOP_INSET_PX, toolbarHeightNoShadow + mTopInset);
+"""
+    new_edge_156 = """        mCurrentNtpFakeSearchBoxTransitionStartOffset =
+                getNtpSearchBoxTransitionStartOffset(
+                                !mSearchProviderInfoDelegate.getSearchProviderHasLogo())
+                        + mTopInset;
+        updateSearchBoxVisibilityForToolbarPosition();
+"""
+    old_edge_prev = """        mCurrentNtpFakeSearchBoxTransitionStartOffset =
                 getNtpSearchBoxTransitionStartOffset(!mSearchProviderHasLogo) + mTopInset;
 
         int toolbarHeightNoShadow =
@@ -2259,12 +2274,20 @@ replace_if_missing(
         // Top padding is applied to the NTP layout, ensuring all UI components remain in their
         // original positions after Status bar is hidden.
         mModel.set(NewTabPageLayoutProperties.TOP_INSET_PX, toolbarHeightNoShadow + mTopInset);
-""",
-    """        mCurrentNtpFakeSearchBoxTransitionStartOffset =
+"""
+    new_edge_prev = """        mCurrentNtpFakeSearchBoxTransitionStartOffset =
                 getNtpSearchBoxTransitionStartOffset(!mSearchProviderHasLogo) + mTopInset;
         updateSearchBoxVisibilityForToolbarPosition();
-""",
-)
+"""
+    if old_edge_156 in coordinator_text:
+        coordinator.write_text(coordinator_text.replace(old_edge_156, new_edge_156, 1))
+    elif old_edge_prev in coordinator_text:
+        coordinator.write_text(coordinator_text.replace(old_edge_prev, new_edge_prev, 1))
+    else:
+        raise SystemExit(
+            f"NTP bottom toolbar pattern not found in {coordinator}: "
+            "updateSearchBoxVisibilityForToolbarPosition in onToEdgeChange"
+        )
 
 replace_if_missing(
     dropdown,
