@@ -289,6 +289,10 @@ sync_git_from_remote() {
             git -C "$SCRIPT_DIR/vanadium" clean -fd >/dev/null 2>&1 || true
         fi
     fi
+    # 同步完成后切回第一个目标分支（通常为 main），确保后续构建从预期分支开始
+    if [ "${#BRANCHES[@]}" -gt 0 ]; then
+        switch_branch "${BRANCHES[0]}"
+    fi
     echo "Syncing git submodules..."
     git -c "http.proxy=$DEFAULT_PROXY" -c "https.proxy=$DEFAULT_PROXY" submodule update --init --recursive
 
@@ -444,5 +448,6 @@ if [ "$AUTO_RELEASE" = "1" ]; then
     HTTP_PROXY="$DEFAULT_PROXY" \
     HTTPS_PROXY="$DEFAULT_PROXY" \
     MOVE=1 \
+    RELEASE_BRANCHES="${BRANCHES[*]}" \
     "$SCRIPT_DIR/release.sh"
 fi
