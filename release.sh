@@ -3,7 +3,7 @@ set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 VERSION_ARGS="$SCRIPT_DIR/vanadium/args.gn"
-VERSION=$(grep -m1 -o '[0-9]\+\(\.[0-9]\+\)\{3\}' "$VERSION_ARGS" || true)
+VERSION="${VERSION:-$(grep -m1 -o '[0-9]\+\(\.[0-9]\+\)\{3\}' "$VERSION_ARGS" || true)}"
 
 if [ -z "$VERSION" ]; then
     echo "Unable to read Vanadium version from $VERSION_ARGS" >&2

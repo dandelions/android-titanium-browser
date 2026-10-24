@@ -127,14 +127,34 @@ get_effective_fast_local_build() {
     fi
 }
 
+get_branch_version() {
+    local branch="$1"
+    local v_commit=""
+    v_commit="$(git ls-tree "$branch" vanadium 2>/dev/null | awk '{print $3}' || true)"
+    if [ -z "$v_commit" ]; then
+        v_commit="$(git ls-tree "origin/$branch" vanadium 2>/dev/null | awk '{print $3}' || true)"
+    fi
+    if [ -n "$v_commit" ] && [ -d "$SCRIPT_DIR/vanadium" ]; then
+        local ver
+        ver="$(git -C "$SCRIPT_DIR/vanadium" show "${v_commit}:args.gn" 2>/dev/null | grep -m1 -o '[0-9]\+\(\.[0-9]\+\)\{3\}' || true)"
+        if [ -n "$ver" ]; then
+            echo "$ver"
+            return 0
+        fi
+    fi
+    grep -m1 -o '[0-9]\+\(\.[0-9]\+\)\{3\}' "$SCRIPT_DIR/vanadium/args.gn" 2>/dev/null || echo "$VERSION"
+}
+
 get_branch_prefix() {
     local branch="$1"
+    local branch_ver
+    branch_ver="$(get_branch_version "$branch")"
     if [ "$branch" = "main" ]; then
-        echo "$VERSION"
+        echo "$branch_ver"
     else
         local branch_tag
         branch_tag="$(printf '%s' "$branch" | tr -c 'A-Za-z0-9._-' '-' | sed 's/^-*//; s/-*$//')"
-        echo "${VERSION}-${branch_tag}"
+        echo "${branch_ver}-${branch_tag}"
     fi
 }
 
@@ -308,6 +328,7 @@ sync_git_from_remote() {
     fi
     echo "Syncing git submodules..."
     git -c "http.proxy=$DEFAULT_PROXY" -c "https.proxy=$DEFAULT_PROXY" submodule update --init --recursive
+    VERSION="$(grep -m1 -o '[0-9]\+\(\.[0-9]\+\)\{3\}' "$SCRIPT_DIR/vanadium/args.gn" 2>/dev/null || echo "$VERSION")"
 
     # 若拉取更新了当前脚本自身，重新加载并执行最新版本
     local hash_after=""
@@ -352,6 +373,7 @@ build_branch() {
     rm -f "$release_dir/${prefix}"* 2>/dev/null || true
 
     switch_branch "$branch"
+    VERSION="$(grep -m1 -o '[0-9]\+\(\.[0-9]\+\)\{3\}' "$SCRIPT_DIR/vanadium/args.gn" 2>/dev/null || echo "$VERSION")"
 
     local effective_fast_local
     effective_fast_local="$(get_effective_fast_local_build)"
@@ -454,13 +476,31 @@ if [ "$AUTO_RELEASE" = "1" ]; then
     echo "=========================================================="
     echo " [Auto Release] Publishing artifacts with MOVE=1 release.sh..."
     echo "=========================================================="
-    PROXY_URL="$DEFAULT_PROXY" \
-    BUILD_PROXY="$DEFAULT_PROXY" \
-    http_proxy="$DEFAULT_PROXY" \
-    https_proxy="$DEFAULT_PROXY" \
-    HTTP_PROXY="$DEFAULT_PROXY" \
-    HTTPS_PROXY="$DEFAULT_PROXY" \
-    MOVE=1 \
-    RELEASE_BRANCHES="${BRANCHES[*]}" \
-    "$SCRIPT_DIR/release.sh"
+    declare -A version_branches_map=()
+    for b in "${BRANCHES[@]}"; do
+        b_ver="$(get_branch_version "$b")"
+        if [ -n "$b_ver" ]; then
+            version_branches_map["$b_ver"]="${version_branches_map["$b_ver"]:-} $b"
+        fi
+    done
+
+    if [ "${#version_branches_map[@]}" -eq 0 ]; then
+        def_ver="$(grep -m1 -o '[0-9]\+\(\.[0-9]\+\)\{3\}' "$SCRIPT_DIR/vanadium/args.gn" 2>/dev/null || echo "$VERSION")"
+        version_branches_map["$def_ver"]="${BRANCHES[*]}"
+    fi
+
+    for rel_ver in "${!version_branches_map[@]}"; do
+        rel_branches="$(echo "${version_branches_map["$rel_ver"]}" | xargs)"
+        echo "--> Publishing release for version $rel_ver (branch(es): $rel_branches)..."
+        PROXY_URL="$DEFAULT_PROXY" \
+        BUILD_PROXY="$DEFAULT_PROXY" \
+        http_proxy="$DEFAULT_PROXY" \
+        https_proxy="$DEFAULT_PROXY" \
+        HTTP_PROXY="$DEFAULT_PROXY" \
+        HTTPS_PROXY="$DEFAULT_PROXY" \
+        MOVE=1 \
+        VERSION="$rel_ver" \
+        RELEASE_BRANCHES="$rel_branches" \
+        "$SCRIPT_DIR/release.sh"
+    done
 fi
