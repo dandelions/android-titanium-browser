@@ -127,11 +127,18 @@ if [ "$found" -ne 1 ]; then
     exit 1
 fi
 
+remote_url=$(git_repo remote get-url origin)
+repo=$(printf '%s' "$remote_url" | sed -E 's#^https://([^@]+@)?github.com/##; s#^git@github.com:##; s#\.git$##')
+head_commit=$(git_repo rev-parse HEAD)
+
 sha_file="$RELEASE_DIR/$VERSION-SHA256SUMS.txt"
 (
     cd "$RELEASE_DIR"
     temp_sha="$(mktemp)"
     # 保留已有 SHA256SUMS.txt 中其他分支/文件的校验和，仅覆盖当前发布文件的记录
+    if [ ! -f "$sha_file" ]; then
+        gh release download "$TAG" --repo "$repo" --pattern "$(basename "$sha_file")" --dir "$RELEASE_DIR" >/dev/null 2>&1 || true
+    fi
     if [ -f "$sha_file" ]; then
         current_basenames="$(while IFS= read -r f; do basename "$f"; done < "$files_list")"
         while IFS= read -r line; do
@@ -148,10 +155,6 @@ sha_file="$RELEASE_DIR/$VERSION-SHA256SUMS.txt"
     rm -f "$temp_sha"
 )
 printf '%s\n' "$sha_file" >> "$files_list"
-
-remote_url=$(git_repo remote get-url origin)
-repo=$(printf '%s' "$remote_url" | sed -E 's#^https://([^@]+@)?github.com/##; s#^git@github.com:##; s#\.git$##')
-head_commit=$(git_repo rev-parse HEAD)
 
 git_repo fetch origin "refs/tags/$TAG:refs/tags/$TAG" >/dev/null 2>&1 || true
 if git_repo rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then

@@ -345,6 +345,50 @@ sync_git_from_remote() {
     fi
 }
 
+verify_branch_signature() {
+    local branch="$1"
+    local prefix
+    prefix="$(get_branch_prefix "$branch")"
+    local local_apksigner
+    local_apksigner=$(find "$SCRIPT_DIR/chromium/src/third_party/android_sdk" -name apksigner 2>/dev/null | sort | tail -n 1 || true)
+    if [ -n "$local_apksigner" ] && [ -x "$local_apksigner" ]; then
+        echo ""
+        echo "=========================================================="
+        echo " Signature Scheme Verification for '$branch':"
+        echo "=========================================================="
+        for apk_file in "$SCRIPT_DIR/chromium/src/out/release/${prefix}"*.apk; do
+            if [ -f "$apk_file" ]; then
+                echo "--- $(basename "$apk_file") ---"
+                "$local_apksigner" verify --verbose "$apk_file" 2>&1 | grep -E "Verifies|Verified using" || true
+            fi
+        done
+    fi
+}
+
+release_branch() {
+    local branch="$1"
+    local branch_ver
+    branch_ver="$(get_branch_version "$branch")"
+    if [ -z "$branch_ver" ]; then
+        branch_ver="$(grep -m1 -o '[0-9]\+\(\.[0-9]\+\)\{3\}' "$SCRIPT_DIR/vanadium/args.gn" 2>/dev/null || echo "$VERSION")"
+    fi
+
+    echo ""
+    echo "=========================================================="
+    echo " [Auto Release] Publishing artifacts for '$branch' ($branch_ver)..."
+    echo "=========================================================="
+    PROXY_URL="$DEFAULT_PROXY" \
+    BUILD_PROXY="$DEFAULT_PROXY" \
+    http_proxy="$DEFAULT_PROXY" \
+    https_proxy="$DEFAULT_PROXY" \
+    HTTP_PROXY="$DEFAULT_PROXY" \
+    HTTPS_PROXY="$DEFAULT_PROXY" \
+    MOVE=1 \
+    VERSION="$branch_ver" \
+    RELEASE_BRANCHES="$branch" \
+    "$SCRIPT_DIR/release.sh"
+}
+
 build_branch() {
     local branch="$1"
     local step_num="$2"
@@ -360,6 +404,10 @@ build_branch() {
         echo "Artifacts for '$branch' already exist and branch is up to date:"
         ls -lh "$SCRIPT_DIR/chromium/src/out/release/${prefix}"* 2>/dev/null || true
         echo "Skipping build for '$branch'."
+        verify_branch_signature "$branch"
+        if [ "$AUTO_RELEASE" = "1" ]; then
+            release_branch "$branch"
+        fi
         return 0
     fi
 
@@ -419,6 +467,11 @@ build_branch() {
     current_head="$(git rev-parse HEAD)"
     mkdir -p "$SCRIPT_DIR/chromium/src/out/release"
     printf '%s\n' "$current_head" > "$SCRIPT_DIR/chromium/src/out/release/.built_commit_${branch}"
+
+    verify_branch_signature "$branch"
+    if [ "$AUTO_RELEASE" = "1" ]; then
+        release_branch "$branch"
+    fi
 }
 
 echo "=== Build Configuration ==="
@@ -451,56 +504,8 @@ done
 
 echo ""
 echo "=========================================================="
-echo " SUCCESS: Build process finished!"
+echo " SUCCESS: All requested branches built and processed!"
 echo " Branches: ${BRANCHES[*]}"
 echo " Output files in chromium/src/out/release/:"
 echo "=========================================================="
 ls -lh "$SCRIPT_DIR/chromium/src/out/release"/*.apk 2>/dev/null || true
-
-local_apksigner=$(find "$SCRIPT_DIR/chromium/src/third_party/android_sdk" -name apksigner 2>/dev/null | sort | tail -n 1 || true)
-if [ -n "$local_apksigner" ] && [ -x "$local_apksigner" ]; then
-    echo ""
-    echo "=========================================================="
-    echo " Signature Scheme Verification:"
-    echo "=========================================================="
-    for apk_file in "$SCRIPT_DIR/chromium/src/out/release"/*.apk; do
-        if [ -f "$apk_file" ]; then
-            echo "--- $(basename "$apk_file") ---"
-            "$local_apksigner" verify --verbose "$apk_file" 2>&1 | grep -E "Verifies|Verified using" || true
-        fi
-    done
-fi
-
-if [ "$AUTO_RELEASE" = "1" ]; then
-    echo ""
-    echo "=========================================================="
-    echo " [Auto Release] Publishing artifacts with MOVE=1 release.sh..."
-    echo "=========================================================="
-    declare -A version_branches_map=()
-    for b in "${BRANCHES[@]}"; do
-        b_ver="$(get_branch_version "$b")"
-        if [ -n "$b_ver" ]; then
-            version_branches_map["$b_ver"]="${version_branches_map["$b_ver"]:-} $b"
-        fi
-    done
-
-    if [ "${#version_branches_map[@]}" -eq 0 ]; then
-        def_ver="$(grep -m1 -o '[0-9]\+\(\.[0-9]\+\)\{3\}' "$SCRIPT_DIR/vanadium/args.gn" 2>/dev/null || echo "$VERSION")"
-        version_branches_map["$def_ver"]="${BRANCHES[*]}"
-    fi
-
-    for rel_ver in "${!version_branches_map[@]}"; do
-        rel_branches="$(echo "${version_branches_map["$rel_ver"]}" | xargs)"
-        echo "--> Publishing release for version $rel_ver (branch(es): $rel_branches)..."
-        PROXY_URL="$DEFAULT_PROXY" \
-        BUILD_PROXY="$DEFAULT_PROXY" \
-        http_proxy="$DEFAULT_PROXY" \
-        https_proxy="$DEFAULT_PROXY" \
-        HTTP_PROXY="$DEFAULT_PROXY" \
-        HTTPS_PROXY="$DEFAULT_PROXY" \
-        MOVE=1 \
-        VERSION="$rel_ver" \
-        RELEASE_BRANCHES="$rel_branches" \
-        "$SCRIPT_DIR/release.sh"
-    done
-fi
