@@ -25,15 +25,6 @@ RES_TARGET_SDK_VERSION = 0x01010270
 RES_COMPILE_SDK_VERSION = 0x01010572
 RES_GLES_VERSION = 0x01010281
 
-SAFE_COMMAND_LINE = (
-    "chrome "
-    "--disable-gpu-rasterization "
-    "--disable-features=Vulkan,DefaultANGLEVulkan,SkiaGraphite "
-    "--use-gl=egl "
-    "--no-default-browser-check "
-    "--disable-fre\n"
-)
-
 
 def extract_resource_ids(data: bytearray):
     """
@@ -103,14 +94,6 @@ def patch_axml_bytes(data: bytearray, min_sdk=24, target_sdk=34, compile_sdk=34,
                         struct.pack_into("<I", data, i, target_sdk)
                         modified = True
                         print(f"[patch_apk_manifest] Patched targetSdkVersion ({val} -> {target_sdk}) at offset 0x{i:x}")
-                elif val == 37:
-                    struct.pack_into("<I", data, i, target_sdk)
-                    modified = True
-                    print(f"[patch_apk_manifest] Fallback patched attribute value 37 -> {target_sdk} at offset 0x{i:x}")
-                elif val == 29:
-                    struct.pack_into("<I", data, i, min_sdk)
-                    modified = True
-                    print(f"[patch_apk_manifest] Fallback patched attribute value 29 -> {min_sdk} at offset 0x{i:x}")
 
             # C. glEsVersion
             if data_type == 0x11:  # TYPE_INT_HEX
@@ -150,17 +133,14 @@ def patch_apk(apk_path: str, min_sdk=24, target_sdk=34, compile_sdk=34, gles=0x0
                     # Exclude existing signatures since we will re-sign
                     continue
                 elif item.filename == "assets/chrome-command-line":
-                    # We will write updated command line below
+                    # Aligned with Kiwi: never inject/retain custom command line which causes EGL/GPU crashes
+                    print("[patch_apk_manifest] Stripped custom assets/chrome-command-line (aligned with Kiwi standard)")
                     continue
                 else:
                     z_out.writestr(item, z_in.read(item.filename))
 
-            # Inject safe rendering chrome-command-line into assets
-            z_out.writestr("assets/chrome-command-line", SAFE_COMMAND_LINE)
-            print("[patch_apk_manifest] Injected safe rendering flags into assets/chrome-command-line")
-
         shutil.move(patched_apk, apk_path)
-        print(f"Successfully patched {apk_path} manifest & assets (minSdk={min_sdk}, targetSdk={target_sdk}, gles=0x{gles:08x})")
+        print(f"Successfully patched {apk_path} manifest (minSdk={min_sdk}, targetSdk={target_sdk}, gles=0x{gles:08x})")
         return True
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)

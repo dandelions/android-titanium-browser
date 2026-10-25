@@ -252,7 +252,10 @@ if [ -f "$HOME_MODULES_CONFIG_MANAGER" ]; then
     sed -i 's|readBoolean(getSettingsPreferenceKey(moduleType), true)|readBoolean(getSettingsPreferenceKey(moduleType), !HomeModulesUtils.belongsToEducationalTipModule(moduleType))|' "$HOME_MODULES_CONFIG_MANAGER"
 fi
 sed -i '/removeEntryForKey(fragmentName, "translate_switch")/d' "$SETTINGS_SEARCH_COORDINATOR"
-sed -i '/^bool ShouldFallbackToSWIfGLES3NotSupported() {$/,/^}$/ s|^  return true;$|  return false;|' "$GL_FEATURES"
+# Only modify GLES3 fallback on desktop virtualization branches, never on old-android / car builds (aligned with Kiwi)
+if [ "${DISABLE_V3_SIGNING:-0}" != "1" ] && [ "${CAR_COMPAT:-0}" != "1" ] && [ "$(git -C "$SCRIPT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || true)" != "old-android" ]; then
+    sed -i '/^bool ShouldFallbackToSWIfGLES3NotSupported() {$/,/^}$/ s|^  return true;$|  return false;|' "$GL_FEATURES"
+fi
 sed -i '/com.google.ar.core.min_apk_version/d' "$ARCORE_MANIFEST"
 # Chromium 152 moves desktop-Android feature enablement into field trials.
 sed -i '/#if BUILDFLAG(IS_DESKTOP_ANDROID)/{
