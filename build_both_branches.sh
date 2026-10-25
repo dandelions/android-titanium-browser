@@ -130,7 +130,16 @@ get_effective_fast_local_build() {
 get_branch_version() {
     local branch="$1"
     local v_commit=""
-    v_commit="$(git ls-tree "$branch" vanadium 2>/dev/null | awk '{print $3}' || true)"
+    if [ "$branch" = "old-android" ] || [ "$branch" = "origin/old-android" ]; then
+        # old-android 车机兼容分支跟随 main 分支的最新 Vanadium 基线版本
+        v_commit="$(git ls-tree origin/main vanadium 2>/dev/null | awk '{print $3}' || true)"
+        if [ -z "$v_commit" ]; then
+            v_commit="$(git ls-tree main vanadium 2>/dev/null | awk '{print $3}' || true)"
+        fi
+    fi
+    if [ -z "$v_commit" ]; then
+        v_commit="$(git ls-tree "$branch" vanadium 2>/dev/null | awk '{print $3}' || true)"
+    fi
     if [ -z "$v_commit" ]; then
         v_commit="$(git ls-tree "origin/$branch" vanadium 2>/dev/null | awk '{print $3}' || true)"
     fi
@@ -267,6 +276,18 @@ switch_branch() {
         fi
         local expected_v_commit actual_v_commit
         expected_v_commit="$(git ls-tree HEAD vanadium 2>/dev/null | awk '{print $3}' || true)"
+        # 若构建 old-android 分支，且 main 分支的 vanadium commit 更新，自动对齐到 main 的最新 vanadium 版本
+        if [ "$target_branch" = "old-android" ]; then
+            local main_v_commit
+            main_v_commit="$(git ls-tree origin/main vanadium 2>/dev/null | awk '{print $3}' || true)"
+            if [ -z "$main_v_commit" ]; then
+                main_v_commit="$(git ls-tree main vanadium 2>/dev/null | awk '{print $3}' || true)"
+            fi
+            if [ -n "$main_v_commit" ] && [ -n "$expected_v_commit" ] && [ "$main_v_commit" != "$expected_v_commit" ]; then
+                echo "Notice: Aligning old-android vanadium submodule to latest commit from main ($main_v_commit)..."
+                expected_v_commit="$main_v_commit"
+            fi
+        fi
         actual_v_commit="$(git -C "$SCRIPT_DIR/vanadium" rev-parse HEAD 2>/dev/null || true)"
         if [ -n "$expected_v_commit" ] && [ "$actual_v_commit" != "$expected_v_commit" ]; then
             echo "Aligning vanadium submodule to commit required by '$target_branch' ($expected_v_commit)..."
