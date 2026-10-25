@@ -53,29 +53,8 @@ def clean_target_sdk_assignments_in_gn(src_dir: str) -> None:
 
 
 def patch_min_sdk_in_gni(file_path: str) -> bool:
-    if not os.path.isfile(file_path):
-        return False
-    norm_path = file_path.replace("\\", "/")
-    if "build/config/android" in norm_path:
-        return False
-
-    with open(file_path, "r", encoding="utf-8") as f:
-        content = f.read()
-
-    new_content = content
-    # 替换任意 min_sdk_version / default_min_sdk_version 为 29 (匹配 Android 10 车机基线并确保 native AIDL libbinder_ndk 工具链正常)
-    new_content = re.sub(r"min_sdk_version\s*=\s*\d+", "min_sdk_version = 29", new_content)
-    new_content = re.sub(
-        r"default_min_sdk_version\s*=\s*\d+", "default_min_sdk_version = 29", new_content
-    )
-    # 清除 target_sdk_version 赋值以防止 GN "Assignment had no effect"
-    new_content = re.sub(r"^[ \t]*target_sdk_version\s*=\s*\d+.*$\n?", "", new_content, flags=re.MULTILINE)
-
-    if new_content != content:
-        with open(file_path, "w", encoding="utf-8") as f:
-            f.write(new_content)
-        print(f"Patched minSdk=29 in: {file_path}")
-        return True
+    # 现已采用 patch_apk_manifest.py 二进制清单注入方案，在 APK 签名阶段直接修改 minSdk 与 targetSdk，
+    # 无需改动源码级 .gn/.gni 模板，避免修改构建文件导致 Ninja 编译缓存失效或触发全量重编。
     return False
 
 

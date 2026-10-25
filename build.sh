@@ -250,11 +250,7 @@ configure_out_dir() {
     set_gn_arg "$desired_args" ext_version_enabled true
     set_gn_arg "$desired_args" ext_version_increment "\"$BUILD_VERSION_INCREMENT\""
     append_common_gn_args "$desired_args"
-    if [ "${CAR_COMPAT:-1}" != "0" ]; then
-        set_gn_arg "$desired_args" default_min_sdk_version 29
-    else
-        sed -i "/^default_min_sdk_version/d" "$desired_args"
-    fi
+    sed -i "/^default_min_sdk_version/d" "$desired_args"
     sed -i "/^default_android_sdk_version/d" "$desired_args"
 
     if [ "${BUILD_STATE_RESTORED:-0}" = "1" ] && [ -f "$out_dir/build.ninja" ] && cmp -s "$desired_args" "$out_dir/args.gn"; then
@@ -617,26 +613,68 @@ fi
 mkdir -p out/tmp out/release
 echo "Build options: BUILD_ARM=$BUILD_ARM BUILD_ARM64=$BUILD_ARM64 BUILD_AAB=$BUILD_AAB BUILD_VERSION_INCREMENT=$BUILD_VERSION_INCREMENT NINJA_JOBS=${NINJA_JOBS:-auto} OUTPUT_PREFIX=$OUTPUT_VERSION_PREFIX"
 
+is_old_android_build() {
+    local branch="$(git -C "$SCRIPT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+    if [ "${DISABLE_V3_SIGNING:-0}" = "1" ] || [ "${CAR_COMPAT:-0}" = "1" ] || [ "$branch" = "old-android" ] || [[ "${OUTPUT_BRANCH_TAG:-}" == *"old-android"* ]]; then
+        return 0
+    fi
+    return 1
+}
+
 if [ "$BUILD_ARM" = "1" ]; then
     if [ "${SKIP_ARM32:-0}" = "1" ]; then
         echo "SKIP_ARM32=1: Skipping arm32 compilation as requested."
     else
-        configure_out_dir out/arm arm
-        run_autoninja out/arm chrome_public_apk
-        copy_first_output out/arm/apks 'Chrome*.apk' "out/tmp/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk"
+        reused_arm32=0
+        if is_old_android_build && [ ! -s "out/tmp/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk" ]; then
+            for base_cand in "out/tmp/${VERSION}-armeabi-v7a.apk" "out/release/${VERSION}-armeabi-v7a.apk"; do
+                if [ -s "$base_cand" ]; then
+                    echo "Notice: Found existing 32-bit ARM base APK ($base_cand). Reusing it directly for old-android car-compat repackaging (skipping redundant compilation)..."
+                    cp "$base_cand" "out/tmp/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk"
+                    reused_arm32=1
+                    break
+                fi
+            done
+        fi
+        if [ "$reused_arm32" = "0" ]; then
+            configure_out_dir out/arm arm
+            run_autoninja out/arm chrome_public_apk
+            copy_first_output out/arm/apks 'Chrome*.apk' "out/tmp/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk"
+        fi
     fi
 fi
 
 if [ "$BUILD_ARM64" = "1" ]; then
-    configure_out_dir out/arm64 arm64
-    arm64_targets="chrome_public_apk"
-    if [ "$BUILD_AAB" = "1" ]; then
-        arm64_targets="$arm64_targets chrome_public_bundle"
+    reused_arm64=0
+    if is_old_android_build && [ ! -s "out/tmp/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk" ]; then
+        for base_cand in "out/tmp/${VERSION}-arm64-v8a.apk" "out/release/${VERSION}-arm64-v8a.apk"; do
+            if [ -s "$base_cand" ]; then
+                echo "Notice: Found existing 64-bit ARM base APK ($base_cand). Reusing it directly for old-android car-compat repackaging (skipping redundant compilation)..."
+                cp "$base_cand" "out/tmp/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk"
+                reused_arm64=1
+                break
+            fi
+        done
+        if [ "$BUILD_AAB" = "1" ] && [ ! -s "out/tmp/${OUTPUT_VERSION_PREFIX}-arm64-v8a.aab" ]; then
+            for base_aab in "out/tmp/${VERSION}-arm64-v8a.aab" "out/release/${VERSION}-arm64-v8a.aab"; do
+                if [ -s "$base_aab" ]; then
+                    cp "$base_aab" "out/tmp/${OUTPUT_VERSION_PREFIX}-arm64-v8a.aab"
+                    break
+                fi
+            done
+        fi
     fi
-    run_autoninja out/arm64 $arm64_targets
-    copy_first_output out/arm64/apks 'Chrome*.apk' "out/tmp/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk"
-    if [ "$BUILD_AAB" = "1" ]; then
-        copy_first_output out/arm64/apks 'Chrome*.aab' "out/tmp/${OUTPUT_VERSION_PREFIX}-arm64-v8a.aab"
+    if [ "$reused_arm64" = "0" ]; then
+        configure_out_dir out/arm64 arm64
+        arm64_targets="chrome_public_apk"
+        if [ "$BUILD_AAB" = "1" ]; then
+            arm64_targets="$arm64_targets chrome_public_bundle"
+        fi
+        run_autoninja out/arm64 $arm64_targets
+        copy_first_output out/arm64/apks 'Chrome*.apk' "out/tmp/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk"
+        if [ "$BUILD_AAB" = "1" ]; then
+            copy_first_output out/arm64/apks 'Chrome*.aab' "out/tmp/${OUTPUT_VERSION_PREFIX}-arm64-v8a.aab"
+        fi
     fi
 fi
 
