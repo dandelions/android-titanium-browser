@@ -59,7 +59,7 @@ FAST_LOCAL_BUILD="${FAST_LOCAL_BUILD:-0}"
 SKIP_SOURCE_PREPARE="${SKIP_SOURCE_PREPARE:-0}"
 SKIP_SYSTEM_DEPS="${SKIP_SYSTEM_DEPS:-0}"
 CCACHE_MAX_SIZE="${CCACHE_MAX_SIZE:-30G}"
-BUILD_PROXY="${BUILD_PROXY:-${https_proxy:-${http_proxy:-${HTTPS_PROXY:-${HTTP_PROXY:-${ALL_PROXY:-${all_proxy:-}}}}}}}}"
+BUILD_PROXY="${BUILD_PROXY:-${https_proxy:-${http_proxy:-${HTTPS_PROXY:-${HTTP_PROXY:-${ALL_PROXY:-${all_proxy:-}}}}}}}"
 BUILD_VERSION_INCREMENT="${BUILD_VERSION_INCREMENT:-}"
 GIT_BRANCH_NAME="$(git -C "$SCRIPT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
 if [ -n "${OUTPUT_BRANCH_TAG:-}" ]; then

@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 cd "$SCRIPT_DIR"
 
-DEFAULT_PROXY="${BUILD_PROXY:-${https_proxy:-${http_proxy:-${HTTPS_PROXY:-${HTTP_PROXY:-${ALL_PROXY:-${all_proxy:-http://192.168.2.1:37896}}}}}}}}"
+DEFAULT_PROXY="${BUILD_PROXY:-${https_proxy:-${http_proxy:-${HTTPS_PROXY:-${HTTP_PROXY:-${ALL_PROXY:-${all_proxy:-http://192.168.2.1:37896}}}}}}}"
 CAR_COMPAT="${CAR_COMPAT:-0}"
 BUILD_OLD_ANDROID="${BUILD_OLD_ANDROID:-1}"
 BUILD_ARM="${BUILD_ARM:-1}"
