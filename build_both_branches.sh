@@ -17,6 +17,7 @@ AUTO_RELEASE="${AUTO_RELEASE:-1}"
 SKIP_IF_EXISTS="${SKIP_IF_EXISTS:-1}"
 FORCE_REBUILD="${FORCE_REBUILD:-0}"
 ENABLE_V2_SIGNING="${ENABLE_V2_SIGNING:-1}"
+REUSE_BASE_APK="${REUSE_BASE_APK:-0}"
 
 # 导出代理环境变量，供后续 git / gh / curl 等工具使用
 export HTTP_PROXY="$DEFAULT_PROXY"
@@ -473,6 +474,7 @@ build_branch() {
     CAR_COMPAT="$branch_car_compat" \
     DISABLE_V3_SIGNING="$branch_disable_v3" \
     FAST_LOCAL_BUILD="$effective_fast_local" \
+    REUSE_BASE_APK="${REUSE_BASE_APK:-0}" \
     BUILD_PROXY="$DEFAULT_PROXY" \
     http_proxy="$DEFAULT_PROXY" \
     https_proxy="$DEFAULT_PROXY" \
@@ -503,6 +505,7 @@ echo "BUILD_ARM64       : $BUILD_ARM64"
 echo "BUILD_AAB         : $BUILD_AAB"
 echo "BUILD_OLD_ANDROID : $BUILD_OLD_ANDROID"
 echo "ENABLE_V2_SIGNING : $ENABLE_V2_SIGNING"
+echo "REUSE_BASE_APK    : $REUSE_BASE_APK"
 echo "BRANCHES          : ${BRANCHES[*]}"
 echo "AUTO_RELEASE      : $AUTO_RELEASE"
 echo "==========================="

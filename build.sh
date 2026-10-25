@@ -252,6 +252,11 @@ configure_out_dir() {
     append_common_gn_args "$desired_args"
     sed -i "/^default_min_sdk_version/d" "$desired_args"
     sed -i "/^default_android_sdk_version/d" "$desired_args"
+    if is_old_android_build; then
+        set_gn_arg "$desired_args" is_desktop_android false
+        set_gn_arg "$desired_args" v8_enable_drumbrake false
+        set_gn_arg "$desired_args" v8_drumbrake_bounds_checks false
+    fi
 
     if [ "${BUILD_STATE_RESTORED:-0}" = "1" ] && [ -f "$out_dir/build.ninja" ] && cmp -s "$desired_args" "$out_dir/args.gn"; then
         echo "Reusing restored GN output in $out_dir"
@@ -626,7 +631,7 @@ if [ "$BUILD_ARM" = "1" ]; then
         echo "SKIP_ARM32=1: Skipping arm32 compilation as requested."
     else
         reused_arm32=0
-        if is_old_android_build && [ ! -s "out/tmp/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk" ]; then
+        if [ "${REUSE_BASE_APK:-0}" = "1" ] && is_old_android_build && [ ! -s "out/tmp/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk" ]; then
             for base_cand in "out/tmp/${VERSION}-armeabi-v7a.apk" "out/release/${VERSION}-armeabi-v7a.apk"; do
                 if [ -s "$base_cand" ]; then
                     echo "Notice: Found existing 32-bit ARM base APK ($base_cand). Reusing it directly for old-android car-compat repackaging (skipping redundant compilation)..."
@@ -646,7 +651,7 @@ fi
 
 if [ "$BUILD_ARM64" = "1" ]; then
     reused_arm64=0
-    if is_old_android_build && [ ! -s "out/tmp/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk" ]; then
+    if [ "${REUSE_BASE_APK:-0}" = "1" ] && is_old_android_build && [ ! -s "out/tmp/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk" ]; then
         for base_cand in "out/tmp/${VERSION}-arm64-v8a.apk" "out/release/${VERSION}-arm64-v8a.apk"; do
             if [ -s "$base_cand" ]; then
                 echo "Notice: Found existing 64-bit ARM base APK ($base_cand). Reusing it directly for old-android car-compat repackaging (skipping redundant compilation)..."

@@ -227,15 +227,47 @@ def clean_manifest_zygote_and_modern_attributes(src_dir: str) -> None:
         # 1. 移除 zygotePreloadName 与 zygotePreloadNativeLib，避免车机 App Zygote 阻塞卡死
         new_content = re.sub(r'[ \t]*android:zygotePreloadName="[^"]*"', '', new_content)
         new_content = re.sub(r'[ \t]*android:zygotePreloadNativeLib="[^"]*"', '', new_content)
-        # 2. 移除 memtagMode，避免老旧车机 CPU/libc 内存保护错乱
+        # 2. 强制禁用 useAppZygote，避免车机 AMS/Zygote 通信死锁
+        new_content = re.sub(r'[ \t]*android:useAppZygote="true"', ' android:useAppZygote="false"', new_content)
+        # 3. 移除 memtagMode，避免老旧车机 CPU/libc 内存保护错乱
         new_content = re.sub(r'[ \t]*android:memtagMode="[^"]*"', '', new_content)
-        # 3. 移除 enableOnBackInvokedCallback
+        # 4. 移除 enableOnBackInvokedCallback
         new_content = re.sub(r'[ \t]*android:enableOnBackInvokedCallback="[^"]*"', '', new_content)
+        # 5. 移除 isolatedSplits，确保车机单体应用无需复杂 split 隔离
+        new_content = re.sub(r'[ \t]*android:isolatedSplits="true"', '', new_content)
 
         if new_content != content:
             with open(manifest_path, "w", encoding="utf-8") as f:
                 f.write(new_content)
             print(f"Cleaned zygotePreload and modern attributes to prevent car head-unit hang in: {manifest_path}")
+
+
+def patch_gl_software_fallback(src_dir: str) -> None:
+    gl_features = os.path.join(src_dir, "ui/gl/gl_features.cc")
+    if os.path.isfile(gl_features):
+        with open(gl_features, "r", encoding="utf-8") as f:
+            c = f.read()
+        nc = re.sub(
+            r'(bool ShouldFallbackToSWIfGLES3NotSupported\(\)\s*\{[\s\S]*?return\s+)false;',
+            r'\1true;',
+            c
+        )
+        if nc != c:
+            with open(gl_features, "w", encoding="utf-8") as f:
+                f.write(nc)
+            print(f"Restored GLES3 software fallback (return true) in: {gl_features}")
+
+
+def patch_startup_field_trials(src_dir: str) -> None:
+    field_trials = os.path.join(src_dir, "chrome/browser/chrome_browser_field_trials.cc")
+    if os.path.isfile(field_trials):
+        with open(field_trials, "r", encoding="utf-8") as f:
+            c = f.read()
+        nc = re.sub(r'^[ \t]*feature_overrides\.EnableFeature\(chrome::android::kLoadAllTabsAtStartup\);[ \t]*\n?', '', c, flags=re.MULTILINE)
+        if nc != c:
+            with open(field_trials, "w", encoding="utf-8") as f:
+                f.write(nc)
+            print(f"Disabled kLoadAllTabsAtStartup for car head-unit stability in: {field_trials}")
 
 
 def main() -> None:
@@ -299,8 +331,10 @@ def main() -> None:
     remove_original_package_from_manifest(src_dir)
     patch_manifest_sdk_and_features(src_dir)
     clean_manifest_zygote_and_modern_attributes(src_dir)
+    patch_gl_software_fallback(src_dir)
+    patch_startup_field_trials(src_dir)
 
-    print("SDK version patch (minSdk: 29) & extractNativeLibs check complete.")
+    print("SDK version patch (minSdk: 29) & car-compat checks complete.")
 
 
 if __name__ == "__main__":

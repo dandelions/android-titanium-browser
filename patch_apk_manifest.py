@@ -8,6 +8,8 @@ Patches AndroidManifest.xml in-place inside an APK zip file:
 - android:compileSdkVersion -> 34
 - platformBuildVersionCode -> 34
 - android:glEsVersion -> 0x00020000 (OpenGL ES 2.0)
+- android:useAppZygote -> false (0) to prevent car AMS Zygote fork deadlock
+- injects assets/chrome-command-line with safe rendering fallbacks
 """
 
 import os
@@ -17,17 +19,60 @@ import zipfile
 import tempfile
 import shutil
 
-ATTR_MIN_SDK_VERSION = 0x0101020C
-ATTR_TARGET_SDK_VERSION = 0x01010270
-ATTR_COMPILE_SDK_VERSION = 0x01010572
-ATTR_COMPILE_SDK_VERSION_CODENAME = 0x01010573
-ATTR_GLES_VERSION = 0x01010281
+RES_USE_APP_ZYGOTE = 0x01010584
+RES_MIN_SDK_VERSION = 0x0101020C
+RES_TARGET_SDK_VERSION = 0x01010270
+RES_COMPILE_SDK_VERSION = 0x01010572
+RES_GLES_VERSION = 0x01010281
+
+SAFE_COMMAND_LINE = (
+    "chrome "
+    "--disable-gpu-rasterization "
+    "--disable-features=Vulkan,DefaultANGLEVulkan,SkiaGraphite "
+    "--use-gl=egl "
+    "--no-default-browser-check "
+    "--disable-fre\n"
+)
+
+
+def extract_resource_ids(data: bytearray):
+    """
+    Finds RES_XML_RESOURCE_MAP_TYPE chunk (0x00080180) and returns a dict mapping
+    res_id -> index, and index -> res_id.
+    """
+    idx_to_res = {}
+    res_to_idx = {}
+
+    offset = 8  # Skip XML header
+    while offset + 8 <= len(data):
+        chunk_type, chunk_size = struct.unpack_from("<II", data, offset)
+        if chunk_size < 8 or offset + chunk_size > len(data):
+            break
+
+        if chunk_type == 0x00080180:  # RES_XML_RESOURCE_MAP_TYPE
+            count = (chunk_size - 8) // 4
+            for i in range(count):
+                res_id = struct.unpack_from("<I", data, offset + 8 + i * 4)[0]
+                idx_to_res[i] = res_id
+                res_to_idx[res_id] = i
+            break
+
+        offset += chunk_size
+
+    return idx_to_res, res_to_idx
 
 
 def patch_axml_bytes(data: bytearray, min_sdk=24, target_sdk=34, compile_sdk=34, gles=0x00020000) -> bool:
     modified = False
 
-    # 1. Direct scan for attribute structures matching:
+    _, res_to_idx = extract_resource_ids(data)
+    use_app_zygote_idx = res_to_idx.get(RES_USE_APP_ZYGOTE, -1)
+    min_sdk_idx = res_to_idx.get(RES_MIN_SDK_VERSION, -1)
+    target_sdk_idx = res_to_idx.get(RES_TARGET_SDK_VERSION, -1)
+    gles_idx = res_to_idx.get(RES_GLES_VERSION, -1)
+
+    # 1. Attribute-level scan:
+    # Each attribute is 20 bytes:
     # [ns_idx: 4, name_idx: 4, raw_val: 4, size_and_type: 4, value: 4]
     # where size_and_type has size=8 (0x0008) in lower 16 bits, and dataType in byte 3 (0x10, 0x11, 0x12, etc.)
     for i in range(16, len(data) - 4, 4):
@@ -35,32 +80,45 @@ def patch_axml_bytes(data: bytearray, min_sdk=24, target_sdk=34, compile_sdk=34,
         attr_size = size_and_type & 0xFFFF
         data_type = (size_and_type >> 24) & 0xFF
 
-        if attr_size == 8 and data_type in (0x10, 0x11):  # TYPE_INT_DEC or TYPE_INT_HEX
+        if attr_size == 8:
             val = struct.unpack_from("<I", data, i)[0]
+            name_idx = struct.unpack_from("<I", data, i - 12)[0]
 
-            # If current value is 37 (or 29/any modern minSdk/targetSdk), inspect context
-            if val == 37:
-                struct.pack_into("<I", data, i, target_sdk)
-                modified = True
-                print(f"[patch_apk_manifest] Patched attribute value 37 -> {target_sdk} at offset 0x{i:x}")
-            elif val == 29:
-                # Could be default_min_sdk_version=29; lower to min_sdk=24
-                struct.pack_into("<I", data, i, min_sdk)
-                modified = True
-                print(f"[patch_apk_manifest] Patched attribute value 29 -> {min_sdk} at offset 0x{i:x}")
+            # A. Disable useAppZygote (0x01010584) -> set value to 0 (false)
+            if use_app_zygote_idx != -1 and name_idx == use_app_zygote_idx:
+                if val != 0:
+                    struct.pack_into("<I", data, i, 0)
+                    modified = True
+                    print(f"[patch_apk_manifest] Disabled useAppZygote (0x{val:x} -> 0) at offset 0x{i:x}")
 
-    # 2. Also ensure string references for "17" (platformBuildVersionName / compileSdkVersionCodename)
-    # are patched if needed, or binary GLES version
-    for i in range(16, len(data) - 4, 4):
-        size_and_type = struct.unpack_from("<I", data, i - 4)[0]
-        attr_size = size_and_type & 0xFFFF
-        data_type = (size_and_type >> 24) & 0xFF
-        if attr_size == 8 and data_type == 0x11:  # TYPE_INT_HEX (e.g. glEsVersion 0x00030000 -> 0x00020000)
-            val = struct.unpack_from("<I", data, i)[0]
-            if val in (0x00030000, 0x00030001, 0x00030002):
-                struct.pack_into("<I", data, i, gles)
-                modified = True
-                print(f"[patch_apk_manifest] Patched glEsVersion 0x{val:08x} -> 0x{gles:08x} at offset 0x{i:x}")
+            # B. TargetSdkVersion / MinSdkVersion / CompileSdkVersion
+            if data_type in (0x10, 0x11):  # TYPE_INT_DEC or TYPE_INT_HEX
+                if name_idx == min_sdk_idx and min_sdk_idx != -1:
+                    if val != min_sdk:
+                        struct.pack_into("<I", data, i, min_sdk)
+                        modified = True
+                        print(f"[patch_apk_manifest] Patched minSdkVersion ({val} -> {min_sdk}) at offset 0x{i:x}")
+                elif name_idx == target_sdk_idx and target_sdk_idx != -1:
+                    if val != target_sdk:
+                        struct.pack_into("<I", data, i, target_sdk)
+                        modified = True
+                        print(f"[patch_apk_manifest] Patched targetSdkVersion ({val} -> {target_sdk}) at offset 0x{i:x}")
+                elif val == 37:
+                    struct.pack_into("<I", data, i, target_sdk)
+                    modified = True
+                    print(f"[patch_apk_manifest] Fallback patched attribute value 37 -> {target_sdk} at offset 0x{i:x}")
+                elif val == 29:
+                    struct.pack_into("<I", data, i, min_sdk)
+                    modified = True
+                    print(f"[patch_apk_manifest] Fallback patched attribute value 29 -> {min_sdk} at offset 0x{i:x}")
+
+            # C. glEsVersion
+            if data_type == 0x11:  # TYPE_INT_HEX
+                if (name_idx == gles_idx and gles_idx != -1) or val in (0x00030000, 0x00030001, 0x00030002):
+                    if val != gles:
+                        struct.pack_into("<I", data, i, gles)
+                        modified = True
+                        print(f"[patch_apk_manifest] Patched glEsVersion 0x{val:08x} -> 0x{gles:08x} at offset 0x{i:x}")
 
     return modified
 
@@ -82,9 +140,7 @@ def patch_apk(apk_path: str, min_sdk=24, target_sdk=34, compile_sdk=34, gles=0x0
             print("Notice: AndroidManifest.xml not found in APK, skipping AXML patch.")
             return False
 
-        if not patch_axml_bytes(manifest_data, min_sdk, target_sdk, compile_sdk, gles):
-            print("Notice: AndroidManifest.xml values already match target configuration.")
-            return True
+        manifest_modified = patch_axml_bytes(manifest_data, min_sdk, target_sdk, compile_sdk, gles)
 
         with zipfile.ZipFile(apk_path, "r") as z_in, zipfile.ZipFile(patched_apk, "w") as z_out:
             for item in z_in.infolist():
@@ -93,11 +149,18 @@ def patch_apk(apk_path: str, min_sdk=24, target_sdk=34, compile_sdk=34, gles=0x0
                 elif item.filename.startswith("META-INF/"):
                     # Exclude existing signatures since we will re-sign
                     continue
+                elif item.filename == "assets/chrome-command-line":
+                    # We will write updated command line below
+                    continue
                 else:
                     z_out.writestr(item, z_in.read(item.filename))
 
+            # Inject safe rendering chrome-command-line into assets
+            z_out.writestr("assets/chrome-command-line", SAFE_COMMAND_LINE)
+            print("[patch_apk_manifest] Injected safe rendering flags into assets/chrome-command-line")
+
         shutil.move(patched_apk, apk_path)
-        print(f"Successfully patched {apk_path} manifest with minSdk={min_sdk}, targetSdk={target_sdk}, compileSdk={compile_sdk}")
+        print(f"Successfully patched {apk_path} manifest & assets (minSdk={min_sdk}, targetSdk={target_sdk}, gles=0x{gles:08x})")
         return True
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
