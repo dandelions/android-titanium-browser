@@ -270,6 +270,92 @@ def patch_startup_field_trials(src_dir: str) -> None:
             print(f"Disabled kLoadAllTabsAtStartup for car head-unit stability in: {field_trials}")
 
 
+def patch_java_car_sdcard_logger(src_dir: str) -> None:
+    helper_code = '''
+    // [CAR_SDCARD_LOGGER_START]
+    private static volatile boolean sCarLoggerInitialized;
+    private static void initCarSdcardLogging(android.content.Context context) {
+        if (sCarLoggerInitialized || context == null) return;
+        sCarLoggerInitialized = true;
+        try {
+            final java.io.File carLogDir = context.getExternalFilesDir(null);
+            if (carLogDir != null) {
+                carLogDir.mkdirs();
+                java.io.File bootFile = new java.io.File(carLogDir, "helium_boot.log");
+                java.io.FileWriter fw = new java.io.FileWriter(bootFile, true);
+                fw.write("Helium process started at " + new java.util.Date() + " PID=" + android.os.Process.myPid() + "\\n");
+                fw.close();
+
+                final java.lang.Thread.UncaughtExceptionHandler defaultHandler = java.lang.Thread.getDefaultUncaughtExceptionHandler();
+                java.lang.Thread.setDefaultUncaughtExceptionHandler(new java.lang.Thread.UncaughtExceptionHandler() {
+                    @Override
+                    public void uncaughtException(java.lang.Thread t, java.lang.Throwable e) {
+                        try {
+                            java.io.File crashFile = new java.io.File(carLogDir, "crash_log.txt");
+                            java.io.PrintWriter pw = new java.io.PrintWriter(new java.io.FileWriter(crashFile, true));
+                            pw.println("=== FATAL CRASH at " + new java.util.Date() + " Thread: " + t.getName() + " ===");
+                            e.printStackTrace(pw);
+                            pw.flush();
+                            pw.close();
+                        } catch (Throwable ignored) {}
+                        if (defaultHandler != null) {
+                            defaultHandler.uncaughtException(t, e);
+                        }
+                    }
+                });
+
+                new java.lang.Thread(new java.lang.Runnable() {
+                    @Override
+                    public void run() {
+                        try {
+                            java.io.File logcatFile = new java.io.File(carLogDir, "helium_logcat.log");
+                            java.lang.Runtime.getRuntime().exec(new String[]{"logcat", "-f", logcatFile.getAbsolutePath(), "-v", "time"});
+                        } catch (Throwable ignored) {}
+                    }
+                }).start();
+            }
+        } catch (Throwable ignored) {}
+    }
+    // [CAR_SDCARD_LOGGER_END]
+'''
+
+    # Target 1: SplitChromeApplication.java
+    split_app = os.path.join(src_dir, "chrome/android/java/src/org/chromium/chrome/browser/base/SplitChromeApplication.java")
+    if os.path.isfile(split_app):
+        with open(split_app, "r", encoding="utf-8") as f:
+            c = f.read()
+        if "initCarSdcardLogging" not in c:
+            if "super.attachBaseContext(context);" in c:
+                nc = c.replace(
+                    "super.attachBaseContext(context);",
+                    "super.attachBaseContext(context);\n        initCarSdcardLogging(context);"
+                )
+                last_brace_idx = nc.rfind("}")
+                if last_brace_idx != -1:
+                    nc = nc[:last_brace_idx] + helper_code + "\n}\n"
+                    with open(split_app, "w", encoding="utf-8") as f:
+                        f.write(nc)
+                    print(f"Patched SD card crash logger into: {split_app}")
+
+    # Target 2: ChromeTabbedActivity.java (fallback if SplitChromeApplication wasn't loaded)
+    cta = os.path.join(src_dir, "chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java")
+    if os.path.isfile(cta):
+        with open(cta, "r", encoding="utf-8") as f:
+            c = f.read()
+        if "initCarSdcardLogging" not in c:
+            if "super.onCreate(savedInstanceState);" in c:
+                nc = c.replace(
+                    "super.onCreate(savedInstanceState);",
+                    "super.onCreate(savedInstanceState);\n        initCarSdcardLogging(this);"
+                )
+                last_brace_idx = nc.rfind("}")
+                if last_brace_idx != -1:
+                    nc = nc[:last_brace_idx] + helper_code + "\n}\n"
+                    with open(cta, "w", encoding="utf-8") as f:
+                        f.write(nc)
+                    print(f"Patched SD card crash logger fallback into: {cta}")
+
+
 def main() -> None:
     src_dir = sys.argv[1] if len(sys.argv) > 1 else "."
 
@@ -333,6 +419,7 @@ def main() -> None:
     clean_manifest_zygote_and_modern_attributes(src_dir)
     patch_gl_software_fallback(src_dir)
     patch_startup_field_trials(src_dir)
+    patch_java_car_sdcard_logger(src_dir)
 
     print("SDK version patch (minSdk: 29) & car-compat checks complete.")
 

@@ -19,11 +19,14 @@ import zipfile
 import tempfile
 import shutil
 
-RES_USE_APP_ZYGOTE = 0x01010584
+RES_USE_APP_ZYGOTE = (0x01010584, 0x01010597)
 RES_MIN_SDK_VERSION = 0x0101020C
 RES_TARGET_SDK_VERSION = 0x01010270
 RES_COMPILE_SDK_VERSION = 0x01010572
 RES_GLES_VERSION = 0x01010281
+RES_EXTRACT_NATIVE_LIBS = 0x010104EA
+RES_ISOLATED_SPLITS = (0x01010543, 0x0101054B)
+RES_MEMTAG_MODE = 0x01010624
 
 
 def extract_resource_ids(data: bytearray):
@@ -57,16 +60,19 @@ def patch_axml_bytes(data: bytearray, min_sdk=24, target_sdk=34, compile_sdk=34,
     modified = False
 
     _, res_to_idx = extract_resource_ids(data)
-    use_app_zygote_idx = res_to_idx.get(RES_USE_APP_ZYGOTE, -1)
+    use_app_zygote_indices = {res_to_idx[r] for r in RES_USE_APP_ZYGOTE if r in res_to_idx}
     min_sdk_idx = res_to_idx.get(RES_MIN_SDK_VERSION, -1)
     target_sdk_idx = res_to_idx.get(RES_TARGET_SDK_VERSION, -1)
     gles_idx = res_to_idx.get(RES_GLES_VERSION, -1)
+    extract_native_libs_idx = res_to_idx.get(RES_EXTRACT_NATIVE_LIBS, -1)
+    isolated_splits_indices = {res_to_idx[r] for r in RES_ISOLATED_SPLITS if r in res_to_idx}
+    memtag_idx = res_to_idx.get(RES_MEMTAG_MODE, -1)
 
     # 1. Attribute-level scan:
     # Each attribute is 20 bytes:
     # [ns_idx: 4, name_idx: 4, raw_val: 4, size_and_type: 4, value: 4]
     # where size_and_type has size=8 (0x0008) in lower 16 bits, and dataType in byte 3 (0x10, 0x11, 0x12, etc.)
-    for i in range(16, len(data) - 4, 4):
+    for i in range(16, len(data) - 3, 4):
         size_and_type = struct.unpack_from("<I", data, i - 4)[0]
         attr_size = size_and_type & 0xFFFF
         data_type = (size_and_type >> 24) & 0xFF
@@ -75,12 +81,33 @@ def patch_axml_bytes(data: bytearray, min_sdk=24, target_sdk=34, compile_sdk=34,
             val = struct.unpack_from("<I", data, i)[0]
             name_idx = struct.unpack_from("<I", data, i - 12)[0]
 
-            # A. Disable useAppZygote (0x01010584) -> set value to 0 (false)
-            if use_app_zygote_idx != -1 and name_idx == use_app_zygote_idx:
+            # A. Disable useAppZygote (0x01010584 / 0x01010597) -> set value to 0 (false)
+            if name_idx in use_app_zygote_indices:
                 if val != 0:
                     struct.pack_into("<I", data, i, 0)
                     modified = True
                     print(f"[patch_apk_manifest] Disabled useAppZygote (0x{val:x} -> 0) at offset 0x{i:x}")
+
+            # D. Force extractNativeLibs (0x010104ea) -> set value to 0xFFFFFFFF (true)
+            if extract_native_libs_idx != -1 and name_idx == extract_native_libs_idx:
+                if val == 0:
+                    struct.pack_into("<I", data, i, 0xFFFFFFFF)
+                    modified = True
+                    print(f"[patch_apk_manifest] Enabled extractNativeLibs (0 -> true) at offset 0x{i:x}")
+
+            # E. Disable isolatedSplits (0x01010543 / 0x0101054b) -> set value to 0 (false)
+            if name_idx in isolated_splits_indices:
+                if val != 0:
+                    struct.pack_into("<I", data, i, 0)
+                    modified = True
+                    print(f"[patch_apk_manifest] Disabled isolatedSplits (0x{val:x} -> 0) at offset 0x{i:x}")
+
+            # F. Disable memtagMode (0x01010624) -> set value to 0 (off)
+            if memtag_idx != -1 and name_idx == memtag_idx:
+                if val != 0:
+                    struct.pack_into("<I", data, i, 0)
+                    modified = True
+                    print(f"[patch_apk_manifest] Disabled memtagMode (0x{val:x} -> 0) at offset 0x{i:x}")
 
             # B. TargetSdkVersion / MinSdkVersion / CompileSdkVersion
             if data_type in (0x10, 0x11):  # TYPE_INT_DEC or TYPE_INT_HEX
