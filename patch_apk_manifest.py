@@ -68,11 +68,6 @@ def patch_axml_bytes(data: bytearray, min_sdk=24, target_sdk=34, compile_sdk=34,
     isolated_splits_indices = {res_to_idx[r] for r in RES_ISOLATED_SPLITS if r in res_to_idx}
     memtag_idx = res_to_idx.get(RES_MEMTAG_MODE, -1)
 
-    found_extract_native_libs = False
-    found_use_app_zygote = False
-    found_isolated_splits = False
-    found_memtag_mode = False
-
     # 1. Attribute-level scan:
     # Each attribute is 20 bytes:
     # [ns_idx: 4, name_idx: 4, raw_val: 4, size_and_type: 4, value: 4]
@@ -88,43 +83,31 @@ def patch_axml_bytes(data: bytearray, min_sdk=24, target_sdk=34, compile_sdk=34,
 
             # A. Disable useAppZygote (0x01010584 / 0x01010597) -> set value to 0 (false)
             if name_idx in use_app_zygote_indices:
-                found_use_app_zygote = True
                 if val != 0:
                     struct.pack_into("<I", data, i, 0)
                     modified = True
                     print(f"[patch_apk_manifest] Disabled useAppZygote (0x{val:x} -> 0) at offset 0x{i:x}")
-                else:
-                    print(f"[patch_apk_manifest] Verified useAppZygote is disabled (0) at offset 0x{i:x}")
 
             # D. Force extractNativeLibs (0x010104ea) -> set value to 0xFFFFFFFF (true)
             if extract_native_libs_idx != -1 and name_idx == extract_native_libs_idx:
-                found_extract_native_libs = True
                 if val == 0:
                     struct.pack_into("<I", data, i, 0xFFFFFFFF)
                     modified = True
                     print(f"[patch_apk_manifest] Enabled extractNativeLibs (0 -> true) at offset 0x{i:x}")
-                else:
-                    print(f"[patch_apk_manifest] Verified extractNativeLibs is enabled (0x{val:x}) at offset 0x{i:x}")
 
             # E. Disable isolatedSplits (0x01010543 / 0x0101054b) -> set value to 0 (false)
             if name_idx in isolated_splits_indices:
-                found_isolated_splits = True
                 if val != 0:
                     struct.pack_into("<I", data, i, 0)
                     modified = True
                     print(f"[patch_apk_manifest] Disabled isolatedSplits (0x{val:x} -> 0) at offset 0x{i:x}")
-                else:
-                    print(f"[patch_apk_manifest] Verified isolatedSplits is disabled (0) at offset 0x{i:x}")
 
             # F. Disable memtagMode (0x01010624) -> set value to 0 (off)
             if memtag_idx != -1 and name_idx == memtag_idx:
-                found_memtag_mode = True
                 if val != 0:
                     struct.pack_into("<I", data, i, 0)
                     modified = True
                     print(f"[patch_apk_manifest] Disabled memtagMode (0x{val:x} -> 0) at offset 0x{i:x}")
-                else:
-                    print(f"[patch_apk_manifest] Verified memtagMode is disabled (0) at offset 0x{i:x}")
 
             # B. TargetSdkVersion / MinSdkVersion / CompileSdkVersion
             if data_type in (0x10, 0x11):  # TYPE_INT_DEC or TYPE_INT_HEX
@@ -146,15 +129,6 @@ def patch_axml_bytes(data: bytearray, min_sdk=24, target_sdk=34, compile_sdk=34,
                         struct.pack_into("<I", data, i, gles)
                         modified = True
                         print(f"[patch_apk_manifest] Patched glEsVersion 0x{val:08x} -> 0x{gles:08x} at offset 0x{i:x}")
-
-    if not found_extract_native_libs:
-        print("[patch_apk_manifest] extractNativeLibs: not explicitly present in manifest AXML (controlled by source AndroidManifest / OS default)")
-    if not found_use_app_zygote:
-        print("[patch_apk_manifest] useAppZygote: absent from manifest")
-    if not found_isolated_splits:
-        print("[patch_apk_manifest] isolatedSplits: absent from manifest")
-    if not found_memtag_mode:
-        print("[patch_apk_manifest] memtagMode: absent from manifest")
 
     return modified
 

@@ -193,10 +193,8 @@ check_branch_artifacts() {
         for apk_check in "$release_dir/${prefix}-arm64-v8a.apk" "$release_dir/${prefix}-armeabi-v7a.apk"; do
             if [ -s "$apk_check" ]; then
                 if [ -n "$apksigner_bin" ] && [ -x "$apksigner_bin" ]; then
-                    local verify_out
-                    verify_out="$("$apksigner_bin" verify --verbose --min-sdk-version 21 "$apk_check" 2>&1 || true)"
-                    if ! echo "$verify_out" | grep -q "Verified using v2 scheme (APK Signature Scheme v2): true" || ! echo "$verify_out" | grep -q "Verified using v1 scheme (JAR signing): true"; then
-                        echo "Notice: Existing $(basename "$apk_check") is missing V1 or V2 dual signature. Invalidating cache to trigger signing."
+                    if ! "$apksigner_bin" verify --verbose "$apk_check" 2>&1 | grep -q "Verified using v2 scheme (APK Signature Scheme v2): true"; then
+                        echo "Notice: Existing $(basename "$apk_check") is missing V2 signature. Invalidating cache to trigger signing."
                         return 1
                     fi
                 fi
@@ -383,11 +381,7 @@ verify_branch_signature() {
         for apk_file in "$SCRIPT_DIR/chromium/src/out/release/${prefix}"*.apk; do
             if [ -f "$apk_file" ]; then
                 echo "--- $(basename "$apk_file") ---"
-                if [ "$branch" = "old-android" ]; then
-                    "$local_apksigner" verify --verbose --min-sdk-version 21 "$apk_file" 2>&1 | grep -E "Verifies|Verified using" || true
-                else
-                    "$local_apksigner" verify --verbose "$apk_file" 2>&1 | grep -E "Verifies|Verified using" || true
-                fi
+                "$local_apksigner" verify --verbose "$apk_file" 2>&1 | grep -E "Verifies|Verified using" || true
             fi
         done
     fi

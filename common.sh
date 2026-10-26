@@ -101,9 +101,9 @@ sign_apk() {
     local extra_sign_args=()
     if [ "$is_old_android" = "1" ]; then
         v3_signing="false"
-        extra_sign_args+=(--min-sdk-version 21)
+        extra_sign_args+=(--min-sdk-version 24)
     elif [ "${ENABLE_V2_SIGNING:-1}" = "1" ]; then
-        extra_sign_args+=(--min-sdk-version 21)
+        extra_sign_args+=(--min-sdk-version 24)
     fi
 
     if [ -n "${storeType:-}" ]; then
@@ -144,7 +144,7 @@ sign_apk() {
         rm -f "$tmp_prepared"
     fi
     echo "[sign_apk] Signature schemes for $(basename "$output_apk"):"
-    "$apksigner" verify --verbose --min-sdk-version 21 "$output_apk" 2>&1 | grep -E "Verifies|Verified using" || true
+    "$apksigner" verify --verbose "$output_apk" 2>&1 | grep -E "Verifies|Verified using" || true
 }
 
 sign_aab() {
