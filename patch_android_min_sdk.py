@@ -102,6 +102,8 @@ def patch_manifest_extract_native_libs(src_dir: str) -> None:
         print(
             'Patched AndroidManifest.xml: set android:extractNativeLibs="true" for Android 10 compatibility.'
         )
+    else:
+        print('Verified AndroidManifest.xml: android:extractNativeLibs="true" already present.')
 
 
 def patch_manifest_sdk_and_features(src_dir: str) -> None:
@@ -325,17 +327,26 @@ def patch_java_car_sdcard_logger(src_dir: str) -> None:
         with open(split_app, "r", encoding="utf-8") as f:
             c = f.read()
         if "initCarSdcardLogging" not in c:
+            nc = None
             if "super.attachBaseContext(context);" in c:
                 nc = c.replace(
                     "super.attachBaseContext(context);",
                     "super.attachBaseContext(context);\n        initCarSdcardLogging(context);"
                 )
+            elif "super.attachBaseContext(base);" in c:
+                nc = c.replace(
+                    "super.attachBaseContext(base);",
+                    "super.attachBaseContext(base);\n        initCarSdcardLogging(base);"
+                )
+            if nc:
                 last_brace_idx = nc.rfind("}")
                 if last_brace_idx != -1:
                     nc = nc[:last_brace_idx] + helper_code + "\n}\n"
                     with open(split_app, "w", encoding="utf-8") as f:
                         f.write(nc)
                     print(f"Patched SD card crash logger into: {split_app}")
+        else:
+            print(f"Verified SD card crash logger already injected in: {split_app}")
 
     # Target 2: ChromeTabbedActivity.java (fallback if SplitChromeApplication wasn't loaded)
     cta = os.path.join(src_dir, "chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java")
@@ -354,6 +365,8 @@ def patch_java_car_sdcard_logger(src_dir: str) -> None:
                     with open(cta, "w", encoding="utf-8") as f:
                         f.write(nc)
                     print(f"Patched SD card crash logger fallback into: {cta}")
+        else:
+            print(f"Verified SD card crash logger already injected in: {cta}")
 
 
 def main() -> None:

@@ -696,7 +696,9 @@ if [ "$BUILD_ARM" = "1" ]; then
             local_aapt=$(find "$ANDROID_HOME" -name aapt -o -name aapt2 2>/dev/null | sort | tail -n 1 || true)
             local needs_update=0
             if [ -n "$local_apksigner" ] && [ -x "$local_apksigner" ]; then
-                if ! "$local_apksigner" verify --verbose "out/release/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk" 2>&1 | grep -q "Verified using v2 scheme (APK Signature Scheme v2): true"; then
+                local verify_out
+                verify_out="$("$local_apksigner" verify --verbose --min-sdk-version 21 "out/release/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk" 2>&1 || true)"
+                if ! echo "$verify_out" | grep -q "Verified using v2 scheme (APK Signature Scheme v2): true" || ! echo "$verify_out" | grep -q "Verified using v1 scheme (JAR signing): true"; then
                     needs_update=1
                 fi
             fi
@@ -727,7 +729,9 @@ if [ "$BUILD_ARM64" = "1" ]; then
             local_aapt=$(find "$ANDROID_HOME" -name aapt -o -name aapt2 2>/dev/null | sort | tail -n 1 || true)
             local needs_update=0
             if [ -n "$local_apksigner" ] && [ -x "$local_apksigner" ]; then
-                if ! "$local_apksigner" verify --verbose "out/release/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk" 2>&1 | grep -q "Verified using v2 scheme (APK Signature Scheme v2): true"; then
+                local verify_out
+                verify_out="$("$local_apksigner" verify --verbose --min-sdk-version 21 "out/release/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk" 2>&1 || true)"
+                if ! echo "$verify_out" | grep -q "Verified using v2 scheme (APK Signature Scheme v2): true" || ! echo "$verify_out" | grep -q "Verified using v1 scheme (JAR signing): true"; then
                     needs_update=1
                 fi
             fi
