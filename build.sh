@@ -709,8 +709,11 @@ if [ "$BUILD_ARM" = "1" ]; then
                     needs_update=1
                 fi
             fi
+            if ! unzip -l "out/release/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk" 2>/dev/null | grep -q "libbinder_ndk.so"; then
+                needs_update=1
+            fi
             if [ "$needs_update" = "1" ]; then
-                echo "Notice: Existing out/release/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk needs manifest patch or V2 signature; updating in place..."
+                echo "Notice: Existing out/release/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk needs manifest patch, libbinder_ndk, or V2 signature; updating in place..."
                 sign_apk "out/release/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk" "out/release/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk"
             fi
         fi
@@ -740,8 +743,11 @@ if [ "$BUILD_ARM64" = "1" ]; then
                     needs_update=1
                 fi
             fi
+            if ! unzip -l "out/release/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk" 2>/dev/null | grep -q "libbinder_ndk.so"; then
+                needs_update=1
+            fi
             if [ "$needs_update" = "1" ]; then
-                echo "Notice: Existing out/release/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk needs manifest patch or V2 signature; updating in place..."
+                echo "Notice: Existing out/release/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk needs manifest patch, libbinder_ndk, or V2 signature; updating in place..."
                 sign_apk "out/release/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk" "out/release/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk"
             fi
         fi

@@ -356,6 +356,44 @@ def patch_java_car_sdcard_logger(src_dir: str) -> None:
                     print(f"Patched SD card crash logger fallback into: {cta}")
 
 
+def patch_activity_lifecycle_callbacks_compat(src_dir: str) -> None:
+    target_files = [
+        os.path.join(src_dir, "chrome/android/java/src/org/chromium/chrome/browser/ChromeBaseAppCompatActivity.java"),
+        os.path.join(src_dir, "chrome/android/java/src/org/chromium/chrome/browser/init/ChromeBaseAppCompatActivity.java"),
+        os.path.join(src_dir, "chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java"),
+    ]
+    helper_code = '''
+    // [CAR_ANDROID9_LIFECYCLE_COMPAT_START]
+    @Override
+    public void registerActivityLifecycleCallbacks(android.app.Application.ActivityLifecycleCallbacks callbacks) {
+        if (android.os.Build.VERSION.SDK_INT >= 29) {
+            super.registerActivityLifecycleCallbacks(callbacks);
+        }
+    }
+
+    @Override
+    public void unregisterActivityLifecycleCallbacks(android.app.Application.ActivityLifecycleCallbacks callbacks) {
+        if (android.os.Build.VERSION.SDK_INT >= 29) {
+            super.unregisterActivityLifecycleCallbacks(callbacks);
+        }
+    }
+    // [CAR_ANDROID9_LIFECYCLE_COMPAT_END]
+'''
+    for target in target_files:
+        if not os.path.isfile(target):
+            continue
+        with open(target, "r", encoding="utf-8") as f:
+            c = f.read()
+        if "CAR_ANDROID9_LIFECYCLE_COMPAT_START" in c or "registerActivityLifecycleCallbacks(android.app.Application" in c:
+            continue
+        last_brace = c.rfind("}")
+        if last_brace != -1:
+            nc = c[:last_brace] + helper_code + "\n}\n"
+            with open(target, "w", encoding="utf-8") as f:
+                f.write(nc)
+            print(f"Patched ActivityLifecycleCallbacks compat into: {target}")
+
+
 def main() -> None:
     src_dir = sys.argv[1] if len(sys.argv) > 1 else "."
 
@@ -420,6 +458,7 @@ def main() -> None:
     patch_gl_software_fallback(src_dir)
     patch_startup_field_trials(src_dir)
     patch_java_car_sdcard_logger(src_dir)
+    patch_activity_lifecycle_callbacks_compat(src_dir)
 
     print("SDK version patch (minSdk: 29) & car-compat checks complete.")
 

@@ -198,6 +198,10 @@ check_branch_artifacts() {
                         return 1
                     fi
                 fi
+                if ! unzip -l "$apk_check" 2>/dev/null | grep -q "libbinder_ndk.so"; then
+                    echo "Notice: Existing $(basename "$apk_check") is missing libbinder_ndk.so. Invalidating cache to trigger repackaging/signing."
+                    return 1
+                fi
                 if [ -n "$aapt_bin" ] && [ -x "$aapt_bin" ]; then
                     local dump_info
                     dump_info="$("$aapt_bin" dump badging "$apk_check" 2>/dev/null || true)"
