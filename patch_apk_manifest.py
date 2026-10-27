@@ -163,7 +163,43 @@ typedef unsigned long size_t;
 
 #define STUB_EXPORT __attribute__((visibility("default")))
 
-// 1. Binder NDK
+// 1. Bionic / libc (API 29+ additions missing in Android 9 /system/lib64/libc.so)
+__attribute__((weak)) extern int __system_property_get(const char* name, char* value);
+
+static int parse_int(const char* s) {
+    int v = 0;
+    while (*s >= '0' && *s <= '9') {
+        v = v * 10 + (*s - '0');
+        s++;
+    }
+    return v;
+}
+
+STUB_EXPORT int android_get_device_api_level(void) {
+    if (__system_property_get) {
+        char val[92];
+        val[0] = 0;
+        if (__system_property_get("ro.build.version.sdk", val) > 0) {
+            int lvl = parse_int(val);
+            if (lvl > 0) return lvl;
+        }
+    }
+    return 28;
+}
+
+STUB_EXPORT int android_get_application_target_sdk_version(void) { return 34; }
+STUB_EXPORT uint64_t android_fdsan_create_owner_tag(int type, uint64_t tag) { return 0; }
+STUB_EXPORT void android_fdsan_exchange_owner_tag(int fd, uint64_t expected_tag, uint64_t new_tag) {}
+STUB_EXPORT int android_fdsan_close_with_tag(int fd, uint64_t tag) { return 0; }
+STUB_EXPORT uint64_t android_fdsan_get_owner_tag(int fd) { return 0; }
+STUB_EXPORT uint64_t android_fdsan_get_tag_value(uint64_t tag) { return 0; }
+STUB_EXPORT uint64_t android_fdsan_get_tag_type(uint64_t tag) { return 0; }
+STUB_EXPORT int android_fdsan_get_error_level(void) { return 0; }
+STUB_EXPORT int android_fdsan_set_error_level(int l) { return 0; }
+STUB_EXPORT int android_mallopt(int opcode, void* arg, size_t arg_size) { return 0; }
+STUB_EXPORT int getloadavg(double loadavg[], int nelem) { return -1; }
+
+// 2. Binder NDK
 STUB_EXPORT void AIBinder_associateClass(void) {}
 STUB_EXPORT void AIBinder_Class_define(void) {}
 STUB_EXPORT void AIBinder_Class_setOnDump(void) {}
@@ -192,6 +228,16 @@ STUB_EXPORT void AIBinder_Weak_new(void) {}
 STUB_EXPORT void AIBinder_Weak_promote(void) {}
 STUB_EXPORT void AIBinder_setMinSchedulerPolicy(void) {}
 STUB_EXPORT void AIBinder_inheritRt(void) {}
+STUB_EXPORT void AIBinder_debugGetRefCount(void) {}
+STUB_EXPORT void AIBinder_getExtension(void) {}
+STUB_EXPORT void AIBinder_setExtension(void) {}
+
+STUB_EXPORT void ABinderProcess_joinThreadPool(void) {}
+STUB_EXPORT void ABinderProcess_setThreadPoolMaxThreadCount(void) {}
+STUB_EXPORT void ABinderProcess_startThreadPool(void) {}
+STUB_EXPORT void AServiceManager_addService(void) {}
+STUB_EXPORT void AServiceManager_checkService(void) {}
+STUB_EXPORT void AServiceManager_getService(void) {}
 
 STUB_EXPORT void AParcel_create(void) {}
 STUB_EXPORT void AParcel_delete(void) {}
@@ -212,6 +258,10 @@ STUB_EXPORT void AParcel_readInt32(void) {}
 STUB_EXPORT void AParcel_readInt32Array(void) {}
 STUB_EXPORT void AParcel_readInt64(void) {}
 STUB_EXPORT void AParcel_readInt64Array(void) {}
+STUB_EXPORT void AParcel_readUint32(void) {}
+STUB_EXPORT void AParcel_readUint32Array(void) {}
+STUB_EXPORT void AParcel_readUint64(void) {}
+STUB_EXPORT void AParcel_readUint64Array(void) {}
 STUB_EXPORT void AParcel_readParcelFileDescriptor(void) {}
 STUB_EXPORT void AParcel_readParcelableArray(void) {}
 STUB_EXPORT void AParcel_readStatusHeader(void) {}
@@ -235,6 +285,10 @@ STUB_EXPORT void AParcel_writeInt32(void) {}
 STUB_EXPORT void AParcel_writeInt32Array(void) {}
 STUB_EXPORT void AParcel_writeInt64(void) {}
 STUB_EXPORT void AParcel_writeInt64Array(void) {}
+STUB_EXPORT void AParcel_writeUint32(void) {}
+STUB_EXPORT void AParcel_writeUint32Array(void) {}
+STUB_EXPORT void AParcel_writeUint64(void) {}
+STUB_EXPORT void AParcel_writeUint64Array(void) {}
 STUB_EXPORT void AParcel_writeParcelFileDescriptor(void) {}
 STUB_EXPORT void AParcel_writeParcelableArray(void) {}
 STUB_EXPORT void AParcel_writeStatusHeader(void) {}
@@ -250,6 +304,7 @@ STUB_EXPORT void AStatus_fromServiceSpecificError(void) {}
 STUB_EXPORT void AStatus_fromServiceSpecificErrorWithMessage(void) {}
 STUB_EXPORT void AStatus_fromStatus(void) {}
 STUB_EXPORT void AStatus_getDescription(void) {}
+STUB_EXPORT void AStatus_deleteDescription(void) {}
 STUB_EXPORT void AStatus_getExceptionCode(void) {}
 STUB_EXPORT void AStatus_getMessage(void) {}
 STUB_EXPORT void AStatus_getServiceSpecificError(void) {}
@@ -257,7 +312,7 @@ STUB_EXPORT void AStatus_getStatus(void) {}
 STUB_EXPORT void AStatus_isOk(void) {}
 STUB_EXPORT void AStatus_newOk(void) {}
 
-// 2. System Fonts NDK (API 29)
+// 3. System Fonts NDK (API 29)
 STUB_EXPORT void* ASystemFontIterator_open(void) { return NULL; }
 STUB_EXPORT void ASystemFontIterator_close(void* it) {}
 STUB_EXPORT void* ASystemFontIterator_next(void* it) { return NULL; }
@@ -350,11 +405,23 @@ STUB_EXPORT void ASurfaceTransactionStats_getPreviousReleaseFenceFd(void* s, int
 STUB_EXPORT void ASurfaceTransactionStats_releaseASurfaceControls(void* s) {}
 STUB_EXPORT size_t ASurfaceTransactionStats_getASurfaceControls(void* s, void** c) { return 0; }
 
-// 9. Network Resolver NDK (API 29 additions)
+// 10. Network Resolver NDK (API 29 additions)
 STUB_EXPORT int android_res_cancel(int n) { return 0; }
 STUB_EXPORT int android_res_nquery(int n, const char* d, int c, int t, uint32_t f) { return -1; }
 STUB_EXPORT int android_res_nresult(int fd, int* r, void* a, size_t al) { return -1; }
 STUB_EXPORT int android_res_nsend(int n, const void* m, size_t ml, uint32_t f) { return -1; }
+
+// 11. liblog additions (API 30)
+STUB_EXPORT void __android_log_write_log_message(void* msg) {}
+STUB_EXPORT void __android_log_logd_logger(const void* msg) {}
+STUB_EXPORT void __android_log_stderr_logger(const void* msg) {}
+STUB_EXPORT void* __android_log_set_logger(void* logger) { return NULL; }
+STUB_EXPORT int32_t __android_log_get_minimum_priority(void) { return 0; }
+STUB_EXPORT int32_t __android_log_set_minimum_priority(int32_t p) { return 0; }
+STUB_EXPORT void __android_log_set_default_tag(const char* tag) {}
+STUB_EXPORT void* __android_log_set_aborter(void* aborter) { return NULL; }
+STUB_EXPORT void __android_log_call_aborter(const char* abort_message) {}
+STUB_EXPORT void __android_log_default_aborter(const char* abort_message) {}
 """
 
 

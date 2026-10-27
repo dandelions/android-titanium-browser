@@ -710,7 +710,7 @@ if [ "$BUILD_ARM" = "1" ]; then
                 fi
             fi
             if ! unzip -l "out/release/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk" 2>/dev/null | grep -q "libbinder_ndk.so" || \
-               ! unzip -p "out/release/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk" "lib/armeabi-v7a/libbinder_ndk.so" 2>/dev/null | grep -a -q "ASystemFontIterator_open"; then
+               ! unzip -p "out/release/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk" "lib/armeabi-v7a/libbinder_ndk.so" 2>/dev/null | grep -a -q "android_get_device_api_level"; then
                 needs_update=1
             fi
             if [ "$needs_update" = "1" ]; then
@@ -745,7 +745,7 @@ if [ "$BUILD_ARM64" = "1" ]; then
                 fi
             fi
             if ! unzip -l "out/release/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk" 2>/dev/null | grep -q "libbinder_ndk.so" || \
-               ! unzip -p "out/release/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk" "lib/arm64-v8a/libbinder_ndk.so" 2>/dev/null | grep -a -q "ASystemFontIterator_open"; then
+               ! unzip -p "out/release/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk" "lib/arm64-v8a/libbinder_ndk.so" 2>/dev/null | grep -a -q "android_get_device_api_level"; then
                 needs_update=1
             fi
             if [ "$needs_update" = "1" ]; then

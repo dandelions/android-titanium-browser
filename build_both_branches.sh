@@ -202,8 +202,8 @@ check_branch_artifacts() {
                     echo "Notice: Existing $(basename "$apk_check") is missing libbinder_ndk.so. Invalidating cache to trigger repackaging/signing."
                     return 1
                 fi
-                if ! unzip -p "$apk_check" "*/libbinder_ndk.so" 2>/dev/null | grep -a -q "ASystemFontIterator_open"; then
-                    echo "Notice: Existing $(basename "$apk_check") libbinder_ndk.so is missing ASystemFontIterator_open compatibility symbol. Invalidating cache to trigger repackaging/signing."
+                if ! unzip -p "$apk_check" "*/libbinder_ndk.so" 2>/dev/null | grep -a -q "android_get_device_api_level"; then
+                    echo "Notice: Existing $(basename "$apk_check") libbinder_ndk.so is missing android_get_device_api_level compatibility symbol. Invalidating cache to trigger repackaging/signing."
                     return 1
                 fi
                 if [ -n "$aapt_bin" ] && [ -x "$aapt_bin" ]; then
