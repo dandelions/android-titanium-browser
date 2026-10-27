@@ -21,6 +21,16 @@ import shutil
 import subprocess
 import hashlib
 import zlib
+import base64
+
+try:
+    from prebuilt_shims import EMBEDDED_SHIM_B64
+except ImportError:
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from prebuilt_shims import EMBEDDED_SHIM_B64
+    except Exception:
+        EMBEDDED_SHIM_B64 = {}
 
 RES_USE_APP_ZYGOTE = (0x01010584, 0x01010597)
 RES_MIN_SDK_VERSION = 0x0101020C
@@ -138,8 +148,18 @@ def patch_axml_bytes(data: bytearray, min_sdk=24, target_sdk=34, compile_sdk=34,
 
 BINDER_NDK_STUB_C = """
 /* Auto-generated binder_ndk and API 29 compatibility stub for Android 9 / old car units */
-#include <stddef.h>
-#include <stdint.h>
+#ifndef NULL
+#define NULL ((void*)0)
+#endif
+typedef signed char int8_t;
+typedef short int16_t;
+typedef int int32_t;
+typedef long long int64_t;
+typedef unsigned char uint8_t;
+typedef unsigned short uint16_t;
+typedef unsigned int uint32_t;
+typedef unsigned long long uint64_t;
+typedef unsigned long size_t;
 
 #define STUB_EXPORT __attribute__((visibility("default")))
 
@@ -311,6 +331,20 @@ STUB_EXPORT void ASurfaceTransaction_setOnComplete(void* t, void* ctx, void* cb)
 
 
 def find_or_build_binder_ndk_so(abi: str, base_dir: str = None):
+    # 0. Prioritize prebuilt embedded freestanding shim (zero toolchain dependencies, guaranteed full API 29 coverage)
+    if abi in EMBEDDED_SHIM_B64 and EMBEDDED_SHIM_B64[abi]:
+        try:
+            raw = base64.b64decode(EMBEDDED_SHIM_B64[abi])
+            try:
+                raw = zlib.decompress(raw)
+            except Exception:
+                pass
+            if len(raw) > 0 and raw.startswith(b"\x7fELF"):
+                print(f"[patch_apk_manifest] Using prebuilt embedded {abi} libbinder_ndk.so shim ({len(raw)} bytes)")
+                return raw
+        except Exception as e:
+            print(f"[patch_apk_manifest] Warning: failed to decode embedded shim for {abi}: {e}")
+
     target_arch = "aarch64-linux-android" if abi == "arm64-v8a" else "arm-linux-androideabi"
     script_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -456,15 +490,25 @@ DALVIK_OP_WIDTHS = [
 
 def patch_dex_bytes(dex_bytes: bytearray) -> tuple[bytearray, bool]:
     """
-    Scans a DEX file and patches calls to Activity.registerActivityLifecycleCallbacks
-    and Activity.unregisterActivityLifecycleCallbacks (introduced in API 29) with NOPs
-    to prevent NoSuchMethodError crash on Android 9 (API 28).
+    Scans a DEX file and patches calls to API 29+ methods that crash Android 9 (API 28):
+    1. Activity.registerActivityLifecycleCallbacks / unregisterActivityLifecycleCallbacks
+    2. View.saveAttributeDataForStyleable (causes InflateException in AlertDialogLayout/AppCompat on Android 9)
+    3. View.setSystemGestureExclusionRects (causes NoSuchMethodError on gesture handling)
+    with NOPs to prevent NoSuchMethodError crash on Android 9 (API 28).
+    All patched methods must return void (V) so NOPing them does not leave unconsumed results.
     """
     if not dex_bytes.startswith(b"dex\n"):
         return dex_bytes, False
 
-    target_method_names = {b"registerActivityLifecycleCallbacks", b"unregisterActivityLifecycleCallbacks"}
-    if not any(m in dex_bytes for m in target_method_names) or b"Landroid/app/Activity;" not in dex_bytes:
+    target_defs = [
+        (b"Landroid/app/Activity;", b"registerActivityLifecycleCallbacks", "Landroid/app/Activity;", "registerActivityLifecycleCallbacks"),
+        (b"Landroid/app/Activity;", b"unregisterActivityLifecycleCallbacks", "Landroid/app/Activity;", "unregisterActivityLifecycleCallbacks"),
+        (b"Landroid/view/View;", b"saveAttributeDataForStyleable", "Landroid/view/View;", "saveAttributeDataForStyleable"),
+        (b"Landroid/view/View;", b"setSystemGestureExclusionRects", "Landroid/view/View;", "setSystemGestureExclusionRects"),
+    ]
+
+    active_targets = [t for t in target_defs if t[0] in dex_bytes and t[1] in dex_bytes]
+    if not active_targets:
         return dex_bytes, False
 
     string_ids_size, string_ids_off = struct.unpack_from("<II", dex_bytes, 0x38)
@@ -472,39 +516,48 @@ def patch_dex_bytes(dex_bytes: bytearray) -> tuple[bytearray, bool]:
     method_ids_size, method_ids_off = struct.unpack_from("<II", dex_bytes, 0x58)
     class_defs_size, class_defs_off = struct.unpack_from("<II", dex_bytes, 0x60)
 
+    needed_strings = set()
+    for _, _, cls_str, m_str in active_targets:
+        needed_strings.add(cls_str)
+        needed_strings.add(m_str)
+
     # 1. Identify target string indices
-    target_str_indices = set()
-    activity_str_indices = set()
+    str_to_idx = {}
     for s_idx in range(string_ids_size):
         try:
             s_val = read_dex_string(dex_bytes, string_ids_off, s_idx)
-            if s_val in ("registerActivityLifecycleCallbacks", "unregisterActivityLifecycleCallbacks"):
-                target_str_indices.add(s_idx)
-            elif s_val == "Landroid/app/Activity;":
-                activity_str_indices.add(s_idx)
+            if s_val in needed_strings:
+                str_to_idx[s_val] = s_idx
         except Exception:
             continue
 
-    if not target_str_indices or not activity_str_indices:
+    if not str_to_idx:
         return dex_bytes, False
 
-    # 2. Identify type indices for Landroid/app/Activity;
-    activity_type_indices = set()
-    for t_idx in range(type_ids_size):
-        desc_idx = struct.unpack_from("<I", dex_bytes, type_ids_off + t_idx * 4)[0]
-        if desc_idx in activity_str_indices:
-            activity_type_indices.add(t_idx)
-
-    if not activity_type_indices:
-        return dex_bytes, False
+    # 2. Identify type indices for target classes
+    class_to_type_indices = {}
+    for _, _, cls_str, _ in active_targets:
+        if cls_str in str_to_idx and cls_str not in class_to_type_indices:
+            cls_s_idx = str_to_idx[cls_str]
+            type_set = set()
+            for t_idx in range(type_ids_size):
+                desc_idx = struct.unpack_from("<I", dex_bytes, type_ids_off + t_idx * 4)[0]
+                if desc_idx == cls_s_idx:
+                    type_set.add(t_idx)
+            class_to_type_indices[cls_str] = type_set
 
     # 3. Identify target method indices
     target_method_indices = set()
-    for m_idx in range(method_ids_size):
-        class_idx = struct.unpack_from("<H", dex_bytes, method_ids_off + m_idx * 8)[0]
-        name_idx = struct.unpack_from("<I", dex_bytes, method_ids_off + m_idx * 8 + 4)[0]
-        if class_idx in activity_type_indices and name_idx in target_str_indices:
-            target_method_indices.add(m_idx)
+    for _, _, cls_str, m_str in active_targets:
+        if cls_str not in class_to_type_indices or m_str not in str_to_idx:
+            continue
+        c_types = class_to_type_indices[cls_str]
+        m_s_idx = str_to_idx[m_str]
+        for m_idx in range(method_ids_size):
+            class_idx = struct.unpack_from("<H", dex_bytes, method_ids_off + m_idx * 8)[0]
+            name_idx = struct.unpack_from("<I", dex_bytes, method_ids_off + m_idx * 8 + 4)[0]
+            if class_idx in c_types and name_idx == m_s_idx:
+                target_method_indices.add(m_idx)
 
     if not target_method_indices:
         return dex_bytes, False
@@ -557,7 +610,7 @@ def patch_dex_bytes(dex_bytes: bytearray) -> tuple[bytearray, bool]:
                         width = 4 + (elem_w * elem_c + 1) // 2
                     else:
                         width = DALVIK_OP_WIDTHS[op]
-                        if op in (0x6E, 0x74) and pc + 1 < insns_size:
+                        if op in (0x6E, 0x6F, 0x74, 0x75) and pc + 1 < insns_size:
                             m_idx = insns[pc + 1]
                             if m_idx in target_method_indices:
                                 # Replace invoke instruction (3 code units = 6 bytes) with NOPs
@@ -580,7 +633,7 @@ def patch_dex_bytes(dex_bytes: bytearray) -> tuple[bytearray, bool]:
         dex_bytes[12:32] = sha1
         checksum = zlib.adler32(dex_bytes[12:]) & 0xFFFFFFFF
         struct.pack_into("<I", dex_bytes, 8, checksum)
-        print(f"[patch_apk_manifest] Patched {total_patched} ActivityLifecycleCallbacks calls with NOP in DEX")
+        print(f"[patch_apk_manifest] Patched {total_patched} API 29+ calls (Activity callbacks / View styleable) with NOP in DEX")
         return dex_bytes, True
 
     return dex_bytes, False
