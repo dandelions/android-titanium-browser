@@ -257,7 +257,7 @@ STUB_EXPORT void AStatus_getStatus(void) {}
 STUB_EXPORT void AStatus_isOk(void) {}
 STUB_EXPORT void AStatus_newOk(void) {}
 
-// 2. System Fonts NDK (introduced in API 29, missing in Android 9 /system/lib64/libandroid.so)
+// 2. System Fonts NDK (API 29)
 STUB_EXPORT void* ASystemFontIterator_open(void) { return NULL; }
 STUB_EXPORT void ASystemFontIterator_close(void* it) {}
 STUB_EXPORT void* ASystemFontIterator_next(void* it) { return NULL; }
@@ -270,6 +270,7 @@ STUB_EXPORT uint32_t ASystemFont_getAxisTag(const void* f, uint32_t i) { return 
 STUB_EXPORT float ASystemFont_getAxisValue(const void* f, uint32_t i) { return 0.0f; }
 
 // 3. Font and FontMatcher NDK (API 29)
+STUB_EXPORT const char* AFont_getFontFilePath(const void* f) { return NULL; }
 STUB_EXPORT const char* AFont_getFilePath(const void* f) { return NULL; }
 STUB_EXPORT uint16_t AFont_getWeight(const void* f) { return 400; }
 STUB_EXPORT int AFont_isItalic(const void* f) { return 0; }
@@ -283,6 +284,7 @@ STUB_EXPORT void* AFontMatcher_create(void) { return NULL; }
 STUB_EXPORT void AFontMatcher_destroy(void* m) {}
 STUB_EXPORT void AFontMatcher_setStyle(void* m, uint16_t w, int it) {}
 STUB_EXPORT void AFontMatcher_setLocales(void* m, const char* l) {}
+STUB_EXPORT void AFontMatcher_setFamilyVariant(void* m, uint32_t v) {}
 STUB_EXPORT void* AFontMatcher_match(const void* m, const char* f, const uint16_t* t, uint32_t len, void* run) { return NULL; }
 
 // 4. Trace NDK (API 29 additions)
@@ -291,27 +293,31 @@ STUB_EXPORT void ATrace_endAsyncSection(const char* n, int32_t c) {}
 STUB_EXPORT void ATrace_setCounter(const char* n, int64_t v) {}
 STUB_EXPORT int ATrace_isEnabled(void) { return 0; }
 
-// 5. Thermal NDK (API 29)
+// 5. Thermal NDK (API 29 / 30 / 31)
 STUB_EXPORT void* AThermal_acquireManager(void) { return NULL; }
 STUB_EXPORT void AThermal_releaseManager(void* m) {}
 STUB_EXPORT int AThermal_getCurrentThermalStatus(void* m) { return 0; }
 STUB_EXPORT int AThermal_registerThermalStatusListener(void* m, void* l, void* d) { return -1; }
 STUB_EXPORT int AThermal_unregisterThermalStatusListener(void* m, void* l, void* d) { return -1; }
+STUB_EXPORT int AThermal_getThermalHeadroom(void* m, int32_t forecastSeconds, float* headroom) { return -1; }
 
-// 6. Choreographer NDK (API 29 additions)
+// 6. Choreographer NDK (API 29 / 30 additions)
 STUB_EXPORT void AChoreographer_postFrameCallback64(void* c, void* cb, void* d) {}
 STUB_EXPORT void AChoreographer_postFrameCallbackDelayed64(void* c, void* cb, void* d, int64_t ms) {}
 STUB_EXPORT int AChoreographer_registerRefreshRateCallback(void* c, void* cb, void* d) { return -1; }
 STUB_EXPORT int AChoreographer_unregisterRefreshRateCallback(void* c, void* cb, void* d) { return -1; }
 
-// 7. HardwareBuffer NDK (API 29 additions)
+// 7. HardwareBuffer NDK (API 29 / 31 additions)
 STUB_EXPORT int AHardwareBuffer_isSupported(const void* d) { return 0; }
 STUB_EXPORT int AHardwareBuffer_getId(const void* b, uint64_t* id) { return -1; }
+STUB_EXPORT int AHardwareBuffer_lockAndGetInfo(void* b, uint64_t u, int32_t f, const void* r, void** a, int32_t* bpp, int32_t* s) { return -1; }
+STUB_EXPORT int AHardwareBuffer_lockPlanes(void* b, uint64_t u, int32_t f, const void* r, void* p) { return -1; }
 
-// 8. SurfaceControl NDK (API 29)
+// 8. SurfaceControl & SurfaceTransaction NDK (API 29 / 30 / 31)
 STUB_EXPORT void* ASurfaceControl_createFromWindow(void* p, const char* n) { return NULL; }
 STUB_EXPORT void* ASurfaceControl_create(void* p, const char* n) { return NULL; }
 STUB_EXPORT void ASurfaceControl_release(void* sc) {}
+STUB_EXPORT void ASurfaceControl_acquire(void* sc) {}
 STUB_EXPORT void* ASurfaceTransaction_create(void) { return NULL; }
 STUB_EXPORT void ASurfaceTransaction_delete(void* t) {}
 STUB_EXPORT void ASurfaceTransaction_apply(void* t) {}
@@ -321,12 +327,34 @@ STUB_EXPORT void ASurfaceTransaction_setBuffer(void* t, void* sc, void* b, int f
 STUB_EXPORT void ASurfaceTransaction_setGeometry(void* t, void* sc, const void* s, const void* d, int32_t tr) {}
 STUB_EXPORT void ASurfaceTransaction_setBufferAlpha(void* t, void* sc, float a) {}
 STUB_EXPORT void ASurfaceTransaction_setBufferDataSpace(void* t, void* sc, int32_t ds) {}
+STUB_EXPORT void ASurfaceTransaction_setBufferTransparency(void* t, void* sc, int8_t tr) {}
 STUB_EXPORT void ASurfaceTransaction_setHdrMetadata_cta861_3(void* t, void* sc, const void* m, size_t b) {}
 STUB_EXPORT void ASurfaceTransaction_setHdrMetadata_smpte2086(void* t, void* sc, const void* m, size_t b) {}
 STUB_EXPORT void ASurfaceTransaction_setDamageRegion(void* t, void* sc, const void* r, size_t c) {}
 STUB_EXPORT void ASurfaceTransaction_setDesiredPresentTime(void* t, int64_t time) {}
 STUB_EXPORT void ASurfaceTransaction_setColor(void* t, void* sc, float r, float g, float b, float a, int32_t ds) {}
 STUB_EXPORT void ASurfaceTransaction_setOnComplete(void* t, void* ctx, void* cb) {}
+STUB_EXPORT void ASurfaceTransaction_reparent(void* t, void* sc, void* p) {}
+STUB_EXPORT void ASurfaceTransaction_setFrameRate(void* t, void* sc, float fr, int8_t c) {}
+STUB_EXPORT void ASurfaceTransaction_setFrameRateWithChangeStrategy(void* t, void* sc, float fr, int8_t c, int8_t cs) {}
+STUB_EXPORT void ASurfaceTransaction_setEnableBackPressure(void* t, void* sc, int8_t bp) {}
+STUB_EXPORT void ASurfaceTransaction_setOnCommit(void* t, void* ctx, void* cb) {}
+STUB_EXPORT void ASurfaceTransaction_setPosition(void* t, void* sc, float x, float y) {}
+STUB_EXPORT void ASurfaceTransaction_setCrop(void* t, void* sc, const void* c) {}
+STUB_EXPORT void ASurfaceTransaction_setScale(void* t, void* sc, float sx, float sy) {}
+STUB_EXPORT void ASurfaceTransaction_setBufferTransform(void* t, void* sc, int32_t tr) {}
+STUB_EXPORT void ASurfaceTransactionStats_getAcquireTime(void* s, int64_t* t) {}
+STUB_EXPORT void ASurfaceTransactionStats_getLatchTime(void* s, int64_t* t) {}
+STUB_EXPORT void ASurfaceTransactionStats_getPresentFenceFd(void* s, int* f) {}
+STUB_EXPORT void ASurfaceTransactionStats_getPreviousReleaseFenceFd(void* s, int* f) {}
+STUB_EXPORT void ASurfaceTransactionStats_releaseASurfaceControls(void* s) {}
+STUB_EXPORT size_t ASurfaceTransactionStats_getASurfaceControls(void* s, void** c) { return 0; }
+
+// 9. Network Resolver NDK (API 29 additions)
+STUB_EXPORT int android_res_cancel(int n) { return 0; }
+STUB_EXPORT int android_res_nquery(int n, const char* d, int c, int t, uint32_t f) { return -1; }
+STUB_EXPORT int android_res_nresult(int fd, int* r, void* a, size_t al) { return -1; }
+STUB_EXPORT int android_res_nsend(int n, const void* m, size_t ml, uint32_t f) { return -1; }
 """
 
 
