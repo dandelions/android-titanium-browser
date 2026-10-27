@@ -505,6 +505,9 @@ def patch_dex_bytes(dex_bytes: bytearray) -> tuple[bytearray, bool]:
         (b"Landroid/app/Activity;", b"unregisterActivityLifecycleCallbacks", "Landroid/app/Activity;", "unregisterActivityLifecycleCallbacks"),
         (b"Landroid/view/View;", b"saveAttributeDataForStyleable", "Landroid/view/View;", "saveAttributeDataForStyleable"),
         (b"Landroid/view/View;", b"setSystemGestureExclusionRects", "Landroid/view/View;", "setSystemGestureExclusionRects"),
+        (b"Landroid/view/View;", b"setForceDarkAllowed", "Landroid/view/View;", "setForceDarkAllowed"),
+        (b"Landroid/view/Window;", b"setStatusBarContrastEnforced", "Landroid/view/Window;", "setStatusBarContrastEnforced"),
+        (b"Landroid/view/Window;", b"setNavigationBarContrastEnforced", "Landroid/view/Window;", "setNavigationBarContrastEnforced"),
     ]
 
     active_targets = [t for t in target_defs if t[0] in dex_bytes and t[1] in dex_bytes]
