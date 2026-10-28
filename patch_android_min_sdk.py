@@ -563,6 +563,185 @@ def patch_base_hardware_buffer_sources(src_dir: str) -> None:
             print(f"Patched base/BUILD.gn: enabled AHardwareBuffer sources for API >= 26 in: {build_gn}")
 
 
+def patch_ndk_video_encode_accelerator(src_dir: str) -> None:
+    candidate_paths = [
+        os.path.join(src_dir, "media/gpu/android/ndk_video_encode_accelerator.cc"),
+        os.path.join(src_dir, "chromium/src/media/gpu/android/ndk_video_encode_accelerator.cc"),
+        os.path.join(src_dir, "src/media/gpu/android/ndk_video_encode_accelerator.cc"),
+    ]
+    for target in candidate_paths:
+        if not os.path.isfile(target):
+            continue
+        with open(target, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        new_content = content
+
+        # 1. 在文件开头抑制 -Wunguarded-availability（防止模板实例化中触发错误）
+        diag_suppress = (
+            "#pragma clang diagnostic push\n"
+            "#pragma clang diagnostic ignored \"-Wunguarded-availability\"\n"
+        )
+        if "-Wunguarded-availability" not in new_content:
+            new_content = diag_suppress + new_content + "\n#pragma clang diagnostic pop\n"
+
+        # 2. 移除 DEFAULT_REQUIRES_ANDROID_API pragma，避免 lambda 闭包被标记 API 29
+        # 进而导致 Perfetto TRACE_EVENT 展开时 CallIfEnabled 调用 lambda 触发 -Wunguarded-availability
+        pragma_push_pattern = r"#pragma\s+clang\s+attribute\s+push\s+DEFAULT_REQUIRES_ANDROID_API\s*\([\s\\\S]*?NDK_MEDIA_CODEC_MIN_API\s*\)\s*"
+        if re.search(pragma_push_pattern, new_content):
+            new_content = re.sub(
+                pragma_push_pattern,
+                "// [CAR-COMPAT] Disabled DEFAULT_REQUIRES_ANDROID_API to avoid attributing Perfetto TRACE_EVENT lambdas with API 29\n",
+                new_content,
+                count=1,
+            )
+
+        pragma_pop_pattern = r"#pragma\s+clang\s+attribute\s+pop\s*"
+        if re.search(pragma_pop_pattern, new_content):
+            new_content = re.sub(
+                pragma_pop_pattern,
+                "// [CAR-COMPAT] Pop disabled\n",
+                new_content,
+                count=1,
+            )
+
+        # 3. 动态解析 AHardwareBuffer_lockPlanes，避免直接调用引入 API 29+ 符号导致 -Wunguarded-availability
+        # 且规避 Android 9 系统 libandroid.so 缺少该符号引发的运行时崩溃
+        if "<dlfcn.h>" not in new_content:
+            new_content = new_content.replace(
+                "#include <android/hardware_buffer.h>\n",
+                "#include <android/hardware_buffer.h>\n#include <dlfcn.h>\n",
+                1,
+            )
+
+        if "AHardwareBuffer_lockPlanes" in new_content and "pfn_lock_planes" not in new_content:
+            old_lock = (
+                "      AHardwareBuffer_Planes planes;\n"
+                "      int32_t status = AHardwareBuffer_lockPlanes(\n"
+                "          ahb, AHARDWAREBUFFER_USAGE_CPU_READ_OFTEN, -1, nullptr, &planes);"
+            )
+            new_lock = (
+                "      AHardwareBuffer_Planes planes;\n"
+                "      using PFN_AHardwareBuffer_lockPlanes =\n"
+                "          int32_t (*)(AHardwareBuffer*, uint64_t, int32_t, const ARect*,\n"
+                "                      AHardwareBuffer_Planes*);\n"
+                "      static auto pfn_lock_planes =\n"
+                "          reinterpret_cast<PFN_AHardwareBuffer_lockPlanes>(\n"
+                "              dlsym(RTLD_DEFAULT, \"AHardwareBuffer_lockPlanes\"));\n"
+                "      if (!pfn_lock_planes) {\n"
+                "        NotifyErrorStatus({EncoderStatus::Codes::kSystemAPICallError,\n"
+                "                           \"AHardwareBuffer_lockPlanes not available on this API level\"});\n"
+                "        return nullptr;\n"
+                "      }\n"
+                "      int32_t status = pfn_lock_planes(\n"
+                "          ahb, AHARDWAREBUFFER_USAGE_CPU_READ_OFTEN, -1, nullptr, &planes);"
+            )
+            if old_lock in new_content:
+                new_content = new_content.replace(old_lock, new_lock, 1)
+            else:
+                new_content = re.sub(
+                    r'[ \t]*int32_t\s+status\s*=\s*AHardwareBuffer_lockPlanes\s*\([^;]+;\s*',
+                    new_lock + '\n',
+                    new_content,
+                    count=1,
+                )
+
+        if new_content != content:
+            with open(target, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            print(f"Patched ndk_video_encode_accelerator.cc in: {target}")
+
+
+def patch_gpu_video_encode_accelerator_factory(src_dir: str) -> None:
+    candidate_paths = [
+        os.path.join(src_dir, "media/gpu/gpu_video_encode_accelerator_factory.cc"),
+        os.path.join(src_dir, "chromium/src/media/gpu/gpu_video_encode_accelerator_factory.cc"),
+        os.path.join(src_dir, "src/media/gpu/gpu_video_encode_accelerator_factory.cc"),
+    ]
+    for target in candidate_paths:
+        if not os.path.isfile(target):
+            continue
+        with open(target, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        new_content = content
+        old_fn = (
+            "std::unique_ptr<VideoEncodeAccelerator> CreateAndroidVEA(\n"
+            "    const gpu::GpuDriverBugWorkarounds& gpu_workarounds) {\n"
+            "  return base::WrapUnique<VideoEncodeAccelerator>(new NdkVideoEncodeAccelerator(\n"
+            "      base::SequencedTaskRunner::GetCurrentDefault(), gpu_workarounds));\n"
+            "}"
+        )
+        new_fn = (
+            "std::unique_ptr<VideoEncodeAccelerator> CreateAndroidVEA(\n"
+            "    const gpu::GpuDriverBugWorkarounds& gpu_workarounds) {\n"
+            "  if (__builtin_available(android 29, *)) {\n"
+            "    return base::WrapUnique<VideoEncodeAccelerator>(new NdkVideoEncodeAccelerator(\n"
+            "        base::SequencedTaskRunner::GetCurrentDefault(), gpu_workarounds));\n"
+            "  }\n"
+            "  return nullptr;\n"
+            "}"
+        )
+        if old_fn in new_content:
+            new_content = new_content.replace(old_fn, new_fn, 1)
+        elif "__builtin_available(android 29, *)" not in new_content and "CreateAndroidVEA" in new_content:
+            new_content = re.sub(
+                r'(std::unique_ptr<VideoEncodeAccelerator>\s+CreateAndroidVEA\s*\([^)]*\)\s*\{)([\s\S]*?return\s+base::WrapUnique[^\;]+;\s*\})',
+                r'\1\n  if (__builtin_available(android 29, *)) {\2\n  }\n  return nullptr;\n}',
+                new_content,
+                count=1,
+            )
+
+        if new_content != content:
+            with open(target, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            print(f"Patched gpu_video_encode_accelerator_factory.cc in: {target}")
+
+
+def patch_ndk_audio_encoder(src_dir: str) -> None:
+    candidate_paths = [
+        os.path.join(src_dir, "media/gpu/android/ndk_audio_encoder.cc"),
+        os.path.join(src_dir, "chromium/src/media/gpu/android/ndk_audio_encoder.cc"),
+        os.path.join(src_dir, "src/media/gpu/android/ndk_audio_encoder.cc"),
+    ]
+    for target in candidate_paths:
+        if not os.path.isfile(target):
+            continue
+        with open(target, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        new_content = content
+        diag_suppress = (
+            "#pragma clang diagnostic push\n"
+            "#pragma clang diagnostic ignored \"-Wunguarded-availability\"\n"
+        )
+        if "-Wunguarded-availability" not in new_content:
+            new_content = diag_suppress + new_content + "\n#pragma clang diagnostic pop\n"
+
+        pragma_push_pattern = r"#pragma\s+clang\s+attribute\s+push\s+DEFAULT_REQUIRES_ANDROID_API\s*\([\s\\\S]*?NDK_MEDIA_CODEC_MIN_API\s*\)\s*"
+        if re.search(pragma_push_pattern, new_content):
+            new_content = re.sub(
+                pragma_push_pattern,
+                "// [CAR-COMPAT] Disabled DEFAULT_REQUIRES_ANDROID_API for Android 9 baseline\n",
+                new_content,
+                count=1,
+            )
+
+        pragma_pop_pattern = r"#pragma\s+clang\s+attribute\s+pop\s*"
+        if re.search(pragma_pop_pattern, new_content):
+            new_content = re.sub(
+                pragma_pop_pattern,
+                "// [CAR-COMPAT] Pop disabled\n",
+                new_content,
+                count=1,
+            )
+
+        if new_content != content:
+            with open(target, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            print(f"Patched ndk_audio_encoder.cc in: {target}")
+
+
 def main() -> None:
     src_dir = sys.argv[1] if len(sys.argv) > 1 else "."
 
@@ -631,6 +810,9 @@ def main() -> None:
     patch_content_app_aidl_deps(src_dir)
     patch_ahardwarebuffer_image_backing_factory(src_dir)
     patch_base_hardware_buffer_sources(src_dir)
+    patch_ndk_video_encode_accelerator(src_dir)
+    patch_gpu_video_encode_accelerator_factory(src_dir)
+    patch_ndk_audio_encoder(src_dir)
 
     print("SDK version patch (minSdk: 28) & car-compat checks complete.")
 
