@@ -813,6 +813,93 @@ def patch_strict_mode_credential_protected(src_dir: str) -> None:
             print(f"Patched StrictMode API 29+ methods with SDK guard in: {target}")
 
 
+def patch_url_bar_cursor_handles_compat(src_dir: str) -> None:
+    # Android 9 (API 28) 缺少 TextView/EditText 的 getTextCursorDrawable 与 getTextSelectHandle* API 29+ 方法。
+    # 在 Android 9 车机设备上直接调用会引发：
+    # java.lang.NoSuchMethodError: No virtual method getTextCursorDrawable()Landroid/graphics/drawable/Drawable; in class Landroid/widget/EditText;
+    # 导致应用启动/创建 Omnibox 阶段直接闪退。
+    target_files = [
+        os.path.join(src_dir, "chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/UrlBarViewBinder.java"),
+        os.path.join(src_dir, "chromium/src/chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/UrlBarViewBinder.java"),
+        os.path.join(src_dir, "src/chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/UrlBarViewBinder.java"),
+    ]
+    for sub in ["chrome/browser/ui/android", "chrome/android", "chrome"]:
+        scan_path = os.path.join(src_dir, sub)
+        if os.path.isdir(scan_path):
+            for root, _, files in os.walk(scan_path):
+                for f in files:
+                    if f.endswith(".java"):
+                        full_f = os.path.join(root, f)
+                        if full_f not in target_files:
+                            try:
+                                with open(full_f, "r", encoding="utf-8") as jf:
+                                    snippet = jf.read()
+                                if "getTextCursorDrawable" in snippet or "updateCursorAndSelectHandleColor" in snippet:
+                                    target_files.append(full_f)
+                            except Exception:
+                                pass
+
+    for target in target_files:
+        if not os.path.isfile(target):
+            continue
+        with open(target, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        if "getTextCursorDrawable" not in content and "updateCursorAndSelectHandleColor" not in content:
+            continue
+
+        new_content = content
+
+        # 1. 守卫 bind() 中对 updateCursorAndSelectHandleColor 的无条件调用
+        if "Build.VERSION_CODES.Q" not in new_content and "Build.VERSION.SDK_INT >= 29" not in new_content:
+            new_content = re.sub(
+                r'([ \t]*)updateCursorAndSelectHandleColor\(([^)]+)\);',
+                r'\1if (android.os.Build.VERSION.SDK_INT >= 29) {\n\1    updateCursorAndSelectHandleColor(\2);\n\1}',
+                new_content,
+            )
+
+        # 2. 方法体内增加 API 28 快速返回，防止反射或异常触发执行
+        if "android.os.Build.VERSION.SDK_INT < 29" not in new_content:
+            new_content = re.sub(
+                r'((?:private|protected|public)?\s*static\s+void\s+updateCursorAndSelectHandleColor\s*\([^)]*\)\s*\{)',
+                r'\1\n        if (android.os.Build.VERSION.SDK_INT < 29) {\n            return;\n        }',
+                new_content,
+            )
+
+        # 3. 针对 getTextCursorDrawable / getTextSelectHandle* 的调用增加 try-catch 保护，规避魔改车机固件异常
+        drawables_pattern = (
+            r"([ \t]*)final\s+Drawable\s+textCursor\s*=\s*view\.getTextCursorDrawable\(\);\s*\n"
+            r"[ \t]*final\s+Drawable\s+textSelectHandle\s*=\s*view\.getTextSelectHandle\(\);\s*\n"
+            r"[ \t]*final\s+Drawable\s+textSelectHandleLeft\s*=\s*view\.getTextSelectHandleLeft\(\);\s*\n"
+            r"[ \t]*final\s+Drawable\s+textSelectHandleRight\s*=\s*view\.getTextSelectHandleRight\(\);"
+        )
+
+        def replace_drawables(m):
+            indent = m.group(1)
+            return (
+                f"{indent}Drawable textCursor = null;\n"
+                f"{indent}Drawable textSelectHandle = null;\n"
+                f"{indent}Drawable textSelectHandleLeft = null;\n"
+                f"{indent}Drawable textSelectHandleRight = null;\n"
+                f"{indent}try {{\n"
+                f"{indent}    textCursor = view.getTextCursorDrawable();\n"
+                f"{indent}    textSelectHandle = view.getTextSelectHandle();\n"
+                f"{indent}    textSelectHandleLeft = view.getTextSelectHandleLeft();\n"
+                f"{indent}    textSelectHandleRight = view.getTextSelectHandleRight();\n"
+                f"{indent}}} catch (Throwable ignored) {{\n"
+                f"{indent}    return;\n"
+                f"{indent}}}"
+            )
+
+        if "catch (Throwable ignored)" not in new_content:
+            new_content = re.sub(drawables_pattern, replace_drawables, new_content)
+
+        if new_content != content:
+            with open(target, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            print(f"Patched UrlBar cursor/select handle drawables for API 28 compat in: {target}")
+
+
 def main() -> None:
     src_dir = sys.argv[1] if len(sys.argv) > 1 else "."
 
@@ -879,6 +966,7 @@ def main() -> None:
     patch_java_car_sdcard_logger(src_dir)
     patch_activity_lifecycle_callbacks_compat(src_dir)
     patch_strict_mode_credential_protected(src_dir)
+    patch_url_bar_cursor_handles_compat(src_dir)
     patch_content_app_aidl_deps(src_dir)
     patch_ahardwarebuffer_image_backing_factory(src_dir)
     patch_base_hardware_buffer_sources(src_dir)
