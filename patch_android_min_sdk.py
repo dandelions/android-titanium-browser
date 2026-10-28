@@ -415,6 +415,67 @@ def patch_activity_lifecycle_callbacks_compat(src_dir: str) -> None:
             print(f"Patched ActivityLifecycleCallbacks compat into: {target}")
 
 
+def patch_content_app_aidl_deps(src_dir: str) -> None:
+    candidate_paths = [
+        os.path.join(src_dir, "content/app/BUILD.gn"),
+        os.path.join(src_dir, "chromium/src/content/app/BUILD.gn"),
+        os.path.join(src_dir, "src/content/app/BUILD.gn"),
+    ]
+    for build_gn in candidate_paths:
+        if not os.path.isfile(build_gn):
+            continue
+        with open(build_gn, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        new_content = content
+
+        # 1. 确保在 is_android 条件下引入 build/config/android/config.gni (获取 android_ndk_api_level)
+        if "build/config/android/config.gni" not in new_content:
+            import_marker = 'import("//third_party/tflite/features.gni")\n'
+            if import_marker in new_content:
+                new_content = new_content.replace(
+                    import_marker,
+                    import_marker + 'if (is_android) {\n  import("//build/config/android/config.gni")\n}\n',
+                )
+            else:
+                new_content = re.sub(
+                    r'(import\(.*?\)\n)',
+                    r'\1if (is_android) {\n  import("//build/config/android/config.gni")\n}\n',
+                    new_content,
+                    count=1,
+                )
+
+        # 2. 将仅在 API 29+ NDK 支持的 javaless_child_process_service.cc 与 AIDL native 依赖收敛到 android_ndk_api_level >= 29 判定块内
+        if "android_ndk_api_level >= 29" not in new_content:
+            # 清除 unguarded 的源码与依赖声明
+            new_content = re.sub(r'[ \t]*"android/javaless_child_process_service\.cc",?\n?', '', new_content)
+            new_content = re.sub(r'[ \t]*"//base:build_info_aidl_native",?\n?', '', new_content)
+            new_content = re.sub(r'[ \t]*"//base:process_launcher_aidl_native",?\n?', '', new_content)
+
+            guard_block = (
+                '    if (android_ndk_api_level >= 29) {\n'
+                '      sources += [ "android/javaless_child_process_service.cc" ]\n'
+                '      deps += [\n'
+                '        "//base:build_info_aidl_native",\n'
+                '        "//base:process_launcher_aidl_native",\n'
+                '      ]\n'
+                '    }\n'
+            )
+
+            target_pattern = r'([ \t]*"android/library_loader_hooks\.h",\s*\])'
+            if re.search(target_pattern, new_content):
+                new_content = re.sub(target_pattern, r'\1\n' + guard_block, new_content, count=1)
+            else:
+                deps_pattern = r'(\s*deps\s*\+=\s*\[\s*"//content/common")'
+                if re.search(deps_pattern, new_content):
+                    new_content = re.sub(deps_pattern, '\n' + guard_block + r'\1', new_content, count=1)
+
+        if new_content != content:
+            with open(build_gn, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            print(f"Patched content/app/BUILD.gn: guarded AIDL native deps and javaless service for API < 29 in: {build_gn}")
+
+
 def main() -> None:
     src_dir = sys.argv[1] if len(sys.argv) > 1 else "."
 
@@ -480,6 +541,7 @@ def main() -> None:
     patch_startup_field_trials(src_dir)
     patch_java_car_sdcard_logger(src_dir)
     patch_activity_lifecycle_callbacks_compat(src_dir)
+    patch_content_app_aidl_deps(src_dir)
 
     print("SDK version patch (minSdk: 28) & car-compat checks complete.")
 
