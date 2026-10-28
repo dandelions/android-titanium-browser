@@ -742,6 +742,77 @@ def patch_ndk_audio_encoder(src_dir: str) -> None:
             print(f"Patched ndk_audio_encoder.cc in: {target}")
 
 
+def patch_strict_mode_credential_protected(src_dir: str) -> None:
+    # 扫描并修补所有包含 API 29+ StrictMode 调用的 Java 文件
+    # Android 9 (API 28) 缺少 detectCredentialProtectedWhileLocked 与 detectImplicitDirectBoot 方法，
+    # 在 Android 9 车机设备上直接调用会引发 java.lang.NoSuchMethodError 致命崩溃。
+    target_files = [
+        os.path.join(src_dir, "chrome/android/java/src/org/chromium/chrome/browser/ChromeStrictMode.java"),
+        os.path.join(src_dir, "chromium/src/chrome/android/java/src/org/chromium/chrome/browser/ChromeStrictMode.java"),
+        os.path.join(src_dir, "src/chrome/android/java/src/org/chromium/chrome/browser/ChromeStrictMode.java"),
+    ]
+    for sub in ["chrome/android", "base/android"]:
+        scan_path = os.path.join(src_dir, sub)
+        if os.path.isdir(scan_path):
+            for root, _, files in os.walk(scan_path):
+                for f in files:
+                    if f.endswith(".java"):
+                        full_f = os.path.join(root, f)
+                        if full_f not in target_files:
+                            try:
+                                with open(full_f, "r", encoding="utf-8") as jf:
+                                    snippet = jf.read()
+                                if (
+                                    "detectCredentialProtectedWhileLocked" in snippet
+                                    or "detectImplicitDirectBoot" in snippet
+                                ):
+                                    target_files.append(full_f)
+                            except Exception:
+                                pass
+
+    for target in target_files:
+        if not os.path.isfile(target):
+            continue
+        with open(target, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        if "detectCredentialProtectedWhileLocked" not in content and "detectImplicitDirectBoot" not in content:
+            continue
+
+        if "android.os.Build.VERSION.SDK_INT >= 29" in content:
+            continue
+
+        new_content = content
+        # Case 1: chained call vmPolicy.detectCredentialProtectedWhileLocked().detectImplicitDirectBoot();
+        if "detectCredentialProtectedWhileLocked" in new_content and "detectImplicitDirectBoot" in new_content:
+            new_content = re.sub(
+                r'([ \t]*)(\w+)\.detectCredentialProtectedWhileLocked\(\)\s*\.\s*detectImplicitDirectBoot\(\);',
+                r'\1if (android.os.Build.VERSION.SDK_INT >= 29) {\n\1    try {\n\1        \2.detectCredentialProtectedWhileLocked().detectImplicitDirectBoot();\n\1    } catch (Throwable ignored) {}\n\1}',
+                new_content,
+            )
+
+        # Case 2: detectCredentialProtectedWhileLocked() standalone
+        if "detectCredentialProtectedWhileLocked()" in new_content and "android.os.Build.VERSION.SDK_INT >= 29" not in new_content:
+            new_content = re.sub(
+                r'([ \t]*)(\w+)\.detectCredentialProtectedWhileLocked\(\);',
+                r'\1if (android.os.Build.VERSION.SDK_INT >= 29) {\n\1    try {\n\1        \2.detectCredentialProtectedWhileLocked();\n\1    } catch (Throwable ignored) {}\n\1}',
+                new_content,
+            )
+
+        # Case 3: detectImplicitDirectBoot() standalone
+        if "detectImplicitDirectBoot()" in new_content and "android.os.Build.VERSION.SDK_INT >= 29" not in new_content:
+            new_content = re.sub(
+                r'([ \t]*)(\w+)\.detectImplicitDirectBoot\(\);',
+                r'\1if (android.os.Build.VERSION.SDK_INT >= 29) {\n\1    try {\n\1        \2.detectImplicitDirectBoot();\n\1    } catch (Throwable ignored) {}\n\1}',
+                new_content,
+            )
+
+        if new_content != content:
+            with open(target, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            print(f"Patched StrictMode API 29+ methods with SDK guard in: {target}")
+
+
 def main() -> None:
     src_dir = sys.argv[1] if len(sys.argv) > 1 else "."
 
@@ -807,6 +878,7 @@ def main() -> None:
     patch_startup_field_trials(src_dir)
     patch_java_car_sdcard_logger(src_dir)
     patch_activity_lifecycle_callbacks_compat(src_dir)
+    patch_strict_mode_credential_protected(src_dir)
     patch_content_app_aidl_deps(src_dir)
     patch_ahardwarebuffer_image_backing_factory(src_dir)
     patch_base_hardware_buffer_sources(src_dir)
