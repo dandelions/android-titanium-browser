@@ -81,7 +81,7 @@ sign_apk() {
     if [ "$is_old_android" = "1" ] && [ -f "$SCRIPT_DIR/patch_apk_manifest.py" ]; then
         tmp_prepared="$(mktemp --suffix=-manifest-patched.apk)"
         cp "$input_apk" "$tmp_prepared"
-        python3 "$SCRIPT_DIR/patch_apk_manifest.py" "$tmp_prepared" 24 34 34 || true
+        python3 "$SCRIPT_DIR/patch_apk_manifest.py" "$tmp_prepared" 28 34 34 || true
         to_prepare="$tmp_prepared"
     fi
 
@@ -101,7 +101,7 @@ sign_apk() {
     local extra_sign_args=()
     if [ "$is_old_android" = "1" ]; then
         v3_signing="false"
-        extra_sign_args+=(--min-sdk-version 24)
+        extra_sign_args+=(--min-sdk-version 28)
     elif [ "${ENABLE_V2_SIGNING:-1}" = "1" ]; then
         extra_sign_args+=(--min-sdk-version 24)
     fi

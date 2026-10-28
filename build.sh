@@ -250,12 +250,14 @@ configure_out_dir() {
     set_gn_arg "$desired_args" ext_version_enabled true
     set_gn_arg "$desired_args" ext_version_increment "\"$BUILD_VERSION_INCREMENT\""
     append_common_gn_args "$desired_args"
-    sed -i "/^default_min_sdk_version/d" "$desired_args"
     sed -i "/^default_android_sdk_version/d" "$desired_args"
     if is_old_android_build; then
+        set_gn_arg "$desired_args" default_min_sdk_version 28
         set_gn_arg "$desired_args" is_desktop_android false
         set_gn_arg "$desired_args" v8_enable_drumbrake false
         set_gn_arg "$desired_args" v8_drumbrake_bounds_checks false
+    else
+        sed -i "/^default_min_sdk_version/d" "$desired_args"
     fi
 
     if [ "${BUILD_STATE_RESTORED:-0}" = "1" ] && [ -f "$out_dir/build.ninja" ] && cmp -s "$desired_args" "$out_dir/args.gn"; then
@@ -630,56 +632,22 @@ if [ "$BUILD_ARM" = "1" ]; then
     if [ "${SKIP_ARM32:-0}" = "1" ]; then
         echo "SKIP_ARM32=1: Skipping arm32 compilation as requested."
     else
-        reused_arm32=0
-        if [ "${REUSE_BASE_APK:-0}" = "1" ] && is_old_android_build && [ ! -s "out/tmp/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk" ]; then
-            for base_cand in "out/tmp/${VERSION}-armeabi-v7a.apk" "out/release/${VERSION}-armeabi-v7a.apk"; do
-                if [ -s "$base_cand" ]; then
-                    echo "Notice: Found existing 32-bit ARM base APK ($base_cand). Reusing it directly for old-android car-compat repackaging (skipping redundant compilation)..."
-                    cp "$base_cand" "out/tmp/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk"
-                    reused_arm32=1
-                    break
-                fi
-            done
-        fi
-        if [ "$reused_arm32" = "0" ]; then
-            configure_out_dir out/arm arm
-            run_autoninja out/arm chrome_public_apk
-            copy_first_output out/arm/apks 'Chrome*.apk' "out/tmp/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk"
-        fi
+        configure_out_dir out/arm arm
+        run_autoninja out/arm chrome_public_apk
+        copy_first_output out/arm/apks 'Chrome*.apk' "out/tmp/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk"
     fi
 fi
 
 if [ "$BUILD_ARM64" = "1" ]; then
-    reused_arm64=0
-    if [ "${REUSE_BASE_APK:-0}" = "1" ] && is_old_android_build && [ ! -s "out/tmp/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk" ]; then
-        for base_cand in "out/tmp/${VERSION}-arm64-v8a.apk" "out/release/${VERSION}-arm64-v8a.apk"; do
-            if [ -s "$base_cand" ]; then
-                echo "Notice: Found existing 64-bit ARM base APK ($base_cand). Reusing it directly for old-android car-compat repackaging (skipping redundant compilation)..."
-                cp "$base_cand" "out/tmp/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk"
-                reused_arm64=1
-                break
-            fi
-        done
-        if [ "$BUILD_AAB" = "1" ] && [ ! -s "out/tmp/${OUTPUT_VERSION_PREFIX}-arm64-v8a.aab" ]; then
-            for base_aab in "out/tmp/${VERSION}-arm64-v8a.aab" "out/release/${VERSION}-arm64-v8a.aab"; do
-                if [ -s "$base_aab" ]; then
-                    cp "$base_aab" "out/tmp/${OUTPUT_VERSION_PREFIX}-arm64-v8a.aab"
-                    break
-                fi
-            done
-        fi
+    configure_out_dir out/arm64 arm64
+    arm64_targets="chrome_public_apk"
+    if [ "$BUILD_AAB" = "1" ]; then
+        arm64_targets="$arm64_targets chrome_public_bundle"
     fi
-    if [ "$reused_arm64" = "0" ]; then
-        configure_out_dir out/arm64 arm64
-        arm64_targets="chrome_public_apk"
-        if [ "$BUILD_AAB" = "1" ]; then
-            arm64_targets="$arm64_targets chrome_public_bundle"
-        fi
-        run_autoninja out/arm64 $arm64_targets
-        copy_first_output out/arm64/apks 'Chrome*.apk' "out/tmp/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk"
-        if [ "$BUILD_AAB" = "1" ]; then
-            copy_first_output out/arm64/apks 'Chrome*.aab' "out/tmp/${OUTPUT_VERSION_PREFIX}-arm64-v8a.aab"
-        fi
+    run_autoninja out/arm64 $arm64_targets
+    copy_first_output out/arm64/apks 'Chrome*.apk' "out/tmp/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk"
+    if [ "$BUILD_AAB" = "1" ]; then
+        copy_first_output out/arm64/apks 'Chrome*.aab' "out/tmp/${OUTPUT_VERSION_PREFIX}-arm64-v8a.aab"
     fi
 fi
 
@@ -702,19 +670,15 @@ if [ "$BUILD_ARM" = "1" ]; then
             fi
             if [ -n "$local_aapt" ] && [ -x "$local_aapt" ]; then
                 dump_info="$("$local_aapt" dump badging "out/release/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk" 2>/dev/null || true)"
-                if ! echo "$dump_info" | grep -q "minSdkVersion:'24'"; then
+                if ! echo "$dump_info" | grep -qE "minSdkVersion:'(24|28)'"; then
                     needs_update=1
                 fi
                 if ! echo "$dump_info" | grep -q "targetSdkVersion:'34'"; then
                     needs_update=1
                 fi
             fi
-            if ! unzip -l "out/release/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk" 2>/dev/null | grep -q "libbinder_ndk.so" || \
-               ! unzip -p "out/release/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk" "lib/armeabi-v7a/libbinder_ndk.so" 2>/dev/null | grep -a -q "android_get_device_api_level"; then
-                needs_update=1
-            fi
             if [ "$needs_update" = "1" ]; then
-                echo "Notice: Existing out/release/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk needs manifest patch, libbinder_ndk, or V2 signature; updating in place..."
+                echo "Notice: Existing out/release/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk needs manifest patch or V2 signature; updating in place..."
                 sign_apk "out/release/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk" "out/release/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk"
             fi
         fi
@@ -737,19 +701,15 @@ if [ "$BUILD_ARM64" = "1" ]; then
             fi
             if [ -n "$local_aapt" ] && [ -x "$local_aapt" ]; then
                 dump_info="$("$local_aapt" dump badging "out/release/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk" 2>/dev/null || true)"
-                if ! echo "$dump_info" | grep -q "minSdkVersion:'24'"; then
+                if ! echo "$dump_info" | grep -qE "minSdkVersion:'(24|28)'"; then
                     needs_update=1
                 fi
                 if ! echo "$dump_info" | grep -q "targetSdkVersion:'34'"; then
                     needs_update=1
                 fi
             fi
-            if ! unzip -l "out/release/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk" 2>/dev/null | grep -q "libbinder_ndk.so" || \
-               ! unzip -p "out/release/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk" "lib/arm64-v8a/libbinder_ndk.so" 2>/dev/null | grep -a -q "android_get_device_api_level"; then
-                needs_update=1
-            fi
             if [ "$needs_update" = "1" ]; then
-                echo "Notice: Existing out/release/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk needs manifest patch, libbinder_ndk, or V2 signature; updating in place..."
+                echo "Notice: Existing out/release/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk needs manifest patch or V2 signature; updating in place..."
                 sign_apk "out/release/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk" "out/release/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk"
             fi
         fi

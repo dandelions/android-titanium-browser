@@ -52,9 +52,30 @@ def clean_target_sdk_assignments_in_gn(src_dir: str) -> None:
                         print(f"Warning: could not process {full_path}: {e}", file=sys.stderr)
 
 
-def patch_min_sdk_in_gni(file_path: str) -> bool:
-    # 现已采用 patch_apk_manifest.py 二进制清单注入方案，在 APK 签名阶段直接修改 minSdk 与 targetSdk，
-    # 无需改动源码级 .gn/.gni 模板，避免修改构建文件导致 Ninja 编译缓存失效或触发全量重编。
+def patch_min_sdk_in_gni(file_path: str, target_min_sdk: int = 28) -> bool:
+    if not os.path.isfile(file_path):
+        return False
+    norm_path = file_path.replace("\\", "/")
+    if "build/config/android" in norm_path:
+        return False
+
+    with open(file_path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    new_content = content
+    # 替换任意 min_sdk_version / default_min_sdk_version 为 28 (匹配 Android 9 API 28 车机基线)
+    new_content = re.sub(r"min_sdk_version\s*=\s*\d+", f"min_sdk_version = {target_min_sdk}", new_content)
+    new_content = re.sub(
+        r"default_min_sdk_version\s*=\s*\d+", f"default_min_sdk_version = {target_min_sdk}", new_content
+    )
+    # 清除 target_sdk_version 赋值以防止 GN "Assignment had no effect"
+    new_content = re.sub(r"^[ \t]*target_sdk_version\s*=\s*\d+.*$\n?", "", new_content, flags=re.MULTILINE)
+
+    if new_content != content:
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(new_content)
+        print(f"Patched minSdk={target_min_sdk} in: {file_path}")
+        return True
     return False
 
 
@@ -161,10 +182,10 @@ def patch_expectations(src_dir: str) -> None:
                     exp_path = os.path.join(root, file_name)
                     with open(exp_path, "r", encoding="utf-8") as f:
                         c = f.read()
-                    # 将期待的 minSdkVersion 降到 29 (Android 10 车机基线)
+                    # 将期待的 minSdkVersion 降到 28 (Android 9 车机基线)
                     nc = re.sub(
                         r'android:minSdkVersion="\d+"',
-                        'android:minSdkVersion="29"',
+                        'android:minSdkVersion="28"',
                         c,
                     )
                     # 恢复之前被改成 34 的 targetSdkVersion 回 37（匹配 Chromium 原生输出，防止比对失败）
@@ -421,7 +442,7 @@ def main() -> None:
     # 4. 修正 expectations 以免检查比对失败
     patch_expectations(src_dir)
 
-    # 5. 扫描相关目录，确保 min_sdk_version 降为 29，并清除 target_sdk_version
+    # 5. 扫描相关目录，确保 min_sdk_version 降为 28，并清除 target_sdk_version
     scan_dirs = [
         os.path.join(src_dir, "chrome/android"),
         os.path.join(src_dir, "android_webview"),
@@ -435,11 +456,11 @@ def main() -> None:
             for file_name in files:
                 full_path = os.path.join(root, file_name)
                 if file_name.endswith((".gni", ".gn")):
-                    patch_min_sdk_in_gni(full_path)
+                    patch_min_sdk_in_gni(full_path, target_min_sdk=28)
                 elif "AndroidManifest" in file_name and file_name.endswith(".xml"):
                     with open(full_path, "r", encoding="utf-8") as f:
                         c = f.read()
-                    nc = re.sub(r'android:minSdkVersion="\d+"', 'android:minSdkVersion="29"', c)
+                    nc = re.sub(r'android:minSdkVersion="\d+"', 'android:minSdkVersion="28"', c)
                     nc = re.sub(
                         r'<uses-feature\s+android:glEsVersion="0x00030000"\s*/>',
                         '<uses-feature android:glEsVersion="0x00020000" android:required="false" />',
@@ -460,7 +481,7 @@ def main() -> None:
     patch_java_car_sdcard_logger(src_dir)
     patch_activity_lifecycle_callbacks_compat(src_dir)
 
-    print("SDK version patch (minSdk: 29) & car-compat checks complete.")
+    print("SDK version patch (minSdk: 28) & car-compat checks complete.")
 
 
 if __name__ == "__main__":

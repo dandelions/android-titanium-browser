@@ -198,20 +198,12 @@ check_branch_artifacts() {
                         return 1
                     fi
                 fi
-                if ! unzip -l "$apk_check" 2>/dev/null | grep -q "libbinder_ndk.so"; then
-                    echo "Notice: Existing $(basename "$apk_check") is missing libbinder_ndk.so. Invalidating cache to trigger repackaging/signing."
-                    return 1
-                fi
-                if ! unzip -p "$apk_check" "*/libbinder_ndk.so" 2>/dev/null | grep -a -q "android_get_device_api_level"; then
-                    echo "Notice: Existing $(basename "$apk_check") libbinder_ndk.so is missing android_get_device_api_level compatibility symbol. Invalidating cache to trigger repackaging/signing."
-                    return 1
-                fi
                 if [ -n "$aapt_bin" ] && [ -x "$aapt_bin" ]; then
                     local dump_info
                     dump_info="$("$aapt_bin" dump badging "$apk_check" 2>/dev/null || true)"
                     if [ -n "$dump_info" ]; then
-                        if echo "$dump_info" | grep -qE "minSdkVersion:'[0-9]+'" && ! echo "$dump_info" | grep -q "minSdkVersion:'24'"; then
-                            echo "Notice: Existing $(basename "$apk_check") minSdkVersion is not 24. Invalidating cache to trigger signing."
+                        if echo "$dump_info" | grep -qE "minSdkVersion:'[0-9]+'" && ! echo "$dump_info" | grep -qE "minSdkVersion:'(24|28)'"; then
+                            echo "Notice: Existing $(basename "$apk_check") minSdkVersion is not 24 or 28. Invalidating cache to trigger signing."
                             return 1
                         fi
                         if echo "$dump_info" | grep -qE "targetSdkVersion:'[0-9]+'" && ! echo "$dump_info" | grep -q "targetSdkVersion:'34'"; then
