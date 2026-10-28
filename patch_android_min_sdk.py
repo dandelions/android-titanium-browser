@@ -476,6 +476,93 @@ def patch_content_app_aidl_deps(src_dir: str) -> None:
             print(f"Patched content/app/BUILD.gn: guarded AIDL native deps and javaless service for API < 29 in: {build_gn}")
 
 
+def patch_ahardwarebuffer_image_backing_factory(src_dir: str) -> None:
+    candidate_paths = [
+        os.path.join(src_dir, "gpu/command_buffer/service/shared_image/ahardwarebuffer_image_backing_factory.cc"),
+        os.path.join(src_dir, "chromium/src/gpu/command_buffer/service/shared_image/ahardwarebuffer_image_backing_factory.cc"),
+        os.path.join(src_dir, "src/gpu/command_buffer/service/shared_image/ahardwarebuffer_image_backing_factory.cc"),
+    ]
+    for target in candidate_paths:
+        if not os.path.isfile(target):
+            continue
+        with open(target, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        new_content = content
+        if "<dlfcn.h>" not in new_content:
+            new_content = new_content.replace(
+                "#include <android/hardware_buffer.h>\n",
+                "#include <android/hardware_buffer.h>\n#include <dlfcn.h>\n",
+                1,
+            )
+
+        # 动态解析 AHardwareBuffer_lockPlanes，避免直接调用引入 API 29+ 符号导致 -Wunguarded-availability
+        # 且规避 Android 9 系统 libandroid.so 缺少该符号引发的 dlopen 崩溃
+        if "AHardwareBuffer_lockPlanes" in new_content and "pfn_lock_planes" not in new_content:
+            old_call = (
+                "  int ret = AHardwareBuffer_lockPlanes(hardware_buffer, cpu_read_usage, fence,\n"
+                "                                       nullptr, &planes);"
+            )
+            new_call = (
+                "  using PFN_AHardwareBuffer_lockPlanes =\n"
+                "      int (*)(AHardwareBuffer*, uint64_t, int32_t, const ARect*,\n"
+                "              AHardwareBuffer_Planes*);\n"
+                "  static auto pfn_lock_planes = reinterpret_cast<PFN_AHardwareBuffer_lockPlanes>(\n"
+                "      dlsym(RTLD_DEFAULT, \"AHardwareBuffer_lockPlanes\"));\n"
+                "  if (!pfn_lock_planes) {\n"
+                "    return false;\n"
+                "  }\n"
+                "  int ret = pfn_lock_planes(hardware_buffer, cpu_read_usage, fence, nullptr,\n"
+                "                            &planes);"
+            )
+            if old_call in new_content:
+                new_content = new_content.replace(old_call, new_call, 1)
+            else:
+                new_content = re.sub(
+                    r'[ \t]*int\s+ret\s*=\s*AHardwareBuffer_lockPlanes\s*\([^;]+;\s*',
+                    new_call + '\n',
+                    new_content,
+                    count=1,
+                )
+
+        if new_content != content:
+            with open(target, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            print(f"Patched AHardwareBuffer_lockPlanes dynamic lookup in: {target}")
+
+
+def patch_base_hardware_buffer_sources(src_dir: str) -> None:
+    candidate_paths = [
+        os.path.join(src_dir, "base/BUILD.gn"),
+        os.path.join(src_dir, "chromium/src/base/BUILD.gn"),
+        os.path.join(src_dir, "src/base/BUILD.gn"),
+    ]
+    for build_gn in candidate_paths:
+        if not os.path.isfile(build_gn):
+            continue
+        with open(build_gn, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        new_content = content
+        pattern = (
+            r'([ \t]*if\s*\(\s*android_ndk_api_level\s*>=\s*29\s*\)\s*\{[\s\S]*?'
+            r'deps\s*\+=\s*\[\s*":build_info_aidl_native"\s*\])\s*\n'
+            r'([ \t]*sources\s*\+=\s*\[[\s\S]*?"android/scoped_hardware_buffer_handle\.h",\s*\]\s*\})'
+        )
+        if re.search(pattern, new_content):
+            new_content = re.sub(
+                pattern,
+                r'\1\n    }\n    if (android_ndk_api_level >= 26) {\n\2',
+                new_content,
+                count=1,
+            )
+
+        if new_content != content:
+            with open(build_gn, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            print(f"Patched base/BUILD.gn: enabled AHardwareBuffer sources for API >= 26 in: {build_gn}")
+
+
 def main() -> None:
     src_dir = sys.argv[1] if len(sys.argv) > 1 else "."
 
@@ -542,6 +629,8 @@ def main() -> None:
     patch_java_car_sdcard_logger(src_dir)
     patch_activity_lifecycle_callbacks_compat(src_dir)
     patch_content_app_aidl_deps(src_dir)
+    patch_ahardwarebuffer_image_backing_factory(src_dir)
+    patch_base_hardware_buffer_sources(src_dir)
 
     print("SDK version patch (minSdk: 28) & car-compat checks complete.")
 
