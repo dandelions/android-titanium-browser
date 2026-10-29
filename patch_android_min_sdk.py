@@ -900,6 +900,122 @@ def patch_url_bar_cursor_handles_compat(src_dir: str) -> None:
             print(f"Patched UrlBar cursor/select handle drawables for API 28 compat in: {target}")
 
 
+def patch_gesture_exclusion_rects_compat(src_dir: str) -> None:
+    # Android 9 (API 28) 缺少 View.setSystemGestureExclusionRects(List<Rect>) API 29+ 方法。
+    # ToolbarControlContainer 重写了该方法并在 updateSystemGestureExclusions() 等处无条件调用
+    # super.setSystemGestureExclusionRects(...)，在 Android 9 车机设备上直接引发：
+    # java.lang.NoSuchMethodError: No super method setSystemGestureExclusionRects(Ljava/util/List;)V in class Landroid/widget/FrameLayout;
+    # 导致启动进入 ChromeTabbedActivity 时致命闪退。
+    target_files = [
+        os.path.join(src_dir, "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/top/ToolbarControlContainer.java"),
+        os.path.join(src_dir, "chromium/src/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/top/ToolbarControlContainer.java"),
+        os.path.join(src_dir, "src/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/top/ToolbarControlContainer.java"),
+    ]
+
+    for sub in ["chrome/browser/ui/android", "chrome/android", "chrome", "components"]:
+        scan_path = os.path.join(src_dir, sub)
+        if os.path.isdir(scan_path):
+            for root, _, files in os.walk(scan_path):
+                for f in files:
+                    if f == "ToolbarControlContainer.java":
+                        target_files.append(os.path.join(root, f))
+                    elif f.endswith(".java"):
+                        try:
+                            fp = os.path.join(root, f)
+                            with open(fp, "r", encoding="utf-8", errors="ignore") as jf:
+                                c = jf.read()
+                                if "setSystemGestureExclusionRects" in c or "updateSystemGestureExclusions" in c:
+                                    target_files.append(fp)
+                        except Exception:
+                            pass
+
+    seen = set()
+    for target in target_files:
+        if not os.path.isfile(target):
+            continue
+        real_path = os.path.realpath(target)
+        if real_path in seen:
+            continue
+        seen.add(real_path)
+
+        with open(target, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        if "setSystemGestureExclusionRects" not in content and "updateSystemGestureExclusions" not in content:
+            continue
+
+        new_content = content
+
+        # 1. 在 updateSystemGestureExclusions() 方法体入口加入 API 28 快速返回
+        if "updateSystemGestureExclusions" in new_content:
+            if not re.search(r"updateSystemGestureExclusions\s*\([^)]*\)\s*\{[^}]*SDK_INT", new_content):
+                new_content = re.sub(
+                    r"((?:private|protected|public)?\s*void\s+updateSystemGestureExclusions\s*\([^)]*\)\s*\{)",
+                    r"\1\n        if (android.os.Build.VERSION.SDK_INT < 29) {\n            return;\n        }",
+                    new_content,
+                )
+
+        # 2. 在 setSystemGestureExclusionRects(...) 方法体入口加入 API 28 快速返回
+        if "setSystemGestureExclusionRects" in new_content:
+            if not re.search(r"public\s+void\s+setSystemGestureExclusionRects\s*\([^)]*\)\s*\{[^}]*SDK_INT", new_content):
+                new_content = re.sub(
+                    r"((?:@Override\s*\n\s*)?public\s+void\s+setSystemGestureExclusionRects\s*\([^)]*\)\s*\{)",
+                    r"\1\n        if (android.os.Build.VERSION.SDK_INT < 29) {\n            return;\n        }",
+                    new_content,
+                )
+
+        # 3. 逐行扫描守卫 super.setSystemGestureExclusionRects 和外部调用
+        lines = new_content.split("\n")
+        patched_lines = []
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            # 守卫 super.setSystemGestureExclusionRects(...)
+            if "super.setSystemGestureExclusionRects" in line:
+                has_guard = False
+                for k in range(max(0, i - 4), i):
+                    if any(kw in lines[k] for kw in ("SDK_INT >= 29", "VERSION_CODES.Q", "SDK_INT < 29")):
+                        has_guard = True
+                        break
+                if not has_guard:
+                    m = re.match(r"^(\s*)super\.setSystemGestureExclusionRects\((.*)\);", line)
+                    if m:
+                        indent = m.group(1)
+                        arg = m.group(2)
+                        patched_lines.append(f"{indent}if (android.os.Build.VERSION.SDK_INT >= 29) {{")
+                        patched_lines.append(f"{indent}    super.setSystemGestureExclusionRects({arg});")
+                        patched_lines.append(f"{indent}}}")
+                        i += 1
+                        continue
+            # 守卫外部调用 target.setSystemGestureExclusionRects(...)
+            elif ".setSystemGestureExclusionRects(" in line:
+                has_guard = False
+                for k in range(max(0, i - 4), i):
+                    if any(kw in lines[k] for kw in ("SDK_INT >= 29", "VERSION_CODES.Q", "SDK_INT < 29")):
+                        has_guard = True
+                        break
+                if not has_guard:
+                    m = re.match(r"^(\s*)([a-zA-Z0-9_$.]+)\.setSystemGestureExclusionRects\((.*)\);", line)
+                    if m and m.group(2) != "super":
+                        indent = m.group(1)
+                        obj = m.group(2)
+                        arg = m.group(3)
+                        patched_lines.append(f"{indent}if (android.os.Build.VERSION.SDK_INT >= 29) {{")
+                        patched_lines.append(f"{indent}    {obj}.setSystemGestureExclusionRects({arg});")
+                        patched_lines.append(f"{indent}}}")
+                        i += 1
+                        continue
+            patched_lines.append(line)
+            i += 1
+
+        new_content = "\n".join(patched_lines)
+
+        if new_content != content:
+            with open(target, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            print(f"Patched View.setSystemGestureExclusionRects for API 28 compat in: {target}")
+
+
 def main() -> None:
     src_dir = sys.argv[1] if len(sys.argv) > 1 else "."
 
@@ -967,6 +1083,7 @@ def main() -> None:
     patch_activity_lifecycle_callbacks_compat(src_dir)
     patch_strict_mode_credential_protected(src_dir)
     patch_url_bar_cursor_handles_compat(src_dir)
+    patch_gesture_exclusion_rects_compat(src_dir)
     patch_content_app_aidl_deps(src_dir)
     patch_ahardwarebuffer_image_backing_factory(src_dir)
     patch_base_hardware_buffer_sources(src_dir)
