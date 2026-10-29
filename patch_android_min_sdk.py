@@ -1361,12 +1361,44 @@ def patch_intent_identifier_compat(src_dir: str) -> None:
         if ".setIdentifier(" not in content:
             continue
 
+        # 1. 自动回滚错误包裹了链式调用（例如以点开头的 builder 模式）的代码
+        revert_pattern = (
+            r"[ \t]*if\s*\(\s*android\.os\.Build\.VERSION\.SDK_INT\s*>=\s*29\s*\)\s*\{\s*\n"
+            r"[ \t]*try\s*\{\s*\n"
+            r"([ \t]*\.[^}]+?)[ \t]*\}\s*catch\s*\(Throwable\s+\w+\)\s*\{\}\s*\n[ \t]*\}"
+        )
+        unwrapped_content = re.sub(revert_pattern, lambda m: m.group(1).rstrip(), content)
+        if unwrapped_content != content:
+            content = unwrapped_content
+            with open(target, "w", encoding="utf-8") as f:
+                f.write(content)
+            print(f"Restored corrupted chained setIdentifier calls in: {target}")
+
+        # 2. 只有明确包含 Intent 且存在真正的 intent.setIdentifier 调用时才进行兼容守卫
+        intent_caller_pattern = r"(?:^|[^\w.])(\w*[iI]ntent\w*(?:\(\))?)\.setIdentifier\s*\("
+        if not ("Intent" in content and re.search(intent_caller_pattern, content)):
+            continue
+
         lines = content.split("\n")
         patched_lines = []
         i = 0
         while i < len(lines):
             line = lines[i]
-            if ".setIdentifier(" in line and "abstract" not in line and "void " not in line:
+            stripped = line.lstrip()
+
+            # 严格排除以点号开头的链式调用、方法定义或非 Intent 调用
+            if (
+                stripped.startswith(".")
+                or "abstract " in line
+                or "void " in line
+                or re.search(r"(?:public|protected|private)\s+.*\bsetIdentifier\s*\(", line)
+            ):
+                patched_lines.append(line)
+                i += 1
+                continue
+
+            match = re.search(intent_caller_pattern, line)
+            if match:
                 has_guard = False
                 for k in range(max(0, i - 4), i):
                     if any(kw in lines[k] for kw in ("SDK_INT >= 29", "VERSION_CODES.Q", "SDK_INT < 29")):
@@ -1377,15 +1409,31 @@ def patch_intent_identifier_compat(src_dir: str) -> None:
                     while ";" not in stmt_lines[-1] and i + 1 < len(lines):
                         i += 1
                         stmt_lines.append(lines[i])
+
                     indent = stmt_lines[0][: len(stmt_lines[0]) - len(stmt_lines[0].lstrip())]
-                    patched_lines.append(f"{indent}if (android.os.Build.VERSION.SDK_INT >= 29) {{")
-                    patched_lines.append(f"{indent}    try {{")
-                    for s in stmt_lines:
-                        patched_lines.append(f"{indent}        {s.lstrip()}")
-                    patched_lines.append(f"{indent}    }} catch (Throwable ignored) {{}}")
-                    patched_lines.append(f"{indent}}}")
+                    stripped_head = stmt_lines[0].lstrip()
+                    intent_var = match.group(1)
+
+                    if stripped_head.startswith("return "):
+                        call_stmt = stmt_lines[:]
+                        call_stmt[0] = indent + stripped_head[len("return "):]
+                        patched_lines.append(f"{indent}if (android.os.Build.VERSION.SDK_INT >= 29) {{")
+                        patched_lines.append(f"{indent}    try {{")
+                        for s in call_stmt:
+                            patched_lines.append(f"{indent}        {s.lstrip()}")
+                        patched_lines.append(f"{indent}    }} catch (Throwable ignored) {{}}")
+                        patched_lines.append(f"{indent}}}")
+                        patched_lines.append(f"{indent}return {intent_var};")
+                    else:
+                        patched_lines.append(f"{indent}if (android.os.Build.VERSION.SDK_INT >= 29) {{")
+                        patched_lines.append(f"{indent}    try {{")
+                        for s in stmt_lines:
+                            patched_lines.append(f"{indent}        {s.lstrip()}")
+                        patched_lines.append(f"{indent}    }} catch (Throwable ignored) {{}}")
+                        patched_lines.append(f"{indent}}}")
                     i += 1
                     continue
+
             patched_lines.append(line)
             i += 1
 
