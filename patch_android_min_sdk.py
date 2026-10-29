@@ -1134,6 +1134,268 @@ def patch_system_bar_contrast_enforced_compat(src_dir: str) -> None:
             print(f"Patched SystemBar contrast enforced methods for API 28 compat in: {target}")
 
 
+def patch_power_monitor_compat(src_dir: str) -> None:
+    # Android 9 (API 28) 缺少 PowerManager.addThermalStatusListener 与
+    # PowerManager.getCurrentThermalStatus API 29+ 方法及 OnThermalStatusChangedListener 接口。
+    # Chromium 156 将 minSdk 提高至 29 后，移除了版本守卫，导致 Android 9 车机上抛出：
+    # java.lang.NoSuchMethodError: No virtual method addThermalStatusListener(...)
+    # java.lang.NoSuchMethodError: No virtual method getCurrentThermalStatus()I
+    target_files = [
+        os.path.join(src_dir, "base/android/java/src/org/chromium/base/PowerMonitor.java"),
+        os.path.join(src_dir, "chromium/src/base/android/java/src/org/chromium/base/PowerMonitor.java"),
+        os.path.join(src_dir, "src/base/android/java/src/org/chromium/base/PowerMonitor.java"),
+        os.path.join(src_dir, "base/android/java/src/org/chromium/base/PowerMonitorForQ.java"),
+        os.path.join(src_dir, "chromium/src/base/android/java/src/org/chromium/base/PowerMonitorForQ.java"),
+        os.path.join(src_dir, "src/base/android/java/src/org/chromium/base/PowerMonitorForQ.java"),
+    ]
+
+    for sub in ["base", "chrome", "components", "android_webview", "content", "services"]:
+        scan_path = os.path.join(src_dir, sub)
+        if os.path.isdir(scan_path):
+            for root, _, files in os.walk(scan_path):
+                for f in files:
+                    if f.endswith(".java"):
+                        try:
+                            fp = os.path.join(root, f)
+                            with open(fp, "r", encoding="utf-8", errors="ignore") as jf:
+                                c = jf.read()
+                                if (
+                                    "addThermalStatusListener" in c
+                                    or "getCurrentThermalStatus" in c
+                                    or "removeThermalStatusListener" in c
+                                    or "OnThermalStatusChangedListener" in c
+                                ):
+                                    target_files.append(fp)
+                        except Exception:
+                            pass
+
+    seen = set()
+    for target in target_files:
+        if not os.path.isfile(target):
+            continue
+        real_path = os.path.realpath(target)
+        if real_path in seen:
+            continue
+        seen.add(real_path)
+
+        with open(target, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        if (
+            "addThermalStatusListener" not in content
+            and "getCurrentThermalStatus" not in content
+            and "removeThermalStatusListener" not in content
+        ):
+            continue
+
+        new_content = content
+
+        # 1. getCurrentThermalStatus() 方法入口守卫：API 28 下直接返回 -1 (kUnknown)
+        if "getCurrentThermalStatus" in new_content:
+            if not re.search(r"int\s+getCurrentThermalStatus\s*\([^)]*\)\s*\{[^}]*SDK_INT", new_content):
+                new_content = re.sub(
+                    r"((?:@Override\s*\n\s*)?(?:public|protected|private)?\s*(?:static\s+)?int\s+getCurrentThermalStatus\s*\([^)]*\)\s*\{)",
+                    r"\1\n        if (android.os.Build.VERSION.SDK_INT < 29) {\n            return -1;\n        }",
+                    new_content,
+                )
+
+        # 2. 守卫 return powerManager.getCurrentThermalStatus();
+        new_content = re.sub(
+            r'([ \t]*)return\s+(\w+)\.getCurrentThermalStatus\s*\(\s*\)\s*;',
+            r'\1if (android.os.Build.VERSION.SDK_INT >= 29) {\n\1    try {\n\1        return \2.getCurrentThermalStatus();\n\1    } catch (Throwable ignored) {}\n\1}\n\1return -1;',
+            new_content,
+        )
+
+        # 3. 守卫 return ApiHelperForQ.getCurrentThermalStatus(powerManager);
+        new_content = re.sub(
+            r'([ \t]*)return\s+ApiHelperForQ\.getCurrentThermalStatus\s*\(\s*(\w+)\s*\)\s*;',
+            r'\1if (android.os.Build.VERSION.SDK_INT >= 29) {\n\1    try {\n\1        return ApiHelperForQ.getCurrentThermalStatus(\2);\n\1    } catch (Throwable ignored) {}\n\1}\n\1return -1;',
+            new_content,
+        )
+
+        # 4. 守卫赋值调用 status = powerManager.getCurrentThermalStatus();
+        new_content = re.sub(
+            r'([ \t]*)(\w+)\s*=\s*(\w+)\.getCurrentThermalStatus\s*\(\s*\)\s*;',
+            r'\1if (android.os.Build.VERSION.SDK_INT >= 29) {\n\1    try {\n\1        \2 = \3.getCurrentThermalStatus();\n\1    } catch (Throwable ignored) {}\n\1}',
+            new_content,
+        )
+
+        # 5. 逐行多行扫描守卫 addThermalStatusListener / removeThermalStatusListener
+        lines = new_content.split("\n")
+        patched_lines = []
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            if (
+                (".addThermalStatusListener(" in line or ".removeThermalStatusListener(" in line)
+                and "void " not in line
+                and "abstract " not in line
+            ):
+                has_guard = False
+                for k in range(max(0, i - 4), i):
+                    if any(kw in lines[k] for kw in ("SDK_INT >= 29", "VERSION_CODES.Q", "SDK_INT < 29", "SDK_INT >= Build.VERSION_CODES.Q")):
+                        has_guard = True
+                        break
+                if not has_guard:
+                    stmt_lines = [line]
+                    depth = line.count("(") - line.count(")")
+                    while (depth > 0 or ";" not in stmt_lines[-1]) and i + 1 < len(lines):
+                        i += 1
+                        stmt_lines.append(lines[i])
+                        depth += lines[i].count("(") - lines[i].count(")")
+                    indent = stmt_lines[0][: len(stmt_lines[0]) - len(stmt_lines[0].lstrip())]
+                    patched_lines.append(f"{indent}if (android.os.Build.VERSION.SDK_INT >= 29) {{")
+                    patched_lines.append(f"{indent}    try {{")
+                    for s in stmt_lines:
+                        patched_lines.append(f"{indent}        {s.lstrip()}")
+                    patched_lines.append(f"{indent}    }} catch (Throwable ignored) {{}}")
+                    patched_lines.append(f"{indent}}}")
+                    i += 1
+                    continue
+            patched_lines.append(line)
+            i += 1
+
+        new_content = "\n".join(patched_lines)
+
+        # 6. 将外部 if (powerManager != null) 扩展为 API 29 守卫
+        new_content = re.sub(
+            r'if\s*\(\s*(\w+)\s*!=\s*null\s*\)\s*\{\s*\n(\s*)if\s*\(\s*android\.os\.Build\.VERSION\.SDK_INT\s*>=\s*29\s*\)',
+            r'if (\1 != null && android.os.Build.VERSION.SDK_INT >= 29) {\n\2if (android.os.Build.VERSION.SDK_INT >= 29)',
+            new_content,
+        )
+
+        if new_content != content:
+            with open(target, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            print(f"Patched PowerMonitor thermal methods for API 28 compat in: {target}")
+
+
+def patch_path_utils_compat(src_dir: str) -> None:
+    # Android 9 缺少 MediaStore.getExternalVolumeNames(Context) 与
+    # StorageManager.getStorageVolume(Uri) API 29+ 方法。
+    target_files = [
+        os.path.join(src_dir, "base/android/java/src/org/chromium/base/PathUtils.java"),
+        os.path.join(src_dir, "chromium/src/base/android/java/src/org/chromium/base/PathUtils.java"),
+        os.path.join(src_dir, "src/base/android/java/src/org/chromium/base/PathUtils.java"),
+    ]
+
+    for sub in ["base", "chrome", "components", "android_webview"]:
+        scan_path = os.path.join(src_dir, sub)
+        if os.path.isdir(scan_path):
+            for root, _, files in os.walk(scan_path):
+                for f in files:
+                    if f.endswith(".java"):
+                        fp = os.path.join(root, f)
+                        try:
+                            with open(fp, "r", encoding="utf-8", errors="ignore") as jf:
+                                c = jf.read()
+                                if "getExternalDownloadVolumesNames" in c:
+                                    target_files.append(fp)
+                        except Exception:
+                            pass
+
+    seen = set()
+    for target in target_files:
+        if not os.path.isfile(target):
+            continue
+        real_path = os.path.realpath(target)
+        if real_path in seen:
+            continue
+        seen.add(real_path)
+
+        with open(target, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        if "getExternalDownloadVolumesNames" not in content:
+            continue
+
+        new_content = content
+        if not re.search(r"String\[\]\s+getExternalDownloadVolumesNames\s*\([^)]*\)\s*\{[^}]*SDK_INT", new_content):
+            new_content = re.sub(
+                r"((?:@Override\s*\n\s*)?(?:public|protected|private)?\s*(?:static\s+)?(?:@\w+\s+)?String\[\]\s+getExternalDownloadVolumesNames\s*\([^)]*\)\s*\{)",
+                r"\1\n        if (android.os.Build.VERSION.SDK_INT < 29) {\n            return new String[0];\n        }",
+                new_content,
+            )
+
+        if new_content != content:
+            with open(target, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            print(f"Patched PathUtils for API 28 compat in: {target}")
+
+
+def patch_intent_identifier_compat(src_dir: str) -> None:
+    # Android 9 (API 28) 缺少 Intent.setIdentifier(String) API 29+ 方法。
+    target_files = [
+        os.path.join(src_dir, "chrome/android/java/src/org/chromium/chrome/browser/notifications/NotificationIntentInterceptor.java"),
+        os.path.join(src_dir, "chromium/src/chrome/android/java/src/org/chromium/chrome/browser/notifications/NotificationIntentInterceptor.java"),
+        os.path.join(src_dir, "src/chrome/android/java/src/org/chromium/chrome/browser/notifications/NotificationIntentInterceptor.java"),
+    ]
+
+    for sub in ["chrome", "base", "components"]:
+        scan_path = os.path.join(src_dir, sub)
+        if os.path.isdir(scan_path):
+            for root, _, files in os.walk(scan_path):
+                for f in files:
+                    if f.endswith(".java"):
+                        fp = os.path.join(root, f)
+                        try:
+                            with open(fp, "r", encoding="utf-8", errors="ignore") as jf:
+                                c = jf.read()
+                                if ".setIdentifier(" in c:
+                                    target_files.append(fp)
+                        except Exception:
+                            pass
+
+    seen = set()
+    for target in target_files:
+        if not os.path.isfile(target):
+            continue
+        real_path = os.path.realpath(target)
+        if real_path in seen:
+            continue
+        seen.add(real_path)
+
+        with open(target, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        if ".setIdentifier(" not in content:
+            continue
+
+        lines = content.split("\n")
+        patched_lines = []
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            if ".setIdentifier(" in line and "abstract" not in line and "void " not in line:
+                has_guard = False
+                for k in range(max(0, i - 4), i):
+                    if any(kw in lines[k] for kw in ("SDK_INT >= 29", "VERSION_CODES.Q", "SDK_INT < 29")):
+                        has_guard = True
+                        break
+                if not has_guard:
+                    stmt_lines = [line]
+                    while ";" not in stmt_lines[-1] and i + 1 < len(lines):
+                        i += 1
+                        stmt_lines.append(lines[i])
+                    indent = stmt_lines[0][: len(stmt_lines[0]) - len(stmt_lines[0].lstrip())]
+                    patched_lines.append(f"{indent}if (android.os.Build.VERSION.SDK_INT >= 29) {{")
+                    patched_lines.append(f"{indent}    try {{")
+                    for s in stmt_lines:
+                        patched_lines.append(f"{indent}        {s.lstrip()}")
+                    patched_lines.append(f"{indent}    }} catch (Throwable ignored) {{}}")
+                    patched_lines.append(f"{indent}}}")
+                    i += 1
+                    continue
+            patched_lines.append(line)
+            i += 1
+
+        new_content = "\n".join(patched_lines)
+        if new_content != content:
+            with open(target, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            print(f"Patched Intent.setIdentifier for API 28 compat in: {target}")
+
+
 def main() -> None:
     src_dir = sys.argv[1] if len(sys.argv) > 1 else "."
 
@@ -1203,6 +1465,9 @@ def main() -> None:
     patch_url_bar_cursor_handles_compat(src_dir)
     patch_gesture_exclusion_rects_compat(src_dir)
     patch_system_bar_contrast_enforced_compat(src_dir)
+    patch_power_monitor_compat(src_dir)
+    patch_path_utils_compat(src_dir)
+    patch_intent_identifier_compat(src_dir)
     patch_content_app_aidl_deps(src_dir)
     patch_ahardwarebuffer_image_backing_factory(src_dir)
     patch_base_hardware_buffer_sources(src_dir)
