@@ -92,6 +92,16 @@ can_use_fast_local_build() {
         return 1
     fi
 
+    # 如果存在残留的 rebase/am 状态，必须进行完整源码重置，不能启用增量快速编译
+    if [ -d "$chromium_src_dir/.git/rebase-apply" ] || [ -d "$chromium_src_dir/.git/rebase-merge" ]; then
+        return 1
+    fi
+
+    # 必须确保基础 Vanadium 扩展文件存在，否则说明补丁未打完，不能启用增量快速编译
+    if [ ! -f "$chromium_src_dir/helium/chromium_src/chrome/browser/language/android/java/src/org/chromium/chrome/browser/language/settings/LanguageSettingsExt.java" ]; then
+        return 1
+    fi
+
     if [ ! -f "$version_file" ]; then
         return 1
     fi

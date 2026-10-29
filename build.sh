@@ -323,6 +323,11 @@ reset_chromium_checkout() {
     git am --abort >/dev/null 2>&1 || true
     git rebase --abort >/dev/null 2>&1 || true
     git merge --abort >/dev/null 2>&1 || true
+    local git_dir
+    git_dir=$(git rev-parse --git-dir 2>/dev/null || true)
+    if [ -n "$git_dir" ]; then
+        rm -rf "$git_dir/rebase-apply" "$git_dir/rebase-merge"
+    fi
 
     if git rev-parse --verify HEAD >/dev/null 2>&1; then
         git reset --hard
@@ -535,6 +540,7 @@ else
     replace "$VANADIUM_PATCH_DIR" "VANADIUM" "HELIUM"
     replace "$VANADIUM_PATCH_DIR" "Vanadium" "Helium"
     replace "$VANADIUM_PATCH_DIR" "vanadium" "helium"
+    rm -rf .git/rebase-apply .git/rebase-merge 2>/dev/null || true
     git am --whitespace=nowarn --keep-non-patch $VANADIUM_PATCH_DIR/*.patch
     cleanup_vanadium_patch_dir
     VANADIUM_PATCH_DIR=""
