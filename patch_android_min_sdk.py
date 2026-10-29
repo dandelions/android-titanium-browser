@@ -1016,6 +1016,124 @@ def patch_gesture_exclusion_rects_compat(src_dir: str) -> None:
             print(f"Patched View.setSystemGestureExclusionRects for API 28 compat in: {target}")
 
 
+def patch_system_bar_contrast_enforced_compat(src_dir: str) -> None:
+    # Android 9 (API 28) 缺少 Window.setNavigationBarContrastEnforced(boolean) 与
+    # Window.setStatusBarContrastEnforced(boolean) API 29+ 方法。
+    # EdgeToEdgeSystemBarColorHelper 与 WindowSystemBarColorHelper 无条件调用该方法，
+    # 在 Android 9 车机设备上直接引发：
+    # java.lang.NoSuchMethodError: No virtual method setNavigationBarContrastEnforced(Z)V in class Landroid/view/Window;
+    # 导致应用启动进入 ChromeTabbedActivity.onCreate 时致命闪退。
+    target_files = [
+        os.path.join(src_dir, "ui/edge_to_edge/android/java/src/org/chromium/ui/edge_to_edge/WindowSystemBarColorHelper.java"),
+        os.path.join(src_dir, "chromium/src/ui/edge_to_edge/android/java/src/org/chromium/ui/edge_to_edge/WindowSystemBarColorHelper.java"),
+        os.path.join(src_dir, "src/ui/edge_to_edge/android/java/src/org/chromium/ui/edge_to_edge/WindowSystemBarColorHelper.java"),
+        os.path.join(src_dir, "ui/edge_to_edge/android/java/src/org/chromium/ui/edge_to_edge/EdgeToEdgeSystemBarColorHelper.java"),
+        os.path.join(src_dir, "chromium/src/ui/edge_to_edge/android/java/src/org/chromium/ui/edge_to_edge/EdgeToEdgeSystemBarColorHelper.java"),
+        os.path.join(src_dir, "src/ui/edge_to_edge/android/java/src/org/chromium/ui/edge_to_edge/EdgeToEdgeSystemBarColorHelper.java"),
+    ]
+
+    for sub in ["ui", "chrome", "components", "android_webview"]:
+        scan_path = os.path.join(src_dir, sub)
+        if os.path.isdir(scan_path):
+            for root, _, files in os.walk(scan_path):
+                for f in files:
+                    if f.endswith(".java"):
+                        try:
+                            fp = os.path.join(root, f)
+                            with open(fp, "r", encoding="utf-8", errors="ignore") as jf:
+                                c = jf.read()
+                                if "setNavigationBarContrastEnforced" in c or "setStatusBarContrastEnforced" in c:
+                                    target_files.append(fp)
+                        except Exception:
+                            pass
+
+    seen = set()
+    for target in target_files:
+        if not os.path.isfile(target):
+            continue
+        real_path = os.path.realpath(target)
+        if real_path in seen:
+            continue
+        seen.add(real_path)
+
+        with open(target, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        if "setNavigationBarContrastEnforced" not in content and "setStatusBarContrastEnforced" not in content:
+            continue
+
+        new_content = content
+
+        # 1. 在 WindowSystemBarColorHelper 等直接操作 mWindow 的方法定义中加入 API 28 快速返回
+        if "setNavigationBarContrastEnforced" in new_content:
+            if not re.search(r"void\s+setNavigationBarContrastEnforced\s*\([^)]*\)\s*\{[^}]*SDK_INT", new_content):
+                new_content = re.sub(
+                    r"((?:@Override\s*\n\s*)?(?:public|protected|private)?\s*void\s+setNavigationBarContrastEnforced\s*\([^)]*\)\s*\{)",
+                    r"\1\n        if (android.os.Build.VERSION.SDK_INT < 29) {\n            return;\n        }",
+                    new_content,
+                )
+
+        if "setStatusBarContrastEnforced" in new_content:
+            if not re.search(r"void\s+setStatusBarContrastEnforced\s*\([^)]*\)\s*\{[^}]*SDK_INT", new_content):
+                new_content = re.sub(
+                    r"((?:@Override\s*\n\s*)?(?:public|protected|private)?\s*void\s+setStatusBarContrastEnforced\s*\([^)]*\)\s*\{)",
+                    r"\1\n        if (android.os.Build.VERSION.SDK_INT < 29) {\n            return;\n        }",
+                    new_content,
+                )
+
+        # 2. 守卫 mWindow.set*ContrastEnforced 直接调用（针对 WindowSystemBarColorHelper）
+        new_content = re.sub(
+            r'([ \t]*)mWindow\.setNavigationBarContrastEnforced\s*\(\s*(\w+)\s*\)\s*;',
+            r'\1if (android.os.Build.VERSION.SDK_INT >= 29) {\n\1    try {\n\1        mWindow.setNavigationBarContrastEnforced(\2);\n\1    } catch (Throwable ignored) {}\n\1}',
+            new_content
+        )
+        new_content = re.sub(
+            r'([ \t]*)mWindow\.setStatusBarContrastEnforced\s*\(\s*(\w+)\s*\)\s*;',
+            r'\1if (android.os.Build.VERSION.SDK_INT >= 29) {\n\1    try {\n\1        mWindow.setStatusBarContrastEnforced(\2);\n\1    } catch (Throwable ignored) {}\n\1}',
+            new_content
+        )
+
+        # 3. 逐行扫描守卫其它调用（如 EdgeToEdgeSystemBarColorHelper 或外部组件调用）
+        lines = new_content.split("\n")
+        patched_lines = []
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            if (
+                (".setNavigationBarContrastEnforced(" in line or ".setStatusBarContrastEnforced(" in line)
+                and "void set" not in line
+                and "abstract" not in line
+            ):
+                has_guard = False
+                for k in range(max(0, i - 4), i):
+                    if any(kw in lines[k] for kw in ("SDK_INT >= 29", "VERSION_CODES.Q", "SDK_INT < 29", "SDK_INT >= Build.VERSION_CODES.Q")):
+                        has_guard = True
+                        break
+                if not has_guard:
+                    stmt_lines = [line]
+                    while ";" not in stmt_lines[-1] and i + 1 < len(lines):
+                        i += 1
+                        stmt_lines.append(lines[i])
+                    indent = stmt_lines[0][: len(stmt_lines[0]) - len(stmt_lines[0].lstrip())]
+                    patched_lines.append(f"{indent}if (android.os.Build.VERSION.SDK_INT >= 29) {{")
+                    patched_lines.append(f"{indent}    try {{")
+                    for s in stmt_lines:
+                        patched_lines.append(f"    {s}")
+                    patched_lines.append(f"{indent}    }} catch (Throwable ignored) {{}}")
+                    patched_lines.append(f"{indent}}}")
+                    i += 1
+                    continue
+            patched_lines.append(line)
+            i += 1
+
+        new_content = "\n".join(patched_lines)
+
+        if new_content != content:
+            with open(target, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            print(f"Patched SystemBar contrast enforced methods for API 28 compat in: {target}")
+
+
 def main() -> None:
     src_dir = sys.argv[1] if len(sys.argv) > 1 else "."
 
@@ -1084,6 +1202,7 @@ def main() -> None:
     patch_strict_mode_credential_protected(src_dir)
     patch_url_bar_cursor_handles_compat(src_dir)
     patch_gesture_exclusion_rects_compat(src_dir)
+    patch_system_bar_contrast_enforced_compat(src_dir)
     patch_content_app_aidl_deps(src_dir)
     patch_ahardwarebuffer_image_backing_factory(src_dir)
     patch_base_hardware_buffer_sources(src_dir)
