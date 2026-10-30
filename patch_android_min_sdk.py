@@ -1600,6 +1600,220 @@ def patch_media_codec_info_compat(src_dir: str) -> None:
             print(f"Patched MediaCodec API 29+ methods for API 28 compat in: {target}")
 
 
+def patch_default_browser_promo_compat(src_dir: str) -> None:
+    # Android 9 (API 28) 缺少 RoleManager (Context.ROLE_SERVICE / android.app.role.RoleManager) API 29+。
+    # Chromium 156 在 DefaultBrowserPromoUtils 与 DefaultBrowserPromoManager 中直接使用 RoleManager，
+    # 在 Android 9 车机设备上启动或切换标签页时会导致：
+    # java.lang.NoClassDefFoundError: Failed resolution of: Landroid/app/role/RoleManager;
+    #   at DefaultBrowserPromoUtils.isRoleAvailableButNotHeld(...)
+    # 引发闪退。
+    target_files = [
+        os.path.join(
+            src_dir,
+            "chrome/browser/ui/android/default_browser_promo/java/src/org/chromium/chrome/browser/ui/default_browser_promo/DefaultBrowserPromoUtils.java",
+        ),
+        os.path.join(
+            src_dir,
+            "chromium/src/chrome/browser/ui/android/default_browser_promo/java/src/org/chromium/chrome/browser/ui/default_browser_promo/DefaultBrowserPromoUtils.java",
+        ),
+        os.path.join(
+            src_dir,
+            "src/chrome/browser/ui/android/default_browser_promo/java/src/org/chromium/chrome/browser/ui/default_browser_promo/DefaultBrowserPromoUtils.java",
+        ),
+        os.path.join(
+            src_dir,
+            "chrome/browser/ui/android/default_browser_promo/java/src/org/chromium/chrome/browser/ui/default_browser_promo/DefaultBrowserPromoManager.java",
+        ),
+        os.path.join(
+            src_dir,
+            "chromium/src/chrome/browser/ui/android/default_browser_promo/java/src/org/chromium/chrome/browser/ui/default_browser_promo/DefaultBrowserPromoManager.java",
+        ),
+        os.path.join(
+            src_dir,
+            "src/chrome/browser/ui/android/default_browser_promo/java/src/org/chromium/chrome/browser/ui/default_browser_promo/DefaultBrowserPromoManager.java",
+        ),
+    ]
+
+    for sub in ["chrome/browser/ui/android", "chrome/android", "chrome"]:
+        scan_path = os.path.join(src_dir, sub)
+        if os.path.isdir(scan_path):
+            for root, _, files in os.walk(scan_path):
+                for f in files:
+                    if f.endswith(".java"):
+                        full_f = os.path.join(root, f)
+                        if full_f not in target_files:
+                            try:
+                                with open(full_f, "r", encoding="utf-8", errors="ignore") as jf:
+                                    snippet = jf.read()
+                                if "isRoleAvailableButNotHeld" in snippet or "promoByRoleManager" in snippet:
+                                    target_files.append(full_f)
+                            except Exception:
+                                pass
+
+    seen = set()
+    for target in target_files:
+        if not os.path.isfile(target):
+            continue
+        real_path = os.path.realpath(target)
+        if real_path in seen:
+            continue
+        seen.add(real_path)
+
+        with open(target, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        new_content = content
+
+        # 1. Patch DefaultBrowserPromoUtils.java: isRoleAvailableButNotHeld
+        if "isRoleAvailableButNotHeld" in new_content:
+            pattern_utils = r"private\s+boolean\s+isRoleAvailableButNotHeld\s*\(\s*Context\s+context\s*\)\s*\{[\s\S]*?return\s+isRoleAvailable\s*&&\s*!isRoleHeld\s*;\s*\}"
+            replacement_utils = (
+                "private boolean isRoleAvailableButNotHeld(Context context) {\n"
+                "        if (android.os.Build.VERSION.SDK_INT < 29) {\n"
+                "            return false;\n"
+                "        }\n"
+                "        try {\n"
+                '            Object roleManager = context.getSystemService("role");\n'
+                "            if (roleManager == null) return false;\n"
+                "            java.lang.reflect.Method isAvailableMethod =\n"
+                '                    roleManager.getClass().getMethod("isRoleAvailable", String.class);\n'
+                "            java.lang.reflect.Method isHeldMethod =\n"
+                '                    roleManager.getClass().getMethod("isRoleHeld", String.class);\n'
+                "            boolean isRoleAvailable =\n"
+                '                    (Boolean) isAvailableMethod.invoke(roleManager, "android.app.role.BROWSER");\n'
+                "            boolean isRoleHeld =\n"
+                '                    (Boolean) isHeldMethod.invoke(roleManager, "android.app.role.BROWSER");\n'
+                "            return isRoleAvailable && !isRoleHeld;\n"
+                "        } catch (Throwable t) {\n"
+                "            return false;\n"
+                "        }\n"
+                "    }"
+            )
+            if "android.os.Build.VERSION.SDK_INT < 29" not in new_content:
+                new_content = re.sub(pattern_utils, replacement_utils, new_content)
+
+        # 2. Patch DefaultBrowserPromoManager.java: promoByRoleManager
+        if "void promoByRoleManager" in new_content:
+            if "android.os.Build.VERSION.SDK_INT < 29" not in new_content:
+                new_content = re.sub(
+                    r'(void\s+promoByRoleManager\s*\(\s*\)\s*\{)',
+                    r'\1\n        if (android.os.Build.VERSION.SDK_INT < 29) {\n            return;\n        }',
+                    new_content,
+                )
+
+        if new_content != content:
+            with open(target, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            print(f"Patched RoleManager compat for API 28 in: {target}")
+
+
+def patch_compositor_view_compat(src_dir: str) -> None:
+    # Android 9 (API 28) 缺少 SurfaceControl.TransactionCommittedListener 接口 (API 33+)。
+    # CompositorView.java 中使用 lambda 直接实现 TransactionCommittedListener 会导致 D8 生成
+    # implements SurfaceControl$TransactionCommittedListener 的合成类。
+    # 在 Android 9 车机设备上类验证阶段抛出：
+    # java.lang.NoClassDefFoundError: Failed resolution of: Landroid/view/SurfaceControl$TransactionCommittedListener;
+    # 导致 CompositorViewHolder 构造或类初始化失败。
+    target_files = [
+        os.path.join(
+            src_dir,
+            "chrome/android/java/src/org/chromium/chrome/browser/compositor/CompositorView.java",
+        ),
+        os.path.join(
+            src_dir,
+            "chromium/src/chrome/android/java/src/org/chromium/chrome/browser/compositor/CompositorView.java",
+        ),
+        os.path.join(
+            src_dir,
+            "src/chrome/android/java/src/org/chromium/chrome/browser/compositor/CompositorView.java",
+        ),
+    ]
+
+    for sub in ["chrome/android", "chrome", "content"]:
+        scan_path = os.path.join(src_dir, sub)
+        if os.path.isdir(scan_path):
+            for root, _, files in os.walk(scan_path):
+                for f in files:
+                    if f.endswith(".java"):
+                        full_f = os.path.join(root, f)
+                        if full_f not in target_files:
+                            try:
+                                with open(full_f, "r", encoding="utf-8", errors="ignore") as jf:
+                                    snippet = jf.read()
+                                if "addTransactionCommittedListener" in snippet:
+                                    target_files.append(full_f)
+                            except Exception:
+                                pass
+
+    seen = set()
+    for target in target_files:
+        if not os.path.isfile(target):
+            continue
+        real_path = os.path.realpath(target)
+        if real_path in seen:
+            continue
+        seen.add(real_path)
+
+        with open(target, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        if "addTransactionCommittedListener" not in content:
+            continue
+
+        new_content = content
+
+        # 将直接实现 TransactionCommittedListener 的 lambda 改为运行时动态代理 Proxy，
+        # 避免在 API 28 平台生成包含不可解析接口的外部合成类（避免 NoClassDefFoundError）。
+        pattern_comp = (
+            r"Transaction\s+t\s*=\s*new\s+Transaction\(\s*\)\s*;\s*\n"
+            r"\s*t\.addTransactionCommittedListener\s*\(\s*\n"
+            r"\s*ThreadUtils::postOnUiThread\s*,\s*\n"
+            r"\s*\(\s*\)\s*->\s*\{[\s\S]*?\}\s*\)\s*;\s*\n"
+            r"\s*rootSurfaceControl\.applyTransactionOnDraw\s*\(\s*t\s*\)\s*;"
+        )
+
+        replacement_comp = (
+            "Transaction t = new Transaction();\n"
+            "            try {\n"
+            "                Class<?> listenerClass =\n"
+            '                        Class.forName("android.view.SurfaceControl$TransactionCommittedListener");\n'
+            "                Object listener =\n"
+            "                        java.lang.reflect.Proxy.newProxyInstance(\n"
+            "                                CompositorView.class.getClassLoader(),\n"
+            "                                new Class<?>[] {listenerClass},\n"
+            "                                (proxy, method, args) -> {\n"
+            '                                    if ("onTransactionCommitted".equals(method.getName())) {\n'
+            "                                        if (seqNo == mResizeSeqNo) {\n"
+            "                                            unpauseDraw();\n"
+            "                                        }\n"
+            "                                    }\n"
+            "                                    return null;\n"
+            "                                });\n"
+            "                java.lang.reflect.Method addListenerMethod =\n"
+            "                        t.getClass()\n"
+            "                                .getMethod(\n"
+            '                                        "addTransactionCommittedListener",\n'
+            "                                        java.util.concurrent.Executor.class,\n"
+            "                                        listenerClass);\n"
+            "                addListenerMethod.invoke(\n"
+            "                        t,\n"
+            "                        (java.util.concurrent.Executor) ThreadUtils::postOnUiThread,\n"
+            "                        listener);\n"
+            "            } catch (Throwable ignored) {\n"
+            "                unpauseDraw();\n"
+            "            }\n"
+            "            rootSurfaceControl.applyTransactionOnDraw(t);"
+        )
+
+        if "Proxy.newProxyInstance" not in new_content:
+            new_content = re.sub(pattern_comp, replacement_comp, new_content)
+
+        if new_content != content:
+            with open(target, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            print(f"Patched CompositorView TransactionCommittedListener for API 28 in: {target}")
+
+
 def main() -> None:
     src_dir = sys.argv[1] if len(sys.argv) > 1 else "."
 
@@ -1680,6 +1894,8 @@ def main() -> None:
     patch_gpu_video_encode_accelerator_factory(src_dir)
     patch_ndk_audio_encoder(src_dir)
     patch_media_codec_info_compat(src_dir)
+    patch_default_browser_promo_compat(src_dir)
+    patch_compositor_view_compat(src_dir)
 
     print("SDK version patch (minSdk: 28) & car-compat checks complete.")
 
