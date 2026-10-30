@@ -900,6 +900,59 @@ def patch_url_bar_cursor_handles_compat(src_dir: str) -> None:
             print(f"Patched UrlBar cursor/select handle drawables for API 28 compat in: {target}")
 
 
+def patch_url_bar_multiline_scroll_compat(src_dir: str) -> None:
+    # Android 9 (API 28) 缺少 TextView.isHorizontallyScrollable() API 29+ 方法。
+    # 在 UrlBar.java 中 updateUrlBarForMultilineInput() 调用了 isHorizontallyScrollable()，
+    # 在 Android 9 车机设备上直接引发 NoSuchMethodError 导致 Omnibox 初始化/输入时崩溃。
+    target_files = [
+        os.path.join(src_dir, "chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/UrlBar.java"),
+        os.path.join(src_dir, "chromium/src/chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/UrlBar.java"),
+        os.path.join(src_dir, "src/chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/UrlBar.java"),
+    ]
+    for sub in ["chrome/browser/ui/android", "chrome/android", "chrome"]:
+        scan_path = os.path.join(src_dir, sub)
+        if os.path.isdir(scan_path):
+            for root, _, files in os.walk(scan_path):
+                for f in files:
+                    if f == "UrlBar.java" or (f.endswith(".java") and "UrlBar" in f):
+                        full_f = os.path.join(root, f)
+                        if full_f not in target_files:
+                            try:
+                                with open(full_f, "r", encoding="utf-8", errors="ignore") as jf:
+                                    snippet = jf.read()
+                                if "isHorizontallyScrollable" in snippet:
+                                    target_files.append(full_f)
+                            except Exception:
+                                pass
+
+    for target in target_files:
+        if not os.path.isfile(target):
+            continue
+        with open(target, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        if "isHorizontallyScrollable" not in content:
+            continue
+
+        new_content = content
+
+        # Check if isHorizontallyScrollable() is already guarded by SDK check
+        if re.search(r'SDK_INT\s*>=\s*29[\s\S]{1,100}isHorizontallyScrollable\(\)', new_content):
+            continue
+
+        # 守卫 updateUrlBarForMultilineInput 中对 isHorizontallyScrollable() 的无条件调用
+        new_content = re.sub(
+            r'([ \t]*)if\s*\(\s*wantWrap\s*==\s*!isHorizontallyScrollable\(\)\s*\)\s*(?:return;|\{\s*return;\s*\})',
+            r'\1if (android.os.Build.VERSION.SDK_INT >= 29) {\n\1    try {\n\1        if (wantWrap == !isHorizontallyScrollable()) return;\n\1    } catch (Throwable ignored) {}\n\1}',
+            new_content,
+        )
+
+        if new_content != content:
+            with open(target, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            print(f"Patched UrlBar multiline scroll for API 28 compat in: {target}")
+
+
 def patch_gesture_exclusion_rects_compat(src_dir: str) -> None:
     # Android 9 (API 28) 缺少 View.setSystemGestureExclusionRects(List<Rect>) API 29+ 方法。
     # ToolbarControlContainer 重写了该方法并在 updateSystemGestureExclusions() 等处无条件调用
@@ -1444,6 +1497,109 @@ def patch_intent_identifier_compat(src_dir: str) -> None:
             print(f"Patched Intent.setIdentifier for API 28 compat in: {target}")
 
 
+def patch_media_codec_info_compat(src_dir: str) -> None:
+    # Android 9 (API 28) 缺少 MediaCodecInfo 的 API 29+ 方法：
+    # - info.isHardwareAccelerated()
+    # - info.isSoftwareOnly()
+    # - info.isAlias()
+    # 在 MediaCodecUtil.java 和 VideoAcceleratorUtil.java 中直接调用这些方法会导致
+    # java.lang.NoSuchMethodError 致命闪退，特别是在 GPU 进程查询编解码器与视频播放/录制初始化阶段。
+    target_files = [
+        os.path.join(src_dir, "media/base/android/java/src/org/chromium/media/MediaCodecUtil.java"),
+        os.path.join(src_dir, "media/base/android/java/src/org/chromium/media/VideoAcceleratorUtil.java"),
+        os.path.join(src_dir, "chromium/src/media/base/android/java/src/org/chromium/media/MediaCodecUtil.java"),
+        os.path.join(src_dir, "chromium/src/media/base/android/java/src/org/chromium/media/VideoAcceleratorUtil.java"),
+        os.path.join(src_dir, "src/media/base/android/java/src/org/chromium/media/MediaCodecUtil.java"),
+        os.path.join(src_dir, "src/media/base/android/java/src/org/chromium/media/VideoAcceleratorUtil.java"),
+    ]
+
+    for sub in ["media/base/android", "media"]:
+        scan_path = os.path.join(src_dir, sub)
+        if os.path.isdir(scan_path):
+            for root, _, files in os.walk(scan_path):
+                for f in files:
+                    if f in ("MediaCodecUtil.java", "VideoAcceleratorUtil.java") or f.endswith(".java"):
+                        full_f = os.path.join(root, f)
+                        if full_f not in target_files:
+                            try:
+                                with open(full_f, "r", encoding="utf-8", errors="ignore") as jf:
+                                    snippet = jf.read()
+                                if any(kw in snippet for kw in ("isHardwareAccelerated", "isSoftwareOnly", "isAlias")):
+                                    target_files.append(full_f)
+                            except Exception:
+                                pass
+
+    for target in target_files:
+        if not os.path.isfile(target):
+            continue
+        with open(target, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        new_content = content
+
+        # 1. Patch MediaCodecUtil.java:
+        # public static boolean isSoftwareCodec(MediaCodecInfo info)
+        if ("isHardwareAccelerated()" in new_content or "isSoftwareOnly()" in new_content) and not re.search(
+            r'SDK_INT\s*>=\s*29[\s\S]{1,100}isHardwareAccelerated\(\)', new_content
+        ):
+            new_content = re.sub(
+                r'([ \t]*)if\s*\(\s*!info\.isHardwareAccelerated\(\)\s*\|\|\s*info\.isSoftwareOnly\(\)\s*\)\s*(?:\n[ \t]*)?return\s+true;',
+                r'\1if (android.os.Build.VERSION.SDK_INT >= 29) {\n\1    try {\n\1        if (!info.isHardwareAccelerated() || info.isSoftwareOnly()) return true;\n\1    } catch (Throwable ignored) {}\n\1}',
+                new_content,
+            )
+
+        # 2. Patch VideoAcceleratorUtil.java:
+        if "isCodecAlias" not in new_content and re.search(r'class\s+VideoAcceleratorUtil\b', new_content):
+            helpers = (
+                "\n"
+                "    private static boolean isCodecAlias(MediaCodecInfo codecInfo) {\n"
+                "        if (android.os.Build.VERSION.SDK_INT >= 29) {\n"
+                "            try {\n"
+                "                return codecInfo.isAlias();\n"
+                "            } catch (Throwable ignored) {}\n"
+                "        }\n"
+                "        return false;\n"
+                "    }\n"
+                "\n"
+                "    private static boolean isCodecHardwareAccelerated(MediaCodecInfo codecInfo) {\n"
+                "        if (android.os.Build.VERSION.SDK_INT >= 29) {\n"
+                "            try {\n"
+                "                return codecInfo.isHardwareAccelerated();\n"
+                "            } catch (Throwable ignored) {}\n"
+                "        }\n"
+                "        return !MediaCodecUtil.isSoftwareCodec(codecInfo);\n"
+                "    }\n"
+                "\n"
+                "    private static boolean isCodecSoftwareOnly(MediaCodecInfo codecInfo) {\n"
+                "        if (android.os.Build.VERSION.SDK_INT >= 29) {\n"
+                "            try {\n"
+                "                return codecInfo.isSoftwareOnly();\n"
+                "            } catch (Throwable ignored) {}\n"
+                "        }\n"
+                "        return MediaCodecUtil.isSoftwareCodec(codecInfo);\n"
+                "    }\n"
+            )
+
+            # Replace call sites first (using codecInfo in helpers guarantees no recursion)
+            new_content = re.sub(r'isAtLeastQ\s*&&\s*info\.isAlias\(\)', 'isCodecAlias(info)', new_content)
+            new_content = re.sub(r'\binfo\.isAlias\(\)', 'isCodecAlias(info)', new_content)
+            new_content = re.sub(r'\binfo\.isHardwareAccelerated\(\)', 'isCodecHardwareAccelerated(info)', new_content)
+            new_content = re.sub(r'\binfo\.isSoftwareOnly\(\)', 'isCodecSoftwareOnly(info)', new_content)
+
+            # Insert helpers after class declaration
+            new_content = re.sub(
+                r'((?:public\s+|protected\s+|private\s+)?class\s+VideoAcceleratorUtil\b[^{]*\{)',
+                r'\1' + helpers,
+                new_content,
+                count=1,
+            )
+
+        if new_content != content:
+            with open(target, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            print(f"Patched MediaCodec API 29+ methods for API 28 compat in: {target}")
+
+
 def main() -> None:
     src_dir = sys.argv[1] if len(sys.argv) > 1 else "."
 
@@ -1511,6 +1667,7 @@ def main() -> None:
     patch_activity_lifecycle_callbacks_compat(src_dir)
     patch_strict_mode_credential_protected(src_dir)
     patch_url_bar_cursor_handles_compat(src_dir)
+    patch_url_bar_multiline_scroll_compat(src_dir)
     patch_gesture_exclusion_rects_compat(src_dir)
     patch_system_bar_contrast_enforced_compat(src_dir)
     patch_power_monitor_compat(src_dir)
@@ -1522,6 +1679,7 @@ def main() -> None:
     patch_ndk_video_encode_accelerator(src_dir)
     patch_gpu_video_encode_accelerator_factory(src_dir)
     patch_ndk_audio_encoder(src_dir)
+    patch_media_codec_info_compat(src_dir)
 
     print("SDK version patch (minSdk: 28) & car-compat checks complete.")
 
