@@ -17,13 +17,29 @@ sed -i 's|<data android:mimeType="message/rfc822"/>|<data android:mimeType="mess
 sed -i '/com.google.ar.core.min_apk_version/d' third_party/arcore-android-sdk-client/AndroidManifest_basesplit.xml
 # sed -i 's|Google LLC|jqssun, Google LLC|' chrome/browser/ui/android/strings/android_chrome_strings.grd
 
-cp -r $SCRIPT_DIR/extensions/dist helium/
-cp $SCRIPT_DIR/extensions/stage_bundled_extensions.inc helium/dist/
-sed -i 's|"//components/privacy_sandbox/privacy_sandbox_attestations/preload:privacy_sandbox_attestations_assets",|&"//helium/dist:extension_assets",|' chrome/android/BUILD.gn
+if [ -d "$SCRIPT_DIR/extensions/dist" ]; then
+    mkdir -p helium
+    cp -r $SCRIPT_DIR/extensions/dist helium/
+fi
+if [ -f "$SCRIPT_DIR/extensions/stage_bundled_extensions.inc" ]; then
+    mkdir -p helium/dist
+    cp $SCRIPT_DIR/extensions/stage_bundled_extensions.inc helium/dist/
+fi
+grep -q '//helium/dist:extension_assets' chrome/android/BUILD.gn || sed -i 's|"//components/privacy_sandbox/privacy_sandbox_attestations/preload:privacy_sandbox_attestations_assets",|&"//helium/dist:extension_assets",|' chrome/android/BUILD.gn
 sed -i 's|if (!base::PathService::Get(base::DIR_MODULE, \&cur)) {|if (!base::PathService::Get(chrome::DIR_USER_DATA, \&cur)) {|' chrome/common/chrome_paths.cc
-sed -i 's|#include "extensions/buildflags/buildflags.h"|&\n#include "helium/dist/stage_bundled_extensions.inc"|' chrome/browser/extensions/external_pref_loader.cc
-sed -i 's|ReadStandaloneExtensionPrefFiles(prefs);|&StageBundledExtensions(base_path_id_, base_path_, prefs);|' chrome/browser/extensions/external_pref_loader.cc
-sed -i 's|if (extension.location() == mojom::ManifestLocation::kCommandLine) {|if (extension.location() == mojom::ManifestLocation::kExternalPref) return false;\n&|' chrome/browser/extensions/extension_safety_check_utils.cc
+grep -q 'helium/dist/stage_bundled_extensions.inc' chrome/browser/extensions/external_pref_loader.cc || sed -i 's|#include "extensions/buildflags/buildflags.h"|&\n#include "helium/dist/stage_bundled_extensions.inc"|' chrome/browser/extensions/external_pref_loader.cc
+grep -q 'StageBundledExtensions' chrome/browser/extensions/external_pref_loader.cc || sed -i 's|ReadStandaloneExtensionPrefFiles(prefs);|&StageBundledExtensions(base_path_id_, base_path_, prefs);|' chrome/browser/extensions/external_pref_loader.cc
+grep -q 'location() == mojom::ManifestLocation::kExternalPref' chrome/browser/extensions/extension_safety_check_utils.cc || sed -i 's|if (extension.location() == mojom::ManifestLocation::kCommandLine) {|if (extension.location() == mojom::ManifestLocation::kExternalPref) return false;\n&|' chrome/browser/extensions/extension_safety_check_utils.cc
+
+# Protect bundled external extensions from uninstallation (policy level & WebUI hide)
+grep -q 'build/build_config.h' chrome/browser/extensions/standard_management_policy_provider.cc || sed -i '1i#include "build/build_config.h"' chrome/browser/extensions/standard_management_policy_provider.cc
+grep -q 'ManifestLocation::kExternalPref' chrome/browser/extensions/standard_management_policy_provider.cc || perl -0pi -e 's~(bool StandardManagementPolicyProvider::MustRemainInstalled\(\s*const Extension\* extension,\s*std::u16string\* error\) const \{\n)~$1#if BUILDFLAG(IS_ANDROID)\n  if (extension->location() == mojom::ManifestLocation::kExternalPref) {\n    if (error) {\n      *error = l10n_util::GetStringFUTF16(\n          IDS_EXTENSION_CANT_UNINSTALL_POLICY_REQUIRED,\n          base::UTF8ToUTF16(extension->name()));\n    }\n    return true;\n  }\n#endif\n~' chrome/browser/extensions/standard_management_policy_provider.cc
+
+# Auto-revive historically uninstalled bundled extensions on startup
+grep -q 'ClearExternalUninstallBit(info.extension_id)' chrome/browser/extensions/extension_service.cc || perl -0pi -e 's~(bool ExtensionService::OnExternalExtensionFileFound\(\s*const ExternalInstallInfoFile& info\) \{\s*DCHECK_CURRENTLY_ON\(BrowserThread::UI\);\s*CHECK\(crx_file::id_util::IdIsValid\(info\.extension_id\)\);\n)~$1#if BUILDFLAG(IS_ANDROID)\n  if (info.crx_location == mojom::ManifestLocation::kExternalPref)\n    extension_prefs_->ClearExternalUninstallBit(info.extension_id);\n#endif\n~' chrome/browser/extensions/extension_service.cc
+
+# Disallow uninstalling bundled extensions in ExtensionService::UninstallExtension
+grep -q 'reason != UNINSTALL_REASON_REINSTALL' chrome/browser/extensions/extension_service.cc || perl -0pi -e 's~(\n  bool external_uninstall =[\s\S]*?\(reason == UNINSTALL_REASON_ORPHANED_SHARED_MODULE\);\n)~$1#if BUILDFLAG(IS_ANDROID)\n  if (extension->location() == mojom::ManifestLocation::kExternalPref &&\n      reason != UNINSTALL_REASON_REINSTALL) {\n    ExtensionRegistry::Get(profile_)->TriggerOnUninstallationDenied(\n        extension.get());\n    return false;\n  }\n#endif\n~' chrome/browser/extensions/extension_service.cc
 
 sed -i 's|if (!_omit_dex) {|if (_is_base_module \&\& !_omit_dex) {|' build/config/android/rules.gni
 sed -i '/safelyRemovePreference(prefFragment/d' helium/chromium_src/chrome/browser/language/android/java/src/org/chromium/chrome/browser/language/settings/LanguageSettingsExt.java # language
