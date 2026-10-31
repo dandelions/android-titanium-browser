@@ -8,6 +8,7 @@ DEFAULT_PROXY="${BUILD_PROXY:-${https_proxy:-${http_proxy:-${HTTPS_PROXY:-${HTTP
 CAR_COMPAT="${CAR_COMPAT:-0}"
 BUILD_OLD_ANDROID="${BUILD_OLD_ANDROID:-1}"
 BUILD_ARM="${BUILD_ARM:-1}"
+BUILD_OLD_ANDROID_ARM="${BUILD_OLD_ANDROID_ARM:-0}"
 BUILD_ARM64="${BUILD_ARM64:-1}"
 BUILD_AAB="${BUILD_AAB:-0}"
 NINJA_JOBS="${NINJA_JOBS:-14}"
@@ -16,6 +17,7 @@ USER_FAST_LOCAL_BUILD="${FAST_LOCAL_BUILD:-}"
 AUTO_RELEASE="${AUTO_RELEASE:-1}"
 SKIP_IF_EXISTS="${SKIP_IF_EXISTS:-1}"
 FORCE_REBUILD="${FORCE_REBUILD:-0}"
+STRICT_COMMIT_MATCH="${STRICT_COMMIT_MATCH:-0}"
 ENABLE_V2_SIGNING="${ENABLE_V2_SIGNING:-1}"
 
 # 导出代理环境变量，供后续 git / gh / curl 等工具使用
@@ -144,7 +146,12 @@ check_branch_artifacts() {
     prefix="$(get_branch_prefix "$branch")"
     local release_dir="$SCRIPT_DIR/chromium/src/out/release"
 
-    if [ "$BUILD_ARM" = "1" ] && [ ! -s "$release_dir/${prefix}-armeabi-v7a.apk" ]; then
+    local branch_arm="$BUILD_ARM"
+    if [ "$branch" = "old-android" ]; then
+        branch_arm="$BUILD_OLD_ANDROID_ARM"
+    fi
+
+    if [ "$branch_arm" = "1" ] && [ ! -s "$release_dir/${prefix}-armeabi-v7a.apk" ]; then
         return 1
     fi
     if [ "$BUILD_ARM64" = "1" ] && [ ! -s "$release_dir/${prefix}-arm64-v8a.apk" ]; then
@@ -193,26 +200,36 @@ is_branch_up_to_date() {
         return 1
     fi
 
-    # 2. 检查记录的 commit stamp 文件是否存在
-    if [ ! -f "$stamp_file" ]; then
-        return 1
+    # 产物存在且校验通过。在 SKIP_IF_EXISTS=1 模式下跳过重新编译，
+    # 避免因日常脚本调整、文档改动或子模块对齐等非源码提交导致已有成品被无谓删除和全量重编。
+    # 若显式指定 STRICT_COMMIT_MATCH=1，则额外严格比对 commit stamp 与分支 HEAD。
+    if [ "${STRICT_COMMIT_MATCH:-0}" = "1" ]; then
+        if [ ! -f "$stamp_file" ]; then
+            return 1
+        fi
+
+        local current_head
+        current_head="$(git rev-parse "refs/heads/$branch" 2>/dev/null || true)"
+        if [ -z "$current_head" ]; then
+            return 1
+        fi
+
+        local built_head
+        built_head="$(cat "$stamp_file" 2>/dev/null || true)"
+        if [ "$built_head" != "$current_head" ]; then
+            return 1
+        fi
+    else
+        # 记录或补充 commit stamp，确保状态有迹可循
+        local current_head
+        current_head="$(git rev-parse "refs/heads/$branch" 2>/dev/null || true)"
+        if [ -n "$current_head" ] && [ ! -f "$stamp_file" ]; then
+            mkdir -p "$SCRIPT_DIR/chromium/src/out/release"
+            printf '%s\n' "$current_head" > "$stamp_file" 2>/dev/null || true
+        fi
     fi
 
-    # 3. 获取目标分支当前最新的 commit
-    local current_head
-    current_head="$(git rev-parse "refs/heads/$branch" 2>/dev/null || true)"
-    if [ -z "$current_head" ]; then
-        return 1
-    fi
-
-    # 4. 对比已编译记录的 commit 是否与目标分支最新 commit 一致
-    local built_head
-    built_head="$(cat "$stamp_file" 2>/dev/null || true)"
-    if [ "$built_head" = "$current_head" ]; then
-        return 0
-    fi
-
-    return 1
+    return 0
 }
 
 switch_branch() {
@@ -358,12 +375,14 @@ build_branch() {
         fi
     fi
 
-    # 仅针对 old-android 分支自动启用 CAR_COMPAT=1 与 DISABLE_V3_SIGNING=1；main 与 lemur-style-app-menu 保持原样开启 V3
+    # 仅针对 old-android 分支自动启用 CAR_COMPAT=1 与 DISABLE_V3_SIGNING=1，且默认不编译 32 位（ARM）包
     local branch_car_compat="${CAR_COMPAT:-0}"
     local branch_disable_v3="${DISABLE_V3_SIGNING:-0}"
+    local branch_arm="$BUILD_ARM"
     if [ "$branch" = "old-android" ]; then
         branch_car_compat="1"
         branch_disable_v3="1"
+        branch_arm="$BUILD_OLD_ANDROID_ARM"
     fi
 
     CAR_COMPAT="$branch_car_compat" \
@@ -374,7 +393,7 @@ build_branch() {
     https_proxy="$DEFAULT_PROXY" \
     HTTP_PROXY="$DEFAULT_PROXY" \
     HTTPS_PROXY="$DEFAULT_PROXY" \
-    BUILD_ARM="$BUILD_ARM" \
+    BUILD_ARM="$branch_arm" \
     BUILD_ARM64="$BUILD_ARM64" \
     BUILD_AAB="$BUILD_AAB" \
     NINJA_JOBS="$NINJA_JOBS" \
@@ -390,9 +409,13 @@ echo "=== Build Configuration ==="
 echo "BUILD_PROXY       : $DEFAULT_PROXY"
 echo "AUTO_PULL         : $AUTO_PULL"
 echo "BUILD_ARM         : $BUILD_ARM"
+echo "BUILD_OLD_ANDROID_ARM : $BUILD_OLD_ANDROID_ARM"
 echo "BUILD_ARM64       : $BUILD_ARM64"
 echo "BUILD_AAB         : $BUILD_AAB"
 echo "BUILD_OLD_ANDROID : $BUILD_OLD_ANDROID"
+echo "SKIP_IF_EXISTS    : $SKIP_IF_EXISTS"
+echo "FORCE_REBUILD     : $FORCE_REBUILD"
+echo "STRICT_COMMIT_MATCH : $STRICT_COMMIT_MATCH"
 echo "ENABLE_V2_SIGNING : $ENABLE_V2_SIGNING"
 echo "BRANCHES          : ${BRANCHES[*]}"
 echo "AUTO_RELEASE      : $AUTO_RELEASE"
