@@ -59,7 +59,7 @@ FAST_LOCAL_BUILD="${FAST_LOCAL_BUILD:-0}"
 SKIP_SOURCE_PREPARE="${SKIP_SOURCE_PREPARE:-0}"
 SKIP_SYSTEM_DEPS="${SKIP_SYSTEM_DEPS:-0}"
 CCACHE_MAX_SIZE="${CCACHE_MAX_SIZE:-30G}"
-BUILD_PROXY="${BUILD_PROXY:-${https_proxy:-${http_proxy:-${HTTPS_PROXY:-${HTTP_PROXY:-}}}}}"
+BUILD_PROXY="${BUILD_PROXY:-${https_proxy:-${http_proxy:-${HTTPS_PROXY:-${HTTP_PROXY:-${ALL_PROXY:-${all_proxy:-}}}}}}}"
 BUILD_VERSION_INCREMENT="${BUILD_VERSION_INCREMENT:-}"
 GIT_BRANCH_NAME="$(git -C "$SCRIPT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
 if [ -n "${OUTPUT_BRANCH_TAG:-}" ]; then
@@ -74,11 +74,45 @@ if [ -n "$BRANCH_OUTPUT_TAG" ]; then
 else
     OUTPUT_VERSION_PREFIX="${VERSION}"
 fi
+
+is_old_android_build() {
+    local branch="${GIT_BRANCH_NAME:-$(git -C "$SCRIPT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || true)}"
+    if [ "${DISABLE_V3_SIGNING:-0}" = "1" ] || [ "${CAR_COMPAT:-0}" = "1" ] || [ "$branch" = "old-android" ] || [[ "${OUTPUT_BRANCH_TAG:-}" == *"old-android"* ]] || [[ "${branch:-}" == *"old-android"* ]]; then
+        return 0
+    fi
+    return 1
+}
+
+# Directory isolation scheme for build caches across variants and branches:
+# - If OUT_DIR_NAME is explicitly specified, use out/${OUT_DIR_NAME}/arm and out/${OUT_DIR_NAME}/arm64.
+# - If ISOLATE_ALL_BRANCHES=1, isolate each branch under out/${BRANCH_OUTPUT_TAG}/...
+# - If is_old_android_build (car/old-android branch with different args.gn and SDK baseline),
+#   isolate under out/old-android/arm and out/old-android/arm64 to avoid invalidating the 60,000+
+#   cached compilation targets of the main / lemur branches.
+# - For standard branches (main, lemur-style-app-menu) sharing the identical args.gn and C++ code,
+#   default to out/arm and out/arm64 for maximum incremental build speed and cache reuse.
+if [ -n "${OUT_DIR_NAME:-}" ]; then
+    BRANCH_OUT_DIR="out/${OUT_DIR_NAME}"
+elif [ "${ISOLATE_ALL_BRANCHES:-0}" = "1" ] && [ -n "${BRANCH_OUTPUT_TAG:-}" ]; then
+    BRANCH_OUT_DIR="out/${BRANCH_OUTPUT_TAG}"
+elif is_old_android_build; then
+    BRANCH_OUT_DIR="out/old-android"
+else
+    BRANCH_OUT_DIR="out"
+fi
+
+OUT_DIR_ARM="${BRANCH_OUT_DIR}/arm"
+OUT_DIR_ARM64="${BRANCH_OUT_DIR}/arm64"
+
 if [ "$FAST_LOCAL_BUILD" = "1" ]; then
     SKIP_SOURCE_PREPARE=1
     SKIP_SYSTEM_DEPS=1
     if [ -z "$BUILD_VERSION_INCREMENT" ]; then
-        if [ -f "$SCRIPT_DIR/chromium/src/out/arm/args.gn" ]; then
+        if [ -f "$SCRIPT_DIR/chromium/src/$OUT_DIR_ARM/args.gn" ]; then
+            BUILD_VERSION_INCREMENT="$(grep -m1 '^ext_version_increment[[:space:]]*=' "$SCRIPT_DIR/chromium/src/$OUT_DIR_ARM/args.gn" 2>/dev/null | sed -E 's/.*"([^"]+)".*/\1/' || true)"
+        elif [ -f "$SCRIPT_DIR/chromium/src/$OUT_DIR_ARM64/args.gn" ]; then
+            BUILD_VERSION_INCREMENT="$(grep -m1 '^ext_version_increment[[:space:]]*=' "$SCRIPT_DIR/chromium/src/$OUT_DIR_ARM64/args.gn" 2>/dev/null | sed -E 's/.*"([^"]+)".*/\1/' || true)"
+        elif [ -f "$SCRIPT_DIR/chromium/src/out/arm/args.gn" ]; then
             BUILD_VERSION_INCREMENT="$(grep -m1 '^ext_version_increment[[:space:]]*=' "$SCRIPT_DIR/chromium/src/out/arm/args.gn" 2>/dev/null | sed -E 's/.*"([^"]+)".*/\1/' || true)"
         elif [ -f "$SCRIPT_DIR/chromium/src/out/arm64/args.gn" ]; then
             BUILD_VERSION_INCREMENT="$(grep -m1 '^ext_version_increment[[:space:]]*=' "$SCRIPT_DIR/chromium/src/out/arm64/args.gn" 2>/dev/null | sed -E 's/.*"([^"]+)".*/\1/' || true)"
@@ -197,7 +231,7 @@ restore_build_state() {
     if [ -n "$BUILD_STATE_ARCHIVE" ] && [ -f "$BUILD_STATE_ARCHIVE" ]; then
         echo "Restoring Chromium build state from $BUILD_STATE_ARCHIVE"
         tar -xf "$BUILD_STATE_ARCHIVE" -C .
-        du -sh out/arm out/arm64 out/tmp 2>/dev/null || true
+        du -sh "$OUT_DIR_ARM" "$OUT_DIR_ARM64" out/arm out/arm64 out/tmp 2>/dev/null || true
         export BUILD_STATE_RESTORED=1
     fi
 }
@@ -250,6 +284,15 @@ configure_out_dir() {
     set_gn_arg "$desired_args" ext_version_enabled true
     set_gn_arg "$desired_args" ext_version_increment "\"$BUILD_VERSION_INCREMENT\""
     append_common_gn_args "$desired_args"
+    sed -i "/^default_android_sdk_version/d" "$desired_args"
+    if is_old_android_build; then
+        set_gn_arg "$desired_args" default_min_sdk_version 28
+        set_gn_arg "$desired_args" is_desktop_android false
+        set_gn_arg "$desired_args" v8_enable_drumbrake false
+        set_gn_arg "$desired_args" v8_drumbrake_bounds_checks false
+    else
+        sed -i "/^default_min_sdk_version/d" "$desired_args"
+    fi
 
     if [ "${BUILD_STATE_RESTORED:-0}" = "1" ] && [ -f "$out_dir/build.ninja" ] && cmp -s "$desired_args" "$out_dir/args.gn"; then
         echo "Reusing restored GN output in $out_dir"
@@ -605,29 +648,29 @@ if [ "$SKIP_SYSTEM_DEPS" != "1" ]; then
     sudo apt-get update
     sudo apt-get install -y libgcc-s1:i386
 fi
-mkdir -p out/tmp out/release
-echo "Build options: BUILD_ARM=$BUILD_ARM BUILD_ARM64=$BUILD_ARM64 BUILD_AAB=$BUILD_AAB BUILD_VERSION_INCREMENT=$BUILD_VERSION_INCREMENT NINJA_JOBS=${NINJA_JOBS:-auto} OUTPUT_PREFIX=$OUTPUT_VERSION_PREFIX"
+mkdir -p "$OUT_DIR_ARM" "$OUT_DIR_ARM64" out/tmp out/release
+echo "Build options: BUILD_ARM=$BUILD_ARM BUILD_ARM64=$BUILD_ARM64 BUILD_AAB=$BUILD_AAB BUILD_VERSION_INCREMENT=$BUILD_VERSION_INCREMENT NINJA_JOBS=${NINJA_JOBS:-auto} OUTPUT_PREFIX=$OUTPUT_VERSION_PREFIX OUT_DIR_ARM=$OUT_DIR_ARM OUT_DIR_ARM64=$OUT_DIR_ARM64"
 
 if [ "$BUILD_ARM" = "1" ]; then
     if [ "${SKIP_ARM32:-0}" = "1" ]; then
         echo "SKIP_ARM32=1: Skipping arm32 compilation as requested."
     else
-        configure_out_dir out/arm arm
-        run_autoninja out/arm chrome_public_apk
-        copy_first_output out/arm/apks 'Chrome*.apk' "out/tmp/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk"
+        configure_out_dir "$OUT_DIR_ARM" arm
+        run_autoninja "$OUT_DIR_ARM" chrome_public_apk
+        copy_first_output "$OUT_DIR_ARM/apks" 'Chrome*.apk' "out/tmp/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk"
     fi
 fi
 
 if [ "$BUILD_ARM64" = "1" ]; then
-    configure_out_dir out/arm64 arm64
+    configure_out_dir "$OUT_DIR_ARM64" arm64
     arm64_targets="chrome_public_apk"
     if [ "$BUILD_AAB" = "1" ]; then
         arm64_targets="$arm64_targets chrome_public_bundle"
     fi
-    run_autoninja out/arm64 $arm64_targets
-    copy_first_output out/arm64/apks 'Chrome*.apk' "out/tmp/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk"
+    run_autoninja "$OUT_DIR_ARM64" $arm64_targets
+    copy_first_output "$OUT_DIR_ARM64/apks" 'Chrome*.apk' "out/tmp/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk"
     if [ "$BUILD_AAB" = "1" ]; then
-        copy_first_output out/arm64/apks 'Chrome*.aab' "out/tmp/${OUTPUT_VERSION_PREFIX}-arm64-v8a.aab"
+        copy_first_output "$OUT_DIR_ARM64/apks" 'Chrome*.aab' "out/tmp/${OUTPUT_VERSION_PREFIX}-arm64-v8a.aab"
     fi
 fi
 

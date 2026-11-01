@@ -379,14 +379,20 @@ build_branch() {
     local branch_car_compat="${CAR_COMPAT:-0}"
     local branch_disable_v3="${DISABLE_V3_SIGNING:-0}"
     local branch_arm="$BUILD_ARM"
+    local branch_out_dir=""
     if [ "$branch" = "old-android" ]; then
         branch_car_compat="1"
         branch_disable_v3="1"
         branch_arm="$BUILD_OLD_ANDROID_ARM"
+        branch_out_dir="old-android"
+    elif [ "${ISOLATE_ALL_BRANCHES:-0}" = "1" ]; then
+        branch_out_dir="$branch"
     fi
 
     CAR_COMPAT="$branch_car_compat" \
     DISABLE_V3_SIGNING="$branch_disable_v3" \
+    OUT_DIR_NAME="$branch_out_dir" \
+    ISOLATE_ALL_BRANCHES="${ISOLATE_ALL_BRANCHES:-0}" \
     FAST_LOCAL_BUILD="$effective_fast_local" \
     BUILD_PROXY="$DEFAULT_PROXY" \
     http_proxy="$DEFAULT_PROXY" \
@@ -417,6 +423,7 @@ echo "SKIP_IF_EXISTS    : $SKIP_IF_EXISTS"
 echo "FORCE_REBUILD     : $FORCE_REBUILD"
 echo "STRICT_COMMIT_MATCH : $STRICT_COMMIT_MATCH"
 echo "ENABLE_V2_SIGNING : $ENABLE_V2_SIGNING"
+echo "ISOLATE_ALL_BRANCHES : ${ISOLATE_ALL_BRANCHES:-0}"
 echo "BRANCHES          : ${BRANCHES[*]}"
 echo "AUTO_RELEASE      : $AUTO_RELEASE"
 echo "==========================="
