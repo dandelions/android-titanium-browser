@@ -1814,6 +1814,123 @@ def patch_compositor_view_compat(src_dir: str) -> None:
             print(f"Patched CompositorView TransactionCommittedListener for API 28 in: {target}")
 
 
+def patch_omnibox_animation_matrix_compat(src_dir: str) -> None:
+    # Android 9 (API 28) 缺少 View.getAnimationMatrix() (API 29+ 引入)。
+    # Chromium 156 在 OmniboxSuggestionsDropdownEmbedderImpl.java 的
+    # getVerticalTranslationForAnimation() 中直接调用 mAlignmentView.getAnimationMatrix()，
+    # 在 Android 9 车机设备上点击/聚焦 UrlBar 展开搜索联想词建议时，ValueAnimator 动画更新会抛出：
+    # java.lang.NoSuchMethodError: No virtual method getAnimationMatrix()Landroid/graphics/Matrix; in class Landroid/view/View;
+    # 导致浏览器致命闪退。此处添加 API 29 运行时版本判断与异常捕获，在低版本平滑回退至 View.getTranslationY()。
+    target_files = [
+        os.path.join(
+            src_dir,
+            "chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/OmniboxSuggestionsDropdownEmbedderImpl.java",
+        ),
+        os.path.join(
+            src_dir,
+            "chromium/src/chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/OmniboxSuggestionsDropdownEmbedderImpl.java",
+        ),
+        os.path.join(
+            src_dir,
+            "src/chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/OmniboxSuggestionsDropdownEmbedderImpl.java",
+        ),
+    ]
+
+    for sub in ["chrome/browser/ui/android/omnibox", "chrome/browser/ui/android", "chrome"]:
+        scan_path = os.path.join(src_dir, sub)
+        if os.path.isdir(scan_path):
+            for root, _, files in os.walk(scan_path):
+                for f in files:
+                    if f.endswith(".java"):
+                        full_f = os.path.join(root, f)
+                        if full_f not in target_files:
+                            try:
+                                with open(full_f, "r", encoding="utf-8", errors="ignore") as jf:
+                                    snippet = jf.read()
+                                if "getAnimationMatrix" in snippet:
+                                    target_files.append(full_f)
+                            except Exception:
+                                pass
+
+    seen = set()
+    for target in target_files:
+        if not os.path.isfile(target):
+            continue
+        real_path = os.path.realpath(target)
+        if real_path in seen:
+            continue
+        seen.add(real_path)
+
+        with open(target, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        if "getAnimationMatrix" not in content:
+            continue
+
+        new_content = content
+
+        old_block = (
+            "        Matrix matrix = mAlignmentView.getAnimationMatrix();\n"
+            "        if (matrix != null) {\n"
+            "            float[] values = new float[9];\n"
+            "            matrix.getValues(values);\n"
+            "            return values[Matrix.MTRANS_Y];\n"
+            "        } else {\n"
+            "            return mAlignmentView.getTranslationY();\n"
+            "        }"
+        )
+        new_block = (
+            "        if (android.os.Build.VERSION.SDK_INT >= 29) {\n"
+            "            try {\n"
+            "                Matrix matrix = mAlignmentView.getAnimationMatrix();\n"
+            "                if (matrix != null) {\n"
+            "                    float[] values = new float[9];\n"
+            "                    matrix.getValues(values);\n"
+            "                    return values[Matrix.MTRANS_Y];\n"
+            "                }\n"
+            "            } catch (Throwable ignored) {\n"
+            "            }\n"
+            "        }\n"
+            "        return mAlignmentView.getTranslationY();"
+        )
+
+        pattern = (
+            r"(\s*)Matrix\s+matrix\s*=\s*(\w+)\.getAnimationMatrix\s*\(\s*\)\s*;\s*\n"
+            r"\s*if\s*\(\s*matrix\s*!=\s*null\s*\)\s*\{\s*\n"
+            r"\s*float\[\s*\]\s*values\s*=\s*new\s+float\[\s*9\s*\]\s*;\s*\n"
+            r"\s*matrix\.getValues\s*\(\s*values\s*\)\s*;\s*\n"
+            r"\s*return\s+values\[\s*Matrix\.MTRANS_Y\s*\]\s*;\s*\n"
+            r"\s*\}\s*else\s*\{\s*\n"
+            r"\s*return\s+(\w+)\.getTranslationY\s*\(\s*\)\s*;\s*\n"
+            r"\s*\}"
+        )
+        replacement = (
+            r"\1if (android.os.Build.VERSION.SDK_INT >= 29) {\n"
+            r"\1    try {\n"
+            r"\1        Matrix matrix = \2.getAnimationMatrix();\n"
+            r"\1        if (matrix != null) {\n"
+            r"\1            float[] values = new float[9];\n"
+            r"\1            matrix.getValues(values);\n"
+            r"\1            return values[Matrix.MTRANS_Y];\n"
+            r"\1        }\n"
+            r"\1    } catch (Throwable ignored) {\n"
+            r"\1    }\n"
+            r"\1}\n"
+            r"\1return \3.getTranslationY();"
+        )
+
+        if "android.os.Build.VERSION.SDK_INT >= 29" not in new_content:
+            if old_block in new_content:
+                new_content = new_content.replace(old_block, new_block)
+            else:
+                new_content = re.sub(pattern, replacement, new_content)
+
+        if new_content != content:
+            with open(target, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            print(f"Patched View.getAnimationMatrix API 28 compat in: {target}")
+
+
 def main() -> None:
     src_dir = sys.argv[1] if len(sys.argv) > 1 else "."
 
@@ -1896,6 +2013,7 @@ def main() -> None:
     patch_media_codec_info_compat(src_dir)
     patch_default_browser_promo_compat(src_dir)
     patch_compositor_view_compat(src_dir)
+    patch_omnibox_animation_matrix_compat(src_dir)
 
     print("SDK version patch (minSdk: 28) & car-compat checks complete.")
 
