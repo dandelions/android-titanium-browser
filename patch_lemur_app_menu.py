@@ -2272,11 +2272,37 @@ def patch_tabbed_app_menu_delegate(src_dir: Path) -> None:
     path.write_text(text, encoding="utf-8")
 
 
+def is_lemur_branch(src_dir: Path) -> bool:
+    if os.environ.get("LEMUR_APP_MENU") == "1":
+        return True
+    if os.environ.get("LEMUR_APP_MENU") == "0":
+        return False
+    try:
+        import subprocess
+        for cwd in [str(src_dir), os.path.dirname(os.path.abspath(__file__)), "."]:
+            try:
+                res = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True, text=True, cwd=cwd)
+                branch = res.stdout.strip()
+                if branch == "lemur-style-app-menu":
+                    return True
+                if branch in ("main", "old-android"):
+                    return False
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return False
+
+
 def main() -> None:
     if len(sys.argv) != 2:
         raise SystemExit("Usage: patch_lemur_app_menu.py <chromium-src-dir>")
 
     src_dir = Path(sys.argv[1]).resolve()
+    if not is_lemur_branch(src_dir):
+        print(f"Not lemur-style-app-menu branch and LEMUR_APP_MENU is not enabled. Skipping Lemur menu patch.")
+        return
+
     patch_menu_button(src_dir)
     patch_extensions_toolbar_coordinator(src_dir)
     patch_extensions_toolbar_coordinator_impl(src_dir)
