@@ -71,8 +71,15 @@ sign_apk() {
     local current_git_branch=""
     current_git_branch="$(git -C "$SCRIPT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
 
+    # 严格分支隔离：main 与 lemur 维持标准签名逻辑，仅 old-version / old-android 分支使用低版本车机兼容签名
     local is_old_android=0
-    if [ "${DISABLE_V3_SIGNING:-0}" = "1" ] || [ "${CAR_COMPAT:-0}" = "1" ] || [ "$current_git_branch" = "old-android" ] || [[ "$input_apk" == *"old-android"* ]] || [[ "$output_apk" == *"old-android"* ]]; then
+    if [ "$current_git_branch" = "main" ] || [ "$current_git_branch" = "lemur" ] || [ "$current_git_branch" = "lemur-style-app-menu" ]; then
+        is_old_android=0
+    elif [ "$current_git_branch" = "old-android" ] || [ "$current_git_branch" = "old-version" ] || \
+         [[ "$current_git_branch" == *"old-android"* ]] || [[ "$current_git_branch" == *"old-version"* ]] || \
+         [[ "$input_apk" == *"old-android"* ]] || [[ "$input_apk" == *"old-version"* ]] || \
+         [[ "$output_apk" == *"old-android"* ]] || [[ "$output_apk" == *"old-version"* ]] || \
+         [ "${DISABLE_V3_SIGNING:-0}" = "1" ] || [ "${CAR_COMPAT:-0}" = "1" ]; then
         is_old_android=1
     fi
 

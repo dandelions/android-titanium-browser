@@ -74,6 +74,44 @@ if [ -n "$BRANCH_OUTPUT_TAG" ]; then
 else
     OUTPUT_VERSION_PREFIX="${VERSION}"
 fi
+
+is_old_android_build() {
+    local branch="${GIT_BRANCH_NAME:-$(git -C "$SCRIPT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || true)}"
+    # 严格分支隔离：main 和 lemur 等标准分支绝对禁止应用 API 28 配置
+    if [ "$branch" = "main" ] || [ "$branch" = "lemur" ] || [ "$branch" = "lemur-style-app-menu" ]; then
+        return 1
+    fi
+    if [ "$branch" = "old-version" ] || [ "$branch" = "old-android" ] || \
+       [[ "${branch:-}" == *"old-version"* ]] || [[ "${branch:-}" == *"old-android"* ]] || \
+       [[ "${OUTPUT_BRANCH_TAG:-}" == *"old-version"* ]] || [[ "${OUTPUT_BRANCH_TAG:-}" == *"old-android"* ]] || \
+       [ "${OLD_VERSION:-0}" = "1" ] || [ "${OLD_ANDROID:-0}" = "1" ] || \
+       [ "${DISABLE_V3_SIGNING:-0}" = "1" ] || [ "${CAR_COMPAT:-0}" = "1" ]; then
+        return 0
+    fi
+    return 1
+}
+
+# Directory isolation scheme for build caches across variants and branches:
+# - If OUT_DIR_NAME is explicitly specified, use out/${OUT_DIR_NAME}/arm and out/${OUT_DIR_NAME}/arm64.
+# - If ISOLATE_ALL_BRANCHES=1, isolate each branch under out/${BRANCH_OUTPUT_TAG}/...
+# - If is_old_android_build (car/old-android branch with different args.gn and SDK baseline),
+#   isolate under out/old-android/arm and out/old-android/arm64 to avoid invalidating the 60,000+
+#   cached compilation targets of the main / lemur branches.
+# - For standard branches (main, lemur-style-app-menu) sharing the identical args.gn and C++ code,
+#   default to out/arm and out/arm64 for maximum incremental build speed and cache reuse.
+if [ -n "${OUT_DIR_NAME:-}" ]; then
+    BRANCH_OUT_DIR="out/${OUT_DIR_NAME}"
+elif [ "${ISOLATE_ALL_BRANCHES:-0}" = "1" ] && [ -n "${BRANCH_OUTPUT_TAG:-}" ]; then
+    BRANCH_OUT_DIR="out/${BRANCH_OUTPUT_TAG}"
+elif is_old_android_build; then
+    BRANCH_OUT_DIR="out/old-android"
+else
+    BRANCH_OUT_DIR="out"
+fi
+
+OUT_DIR_ARM="${BRANCH_OUT_DIR}/arm"
+OUT_DIR_ARM64="${BRANCH_OUT_DIR}/arm64"
+
 if [ "$FAST_LOCAL_BUILD" = "1" ]; then
     SKIP_SOURCE_PREPARE=1
     SKIP_SYSTEM_DEPS=1
