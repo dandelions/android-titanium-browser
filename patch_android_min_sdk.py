@@ -206,24 +206,25 @@ def patch_expectations(src_dir: str) -> None:
 
 
 def is_old_android_branch(src_dir: str) -> bool:
-    if os.environ.get("CAR_COMPAT") == "1" or os.environ.get("BUILD_OLD_ANDROID") == "1" or os.environ.get("DISABLE_V3_SIGNING") == "1":
-        return True
-    if os.environ.get("CAR_COMPAT") == "0":
-        return False
     try:
         import subprocess
         for cwd in [src_dir, os.path.dirname(os.path.abspath(__file__)), "."]:
             try:
                 res = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True, text=True, cwd=cwd)
                 branch = res.stdout.strip()
-                if branch == "old-android":
-                    return True
-                if branch in ("main", "lemur-style-app-menu"):
+                # 严格分支隔离：main, lemur 等标准分支绝对禁止运行 API 28 补丁
+                if branch in ("main", "lemur", "lemur-style-app-menu"):
                     return False
+                if branch in ("old-android", "old-version") or "old-" in branch:
+                    return True
             except Exception:
                 pass
     except Exception:
         pass
+    if os.environ.get("CAR_COMPAT") == "1" or os.environ.get("BUILD_OLD_ANDROID") == "1" or os.environ.get("BUILD_OLD_VERSION") == "1" or os.environ.get("DISABLE_V3_SIGNING") == "1":
+        return True
+    if os.environ.get("CAR_COMPAT") == "0":
+        return False
     return False
 
 
