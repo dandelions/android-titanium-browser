@@ -2262,14 +2262,23 @@ def patch_tabbed_app_menu_delegate(src_dir: Path) -> None:
     method_anchor = "    private ListItem buildSettingsItem() {\n"
     if start_marker in text:
         start_idx = text.find(start_marker)
-        end_idx = text.find(method_anchor, start_idx)
-        if end_idx == -1:
-            raise SystemExit(f"buildSettingsItem anchor not found after Lemur marker in {path}")
-        text = text[:start_idx] + LEMUR_MENU_METHODS + text[end_idx:]
+        if method_anchor in text:
+            end_idx = text.find(method_anchor, start_idx)
+            if end_idx == -1:
+                raise SystemExit(f"buildSettingsItem anchor not found after Lemur marker in {path}")
+            text = text[:start_idx] + LEMUR_MENU_METHODS + text[end_idx:]
+        else:
+            last_brace = text.rfind("}")
+            text = text[:start_idx] + LEMUR_MENU_METHODS + "\n}\n"
     else:
-        if method_anchor not in text:
-            raise SystemExit(f"buildSettingsItem anchor not found in {path}")
-        text = text.replace(method_anchor, LEMUR_MENU_METHODS + method_anchor, 1)
+        if method_anchor in text:
+            text = text.replace(method_anchor, LEMUR_MENU_METHODS + method_anchor, 1)
+        else:
+            last_brace = text.rfind("}")
+            if last_brace != -1:
+                text = text[:last_brace] + LEMUR_MENU_METHODS + "\n}\n"
+            else:
+                raise SystemExit(f"closing brace not found in {path}")
 
     path.write_text(text, encoding="utf-8")
 
