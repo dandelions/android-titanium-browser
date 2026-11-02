@@ -48,9 +48,13 @@ fi
 BRANCHES=()
 for b in "${TARGET_BRANCHES[@]}"; do
     b_trimmed="$(echo "$b" | xargs)"
-    # 兼容下划线输入 old_android 自动映射为规范分支名 old-android
-    if [ "$b_trimmed" = "old_android" ]; then
-        b_trimmed="old-android"
+    # 兼容下划线输入与 old-version / old_version 别名，自动映射为规范低版本分支名
+    if [ "$b_trimmed" = "old_android" ] || [ "$b_trimmed" = "old_version" ] || [ "$b_trimmed" = "old-version" ]; then
+        if git show-ref --verify --quiet refs/heads/old-version 2>/dev/null; then
+            b_trimmed="old-version"
+        else
+            b_trimmed="old-android"
+        fi
     fi
     if [ -n "$b_trimmed" ]; then
         BRANCHES+=("$b_trimmed")
@@ -375,11 +379,14 @@ build_branch() {
         fi
     fi
 
-    # 仅针对 old-android 分支自动启用 CAR_COMPAT=1 与 DISABLE_V3_SIGNING=1，且默认不编译 32 位（ARM）包
-    local branch_car_compat="${CAR_COMPAT:-0}"
-    local branch_disable_v3="${DISABLE_V3_SIGNING:-0}"
+    # 严格分支隔离：
+    # 仅针对 old-android / old-version 分支自动启用 CAR_COMPAT=1 与 DISABLE_V3_SIGNING=1
+    # main 与 lemur 分支强制 CAR_COMPAT=0 与 DISABLE_V3_SIGNING=0，绝对禁止环境变量污染
+    local branch_car_compat="0"
+    local branch_disable_v3="0"
     local branch_arm="$BUILD_ARM"
-    if [ "$branch" = "old-android" ]; then
+    local branch_out_dir=""
+    if [ "$branch" = "old-android" ] || [ "$branch" = "old-version" ]; then
         branch_car_compat="1"
         branch_disable_v3="1"
         branch_arm="$BUILD_OLD_ANDROID_ARM"

@@ -3769,11 +3769,72 @@ fi
 python3 "$SCRIPT_DIR/patch_store_inline_install.py" .
 
 CURRENT_BRANCH="$(git -C "$SCRIPT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+
+# 严格分支隔离判定：
+# 标准分支（main, lemur）绝对禁止任何 API 28 / 低版本修改，仅允许作用于 old-version / old-android 分支
+is_old_version_branch() {
+    if [ "$CURRENT_BRANCH" = "main" ] || [ "$CURRENT_BRANCH" = "lemur" ] || [ "$CURRENT_BRANCH" = "lemur-style-app-menu" ]; then
+        return 1
+    fi
+    if [ "$CURRENT_BRANCH" = "old-version" ] || [ "$CURRENT_BRANCH" = "old-android" ] || \
+       [[ "$CURRENT_BRANCH" == *"old-version"* ]] || [[ "$CURRENT_BRANCH" == *"old-android"* ]] || \
+       [ "${OLD_VERSION:-0}" = "1" ] || [ "${OLD_ANDROID:-0}" = "1" ] || [ "${CAR_COMPAT:-0}" = "1" ]; then
+        return 0
+    fi
+    return 1
+}
+
+# 为 main / lemur 等标准分支恢复官方原生 Android API 29+ 基线，彻底清除可能残留的 API 28 篡改
+restore_modern_android_sdk_baseline() {
+    local target_dir="$1"
+    [ -d "$target_dir" ] || return 0
+
+    # 1. 恢复 chrome_public_apk_tmpl.gni
+    local apk_tmpl="$target_dir/chrome/android/chrome_public_apk_tmpl.gni"
+    if [ -f "$apk_tmpl" ]; then
+        sed -i "s/min_sdk_version = 28/min_sdk_version = 29/g" "$apk_tmpl"
+    fi
+
+    # 2. 恢复 trichrome.gni
+    local trichrome_gni="$target_dir/chrome/android/trichrome.gni"
+    if [ -f "$trichrome_gni" ]; then
+        sed -i 's/"min_sdk_version = 28"/"min_sdk_version = 29"/g' "$trichrome_gni"
+        sed -i 's/"min_sdk_version=28"/"min_sdk_version=29"/g' "$trichrome_gni"
+        sed -i "s/min_sdk_version = 28/min_sdk_version = 29/g" "$trichrome_gni"
+    fi
+
+    # 3. 恢复 monochrome_android_manifest_jinja_variables.gni
+    local mono_vars="$target_dir/chrome/android/monochrome_android_manifest_jinja_variables.gni"
+    if [ -f "$mono_vars" ]; then
+        sed -i 's/"min_sdk_version = 28"/"min_sdk_version = 29"/g' "$mono_vars"
+        sed -i 's/"min_sdk_version=28"/"min_sdk_version=29"/g' "$mono_vars"
+    fi
+
+    # 4. 恢复 chrome/android/BUILD.gn 中的 bundle min_sdk_version
+    local chrome_build_gn="$target_dir/chrome/android/BUILD.gn"
+    if [ -f "$chrome_build_gn" ]; then
+        sed -i "s/_min_sdk_version = 28/_min_sdk_version = 29/g" "$chrome_build_gn"
+    fi
+
+    # 5. 恢复 AndroidManifest.xml 中的 minSdkVersion 与 uses-feature
+    for manifest in $(find "$target_dir" -maxdepth 5 -name "AndroidManifest*.xml" 2>/dev/null); do
+        if grep -q 'android:minSdkVersion="28"' "$manifest"; then
+            sed -i 's/android:minSdkVersion="28"/android:minSdkVersion="29"/g' "$manifest"
+        fi
+        if grep -q 'android:glEsVersion="0x00020000"' "$manifest"; then
+            sed -i 's/<uses-feature android:glEsVersion="0x00020000" android:required="false" \/>/<uses-feature android:glEsVersion="0x00030000" \/>/g' "$manifest"
+        fi
+    done
+}
+
 if [ "$CURRENT_BRANCH" = "lemur-style-app-menu" ] || [ "$CURRENT_BRANCH" = "lemur" ] || [ "${LEMUR_APP_MENU:-0}" = "1" ]; then
     python3 "$SCRIPT_DIR/patch_lemur_app_menu.py" .
 fi
-if [ "$CURRENT_BRANCH" = "old-android" ] || [ "${OLD_ANDROID:-0}" = "1" ]; then
+
+if is_old_version_branch; then
     if [ -f "$SCRIPT_DIR/patch_android_min_sdk.py" ]; then
         python3 "$SCRIPT_DIR/patch_android_min_sdk.py" .
     fi
+else
+    restore_modern_android_sdk_baseline .
 fi
