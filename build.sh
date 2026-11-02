@@ -77,7 +77,15 @@ fi
 
 is_old_android_build() {
     local branch="${GIT_BRANCH_NAME:-$(git -C "$SCRIPT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || true)}"
-    if [ "${DISABLE_V3_SIGNING:-0}" = "1" ] || [ "${CAR_COMPAT:-0}" = "1" ] || [ "$branch" = "old-android" ] || [[ "${OUTPUT_BRANCH_TAG:-}" == *"old-android"* ]] || [[ "${branch:-}" == *"old-android"* ]]; then
+    # 严格分支隔离：main 和 lemur 等标准分支绝对禁止应用 API 28 配置
+    if [ "$branch" = "main" ] || [ "$branch" = "lemur" ] || [ "$branch" = "lemur-style-app-menu" ]; then
+        return 1
+    fi
+    if [ "$branch" = "old-version" ] || [ "$branch" = "old-android" ] || \
+       [[ "${branch:-}" == *"old-version"* ]] || [[ "${branch:-}" == *"old-android"* ]] || \
+       [[ "${OUTPUT_BRANCH_TAG:-}" == *"old-version"* ]] || [[ "${OUTPUT_BRANCH_TAG:-}" == *"old-android"* ]] || \
+       [ "${OLD_VERSION:-0}" = "1" ] || [ "${OLD_ANDROID:-0}" = "1" ] || \
+       [ "${DISABLE_V3_SIGNING:-0}" = "1" ] || [ "${CAR_COMPAT:-0}" = "1" ]; then
         return 0
     fi
     return 1
