@@ -212,15 +212,19 @@ def is_old_android_branch(src_dir: str) -> bool:
         return False
     try:
         import subprocess
-        res = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True, text=True, cwd=src_dir)
-        if "old-android" in res.stdout:
-            return True
-        res_root = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True, text=True)
-        if "old-android" in res_root.stdout:
-            return True
+        for cwd in [src_dir, os.path.dirname(os.path.abspath(__file__)), "."]:
+            try:
+                res = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True, text=True, cwd=cwd)
+                branch = res.stdout.strip()
+                if branch == "old-android":
+                    return True
+                if branch in ("main", "lemur-style-app-menu"):
+                    return False
+            except Exception:
+                pass
     except Exception:
         pass
-    return True
+    return False
 
 
 def clean_manifest_zygote_and_modern_attributes(src_dir: str) -> None:
@@ -1822,6 +1826,18 @@ def patch_omnibox_animation_matrix_compat(src_dir: str) -> None:
     # java.lang.NoSuchMethodError: No virtual method getAnimationMatrix()Landroid/graphics/Matrix; in class Landroid/view/View;
     # 导致浏览器致命闪退。此处添加 API 29 运行时版本判断与异常捕获，在低版本平滑回退至 View.getTranslationY()。
     target_files = [
+        os.path.join(
+            src_dir,
+            "chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/suggestions/OmniboxSuggestionsDropdownEmbedderImpl.java",
+        ),
+        os.path.join(
+            src_dir,
+            "chromium/src/chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/suggestions/OmniboxSuggestionsDropdownEmbedderImpl.java",
+        ),
+        os.path.join(
+            src_dir,
+            "src/chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/suggestions/OmniboxSuggestionsDropdownEmbedderImpl.java",
+        ),
         os.path.join(
             src_dir,
             "chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/OmniboxSuggestionsDropdownEmbedderImpl.java",

@@ -3958,5 +3958,14 @@ fi
 
 # Apply Android full media/image permissions & Downloads directory visibility patch
 python3 "$SCRIPT_DIR/patch_android_media_permissions.py" "$SRC_DIR"
-python3 "$SCRIPT_DIR/patch_lemur_app_menu.py" "$SRC_DIR"
-python3 "$SCRIPT_DIR/patch_android_min_sdk.py" "$SRC_DIR"
+
+# Apply store inline installation mechanism (Chrome Web Store & Edge Addons)
+python3 "$SCRIPT_DIR/patch_store_inline_install.py" "$SRC_DIR"
+
+CURRENT_BRANCH="$(git -C "$SCRIPT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+if [ "$CURRENT_BRANCH" = "lemur-style-app-menu" ] || [ "${LEMUR_APP_MENU:-0}" = "1" ]; then
+    python3 "$SCRIPT_DIR/patch_lemur_app_menu.py" "$SRC_DIR"
+fi
+if [ "$CURRENT_BRANCH" = "old-android" ] || [ "${OLD_ANDROID:-0}" = "1" ]; then
+    python3 "$SCRIPT_DIR/patch_android_min_sdk.py" "$SRC_DIR"
+fi
