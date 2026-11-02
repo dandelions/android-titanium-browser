@@ -252,10 +252,10 @@ def patch_chrome_activity(src_dir: Path) -> None:
             1,
         )
 
-    if "mRootUiCoordinator.getStatusBarColorController().updateStatusBarColor();" in content:
+    if "PersonalizeResults.Execute(tab);" in content:
         content = content.replace(
-            "mRootUiCoordinator.getStatusBarColorController().updateStatusBarColor();",
-            "injectStoreInlineInstallSupport(tab);\n                mRootUiCoordinator.getStatusBarColorController().updateStatusBarColor();",
+            "PersonalizeResults.Execute(tab);",
+            "PersonalizeResults.Execute(tab);\n              injectStoreInlineInstallSupport(tab);",
             1,
         )
 
