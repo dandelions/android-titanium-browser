@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
+import os
 from pathlib import Path
+import subprocess
 import sys
 
 
@@ -2283,7 +2285,7 @@ def is_lemur_branch(src_dir: Path) -> bool:
             try:
                 res = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True, text=True, cwd=cwd)
                 branch = res.stdout.strip()
-                if branch == "lemur-style-app-menu":
+                if branch in ("lemur-style-app-menu", "lemur"):
                     return True
                 if branch in ("main", "old-android"):
                     return False
