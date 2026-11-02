@@ -206,7 +206,29 @@ def patch_chrome_activity(src_dir: Path) -> None:
         return
 
     content = path.read_text(encoding="utf-8")
-    if "injectStoreInlineInstallSupport" in content:
+
+    # Clean up any bad historical injection inside onInitialLayoutInflationComplete where tab is not in scope
+    bad_call = "        injectStoreInlineInstallSupport(tab);\n                mRootUiCoordinator.getStatusBarColorController().updateStatusBarColor();"
+    if bad_call in content:
+        content = content.replace(
+            bad_call,
+            "        mRootUiCoordinator.getStatusBarColorController().updateStatusBarColor();",
+            1,
+        )
+        path.write_text(content, encoding="utf-8")
+        print("Cleaned up invalid injectStoreInlineInstallSupport(tab) from onInitialLayoutInflationComplete")
+
+    if "private void injectStoreInlineInstallSupport(Tab tab)" in content:
+        # Check if the onUrlUpdated call is missing despite helper method being present
+        if "PersonalizeResults.Execute(tab);\n              injectStoreInlineInstallSupport(tab);" not in content:
+            if "PersonalizeResults.Execute(tab);" in content:
+                content = content.replace(
+                    "PersonalizeResults.Execute(tab);",
+                    "PersonalizeResults.Execute(tab);\n              injectStoreInlineInstallSupport(tab);",
+                    1,
+                )
+                path.write_text(content, encoding="utf-8")
+                print("Updated ChromeActivity.java with injectStoreInlineInstallSupport in onUrlUpdated")
         print("ChromeActivity.java already patched for store inline install")
         return
 
