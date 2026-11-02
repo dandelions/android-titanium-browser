@@ -3959,6 +3959,11 @@ fi
 # Apply Android full media/image permissions & Downloads directory visibility patch
 python3 "$SCRIPT_DIR/patch_android_media_permissions.py" "$SRC_DIR"
 
+# Clean up historical improper injections in ChromeActivity.java
+if [ -f "$SRC_DIR/chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActivity.java" ]; then
+    perl -0pi -e "s|        injectStoreInlineInstallSupport\(tab\);\n                mRootUiCoordinator\.getStatusBarColorController\(\)\.updateStatusBarColor\(\);|        mRootUiCoordinator.getStatusBarColorController().updateStatusBarColor();|g" "$SRC_DIR/chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActivity.java"
+fi
+
 # Apply store inline installation mechanism (Chrome Web Store & Edge Addons)
 python3 "$SCRIPT_DIR/patch_store_inline_install.py" "$SRC_DIR"
 
