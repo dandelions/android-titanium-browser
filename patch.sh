@@ -3795,38 +3795,46 @@ restore_modern_android_sdk_baseline() {
     local target_dir="$1"
     [ -d "$target_dir" ] || return 0
 
-    # 0. 若存在 git 仓库，彻底还原可能被 patch_android_min_sdk.py 触碰过的源码文件
+    # 0. 若存在 git 仓库，仅还原真正被修改过的源码文件（避免刷新干净文件的 mtime 触发全局重编）
     if [ -d "$target_dir/.git" ]; then
-        git -C "$target_dir" checkout -- \
-            build/config/android/config.gni \
-            chrome/android/chrome_public_apk_tmpl.gni \
-            chrome/android/trichrome.gni \
-            chrome/android/monochrome_android_manifest_jinja_variables.gni \
-            chrome/android/BUILD.gn \
-            chrome/android/java/AndroidManifest.xml \
-            chrome/android/java/AndroidManifest_monochrome.xml \
-            chrome/android/java/AndroidManifest_trichrome_chrome.xml \
-            chrome/android/java/AndroidManifest_split_compat.xml \
-            base/android/java/src/org/chromium/base/ApplicationStatus.java \
-            base/android/java/src/org/chromium/base/PowerMonitor.java \
-            base/android/java/src/org/chromium/base/PathUtils.java \
-            chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java \
-            chrome/android/java/src/org/chromium/chrome/browser/IntentHandler.java \
-            chrome/android/java/src/org/chromium/chrome/browser/compositor/CompositorView.java \
-            chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/UrlBar.java \
-            chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/suggestions/OmniboxSuggestionsDropdown.java \
-            chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/top/ToolbarControlContainer.java \
-            chrome/browser/ui/android/theme/java/src/org/chromium/chrome/browser/theme/TopUiThemeColorProvider.java \
-            chrome/browser/ui/android/default_browser_promo/java/src/org/chromium/chrome/browser/ui/default_browser_promo/DefaultBrowserPromoUtils.java \
-            ui/gl/init/gl_initializer_android.cc \
-            gpu/config/gpu_finch_features.cc \
-            gpu/command_buffer/service/shared_image/ahardwarebuffer_image_backing_factory.cc \
-            media/gpu/android/ndk_video_encode_accelerator.cc \
-            media/gpu/gpu_video_encode_accelerator_factory.cc \
-            media/audio/android/ndk_audio_encoder.cc \
-            media/base/android/java/src/org/chromium/media/MediaCodecUtil.java \
-            content/public/android/BUILD.gn \
-            base/BUILD.gn 2>/dev/null || true
+        local dirty_files
+        dirty_files="$(git -C "$target_dir" diff --name-only 2>/dev/null || true)"
+        if [ -n "$dirty_files" ]; then
+            for f in \
+                build/config/android/config.gni \
+                chrome/android/chrome_public_apk_tmpl.gni \
+                chrome/android/trichrome.gni \
+                chrome/android/monochrome_android_manifest_jinja_variables.gni \
+                chrome/android/BUILD.gn \
+                chrome/android/java/AndroidManifest.xml \
+                chrome/android/java/AndroidManifest_monochrome.xml \
+                chrome/android/java/AndroidManifest_trichrome_chrome.xml \
+                chrome/android/java/AndroidManifest_split_compat.xml \
+                base/android/java/src/org/chromium/base/ApplicationStatus.java \
+                base/android/java/src/org/chromium/base/PowerMonitor.java \
+                base/android/java/src/org/chromium/base/PathUtils.java \
+                chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java \
+                chrome/android/java/src/org/chromium/chrome/browser/IntentHandler.java \
+                chrome/android/java/src/org/chromium/chrome/browser/compositor/CompositorView.java \
+                chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/UrlBar.java \
+                chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/suggestions/OmniboxSuggestionsDropdown.java \
+                chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/top/ToolbarControlContainer.java \
+                chrome/browser/ui/android/theme/java/src/org/chromium/chrome/browser/theme/TopUiThemeColorProvider.java \
+                chrome/browser/ui/android/default_browser_promo/java/src/org/chromium/chrome/browser/ui/default_browser_promo/DefaultBrowserPromoUtils.java \
+                ui/gl/init/gl_initializer_android.cc \
+                gpu/config/gpu_finch_features.cc \
+                gpu/command_buffer/service/shared_image/ahardwarebuffer_image_backing_factory.cc \
+                media/gpu/android/ndk_video_encode_accelerator.cc \
+                media/gpu/gpu_video_encode_accelerator_factory.cc \
+                media/audio/android/ndk_audio_encoder.cc \
+                media/base/android/java/src/org/chromium/media/MediaCodecUtil.java \
+                content/public/android/BUILD.gn \
+                base/BUILD.gn; do
+                if echo "$dirty_files" | grep -qx "$f"; then
+                    git -C "$target_dir" checkout -- "$f" 2>/dev/null || true
+                fi
+            done
+        fi
     fi
 
     # 1. 恢复 chrome_public_apk_tmpl.gni
