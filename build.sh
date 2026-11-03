@@ -302,8 +302,8 @@ configure_out_dir() {
         sed -i "/^default_min_sdk_version/d" "$desired_args"
     fi
 
-    if [ "${BUILD_STATE_RESTORED:-0}" = "1" ] && [ -f "$out_dir/build.ninja" ] && cmp -s "$desired_args" "$out_dir/args.gn"; then
-        echo "Reusing restored GN output in $out_dir"
+    if [ -f "$out_dir/build.ninja" ] && cmp -s "$desired_args" "$out_dir/args.gn"; then
+        echo "GN args unchanged in $out_dir; reusing existing build.ninja."
         rm -f "$desired_args"
         refresh_restored_outputs "$out_dir"
         show_out_dir_state "$out_dir"
@@ -312,9 +312,6 @@ configure_out_dir() {
 
     if [ -f "$out_dir/.helium_depfiles_version" ] && [ "$(cat "$out_dir/.helium_depfiles_version")" != "$VERSION" ]; then
         echo "Chromium version in $out_dir changed ($(cat "$out_dir/.helium_depfiles_version") -> $VERSION); clearing stale Siso/Ninja dependency logs and depfiles."
-        clean_stale_out_deps "$out_dir"
-    elif [ ! -f "$out_dir/.helium_depfiles_version" ] && { [ -f "$out_dir/.siso_deps" ] || [ -f "$out_dir/.siso_fs_state" ] || [ -f "$out_dir/.ninja_deps" ] || [ -f "$out_dir/build.ninja" ]; }; then
-        echo "Recording Chromium version $VERSION for $out_dir and clearing legacy Siso/Ninja dependency logs and depfiles."
         clean_stale_out_deps "$out_dir"
     fi
     printf '%s\n' "$VERSION" > "$out_dir/.helium_depfiles_version"
