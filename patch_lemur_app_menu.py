@@ -1349,6 +1349,7 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
         if (activity == null || activity.isFinishing() || activity.isDestroyed()) {
             return;
         }
+        final Activity hostActivity = activity;
         if (mCustomExtensionsDialog != null && mCustomExtensionsDialog.isShowing()) {
             mCustomExtensionsDialog.dismiss();
             return;
@@ -1820,7 +1821,18 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
         mAppMenuDelegate.onOptionsItemSelected(itemId, null, null);
     }
 
-    private void showUiModeSelectionDialog(Activity hostActivity, @Nullable Dialog parentDialog) {
+    private void showUiModeSelectionDialog(@Nullable Activity hostActivity, @Nullable Dialog parentDialog) {
+        Activity act = hostActivity;
+        if (act == null) {
+            act = ContextUtils.activityFromContext(mContext);
+            if (act == null && mContext instanceof Activity) {
+                act = (Activity) mContext;
+            }
+        }
+        if (act == null || act.isFinishing() || act.isDestroyed()) {
+            return;
+        }
+        final Activity targetActivity = act;
         String[] options = new String[] {
             "跟随系统（自动按屏幕尺寸识别）",
             "移动版（手机界面：底部工具栏，隐藏顶部标签栏）",
@@ -1834,7 +1846,7 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
             checkedItem = 2;
         }
 
-        new android.app.AlertDialog.Builder(hostActivity)
+        new android.app.AlertDialog.Builder(targetActivity)
                 .setTitle("选择界面模式")
                 .setSingleChoiceItems(
                         options,
@@ -1854,7 +1866,7 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
                                 if (parentDialog != null && parentDialog.isShowing()) {
                                     parentDialog.dismiss();
                                 }
-                                hostActivity.recreate();
+                                targetActivity.recreate();
                             }
                         })
                 .setNegativeButton("取消", null)
