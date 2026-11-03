@@ -2425,9 +2425,9 @@ def is_lemur_branch(src_dir: Path) -> bool:
             try:
                 res = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True, text=True, cwd=cwd)
                 branch = res.stdout.strip()
-                if branch in ("lemur-style-app-menu", "lemur"):
+                if branch in ("lemur-style-app-menu", "lemur", "old-android", "old-version") or "old-" in branch:
                     return True
-                if branch in ("main", "old-android"):
+                if branch in ("main",):
                     return False
             except Exception:
                 pass

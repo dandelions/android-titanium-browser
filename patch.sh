@@ -107,7 +107,8 @@ grep -q 'InspectElementCompleted.AndroidActivateWindow' chrome/browser/devtools/
 grep -q 'tab_list->ActivateTab(tab->GetHandle())' chrome/browser/devtools/devtools_window.cc || perl -0pi -e 's~  auto\* tab_list = TabListInterface::From\(browser\);\n  if \(!tab_list\) \{\n    return;\n  \}\n  tab_list->InsertWebContentsAt\(0, std::move\(owned_web_contents\), false,\n                                std::nullopt\);~  auto* tab_list = TabListInterface::From(browser);\n  if (!tab_list) {\n    return;\n  }\n  browser_ = browser;\n  tabs::TabInterface* tab = tab_list->InsertWebContentsAt(\n      0, std::move(owned_web_contents), false, std::nullopt);\n  if (tab) {\n    tab_list->ActivateTab(tab->GetHandle());\n  }~' chrome/browser/devtools/devtools_window.cc
 
 # ext: app menu
-sed -i 's|return ExtensionUi.isEnabled(getProfileFromTabModel());|return true;|' chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java
+sed -i 's|return ExtensionUi.isEnabled(getProfileFromTabModel());|return true;|' chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java 2>/dev/null || true
+sed -i 's|return profile != null && ExtensionUi.isEnabled(profile);|return true;|' chrome/android/java/src/org/chromium/chrome/browser/app/appmenu/AppMenuPropertiesDelegateImpl.java 2>/dev/null || true
 # The toolbar icon toggles the menu, so the duplicate close button is not needed.
 perl -0pi -e 's|\n        android:padding="12dp"||g; s|(android:id="\@\+id/extensions_menu_close_button"\n)(?!        android:visibility="gone"\n)|$1        android:visibility="gone"\n|' chrome/browser/ui/android/extensions/java/res/layout/extensions_menu_header.xml
 sed -i '/coordinator.showExtensionsMenu();/c\            if (coordinator != null) {\
@@ -3833,7 +3834,7 @@ restore_modern_android_sdk_baseline() {
     done
 }
 
-if [ "$CURRENT_BRANCH" = "lemur-style-app-menu" ] || [ "$CURRENT_BRANCH" = "lemur" ] || [ "${LEMUR_APP_MENU:-0}" = "1" ]; then
+if [ "$CURRENT_BRANCH" = "lemur-style-app-menu" ] || [ "$CURRENT_BRANCH" = "lemur" ] || [ "$CURRENT_BRANCH" = "old-android" ] || [ "$CURRENT_BRANCH" = "old-version" ] || [[ "$CURRENT_BRANCH" == *"old-"* ]] || [ "${LEMUR_APP_MENU:-0}" = "1" ]; then
     python3 "$SCRIPT_DIR/patch_lemur_app_menu.py" .
 fi
 if is_old_version_branch; then

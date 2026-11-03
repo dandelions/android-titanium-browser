@@ -12,6 +12,14 @@ TABBED_DELEGATE_REL = (
     "chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/"
     "TabbedAppMenuPropertiesDelegate.java"
 )
+EXT_TOOLBAR_COORD_IMPL_REL = (
+    "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/"
+    "ExtensionsToolbarCoordinatorImpl.java"
+)
+APP_MENU_DELEGATE_IMPL_REL = (
+    "chrome/android/java/src/org/chromium/chrome/browser/app/appmenu/"
+    "AppMenuPropertiesDelegateImpl.java"
+)
 
 
 def patch_device_form_factor(src_dir: Path) -> None:
@@ -282,13 +290,56 @@ def patch_tabbed_app_menu_delegate(src_dir: Path) -> None:
     print(f"[patch_ui_mode] Patched {path}")
 
 
+def patch_extensions_visibility(src_dir: Path) -> None:
+    # 1. ExtensionsToolbarCoordinatorImpl.java: ensure extensions button is pinned and visible
+    ext_path = src_dir / EXT_TOOLBAR_COORD_IMPL_REL
+    if ext_path.exists():
+        text = ext_path.read_text(encoding="utf-8")
+        old_pinned = "return mPrefService.getBoolean(Pref.PIN_EXTENSIONS_MENU_BUTTON);"
+        new_pinned = "return true; // Helium: Extensions button pinned by default"
+        if old_pinned in text:
+            text = text.replace(old_pinned, new_pinned, 1)
+
+        old_should_show = """    private boolean shouldShowMenuIcon() {
+        return mExtensionsMenuCoordinator.isExtensionsMenuOpen()
+                || mShowExtensionsMenuPending
+                || (mCanShowMenuIcon && isMenuButtonPinned());
+    }"""
+        new_should_show = """    private boolean shouldShowMenuIcon() {
+        return !mIsWebApp && mCanShowMenuIcon;
+    }"""
+        if old_should_show in text:
+            text = text.replace(old_should_show, new_should_show, 1)
+
+        ext_path.write_text(text, encoding="utf-8")
+        print(f"[patch_ui_mode] Patched {ext_path} to keep extensions button visible")
+
+    # 2. AppMenuPropertiesDelegateImpl.java: ensure extensions item is shown in menu
+    menu_path = src_dir / APP_MENU_DELEGATE_IMPL_REL
+    if menu_path.exists():
+        text = menu_path.read_text(encoding="utf-8")
+        old_show_ext = """    protected boolean shouldShowExtensionsItem() {
+        Profile profile = getProfileFromTabModel();
+        return profile != null && ExtensionUi.isEnabled(profile);
+    }"""
+        new_show_ext = """    protected boolean shouldShowExtensionsItem() {
+        return true;
+    }"""
+        if old_show_ext in text:
+            text = text.replace(old_show_ext, new_show_ext, 1)
+
+        menu_path.write_text(text, encoding="utf-8")
+        print(f"[patch_ui_mode] Patched {menu_path} to make extensions menu entry always visible")
+
+
 def main() -> None:
     src_dir = Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
     patch_device_form_factor(src_dir)
     patch_ids(src_dir)
     patch_chrome_activity(src_dir)
     patch_tabbed_app_menu_delegate(src_dir)
-    print(f"[patch_ui_mode] Successfully applied UI mode (Desktop/Mobile) patches to {src_dir}")
+    patch_extensions_visibility(src_dir)
+    print(f"[patch_ui_mode] Successfully applied UI mode & Extensions patches to {src_dir}")
 
 
 if __name__ == "__main__":
