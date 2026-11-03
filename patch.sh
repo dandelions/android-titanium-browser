@@ -3771,6 +3771,9 @@ fi
 # Apply store inline installation mechanism (Chrome Web Store & Edge Addons)
 python3 "$SCRIPT_DIR/patch_store_inline_install.py" .
 
+# Apply UI mode (Desktop / Mobile form factor) switch patch
+python3 "$SCRIPT_DIR/patch_ui_mode.py" .
+
 CURRENT_BRANCH="$(git -C "$SCRIPT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
 
 # 严格分支隔离判定：
