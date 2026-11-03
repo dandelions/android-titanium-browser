@@ -20,6 +20,12 @@ APP_MENU_DELEGATE_IMPL_REL = (
     "chrome/android/java/src/org/chromium/chrome/browser/app/appmenu/"
     "AppMenuPropertiesDelegateImpl.java"
 )
+TAB_MODEL_OBSERVER_CC_REL = (
+    "chrome/browser/ui/android/tab_model/tab_model_observer_jni_bridge.cc"
+)
+TAB_MODEL_OBSERVER_JAVA_REL = (
+    "chrome/android/java/src/org/chromium/chrome/browser/tabmodel/TabModelObserverJniBridge.java"
+)
 
 
 def patch_device_form_factor(src_dir: Path) -> None:
@@ -332,6 +338,29 @@ def patch_extensions_visibility(src_dir: Path) -> None:
         print(f"[patch_ui_mode] Patched {menu_path} to make extensions menu entry always visible")
 
 
+def patch_tab_model_observer_bridge(src_dir: Path) -> None:
+    # 1. CC: Replace CHECK(tab); with safe null guard if (!tab) return;
+    cc_path = src_dir / TAB_MODEL_OBSERVER_CC_REL
+    if cc_path.exists():
+        text = cc_path.read_text(encoding="utf-8")
+        if "CHECK(tab);" in text:
+            text = text.replace("  CHECK(tab);", "  if (!tab) return;")
+            cc_path.write_text(text, encoding="utf-8")
+            print(f"[patch_ui_mode] Patched {cc_path} to guard against null tab crash")
+
+    # 2. Java: Replace assert tab.isInitialized(); with runtime guard
+    java_path = src_dir / TAB_MODEL_OBSERVER_JAVA_REL
+    if java_path.exists():
+        text = java_path.read_text(encoding="utf-8")
+        if "assert tab.isInitialized();" in text:
+            text = text.replace(
+                "        assert tab.isInitialized();",
+                "        if (tab == null || !tab.isInitialized()) return;",
+            )
+            java_path.write_text(text, encoding="utf-8")
+            print(f"[patch_ui_mode] Patched {java_path} to guard against uninitialized tab JNI calls")
+
+
 def main() -> None:
     src_dir = Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
     patch_device_form_factor(src_dir)
@@ -339,7 +368,8 @@ def main() -> None:
     patch_chrome_activity(src_dir)
     patch_tabbed_app_menu_delegate(src_dir)
     patch_extensions_visibility(src_dir)
-    print(f"[patch_ui_mode] Successfully applied UI mode & Extensions patches to {src_dir}")
+    patch_tab_model_observer_bridge(src_dir)
+    print(f"[patch_ui_mode] Successfully applied UI mode, Extensions & TabModel patches to {src_dir}")
 
 
 if __name__ == "__main__":

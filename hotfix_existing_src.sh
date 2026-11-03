@@ -3971,8 +3971,10 @@ fi
 # Apply store inline installation mechanism (Chrome Web Store & Edge Addons)
 python3 "$SCRIPT_DIR/patch_store_inline_install.py" "$SRC_DIR"
 
-# Apply UI mode (Desktop / Mobile form factor) switch patch
+# Apply UI mode (Desktop / Mobile form factor) switch patch & TabModel safety
 python3 "$SCRIPT_DIR/patch_ui_mode.py" "$SRC_DIR"
+sed -i 's/  CHECK(tab);/  if (!tab) return;/' "$SRC_DIR/chrome/browser/ui/android/tab_model/tab_model_observer_jni_bridge.cc" 2>/dev/null || true
+sed -i 's/        assert tab.isInitialized();/        if (tab == null || !tab.isInitialized()) return;/' "$SRC_DIR/chrome/android/java/src/org/chromium/chrome/browser/tabmodel/TabModelObserverJniBridge.java" 2>/dev/null || true
 
 CURRENT_BRANCH="$(git -C "$SCRIPT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
 
