@@ -165,10 +165,17 @@ def patch_chrome_activity(src_dir: Path) -> None:
         boolean isTablet = smallestWidth >= DeviceFormFactor.MINIMUM_TABLET_WIDTH_DP;
         boolean wasTablet =
                 mConfig.smallestScreenWidthDp >= DeviceFormFactor.MINIMUM_TABLET_WIDTH_DP;"""
-    new_tablet_mode = """        boolean isTablet = DeviceFormFactor.isNonMultiDisplayContextOnTablet(this);
+    new_tablet_mode = """        int smallestWidth = DisplayUtil.getCurrentSmallestScreenWidth(this);
+        boolean isTablet = DeviceFormFactor.isNonMultiDisplayContextOnTablet(this);
         boolean wasTablet = isTablet;"""
     if old_tablet_mode in text:
         text = text.replace(old_tablet_mode, new_tablet_mode, 1)
+
+    # In case previous incomplete replacement removed smallestWidth, restore it
+    incomplete_tablet_mode = """        boolean isTablet = DeviceFormFactor.isNonMultiDisplayContextOnTablet(this);
+        boolean wasTablet = isTablet;"""
+    if incomplete_tablet_mode in text and "int smallestWidth" not in text:
+        text = text.replace(incomplete_tablet_mode, new_tablet_mode, 1)
 
     # In onMenuOrKeyboardAction:
     ui_handler = """        if (id == R.id.ui_mode_auto_menu_id
