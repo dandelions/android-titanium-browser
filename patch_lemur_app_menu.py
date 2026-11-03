@@ -895,6 +895,7 @@ TABBED_IMPORTS = [
     "import org.chromium.components.browser_ui.settings.SettingsNavigation;\n",
     "import org.chromium.content_public.browser.LoadUrlParams;\n",
     "import org.chromium.content_public.browser.WebContents;\n",
+    "import org.chromium.ui.base.DeviceFormFactor;\n",
     "import org.chromium.ui.base.PageTransition;\n",
 ]
 
@@ -1158,7 +1159,7 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
         addLemurMainMenuTile(
                 grid,
                 ICON_DESKTOP_MONITOR,
-                "桌面模式",
+                "桌面端网页",
                 hasWebContents,
                 isDesktopSite,
                 textPrimaryColor,
@@ -1243,6 +1244,75 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
                     }
                     hostActivity.finishAndRemoveTask();
                 });
+
+        // UI Mode (移动版 / 桌面版) switcher banner
+        int currentUiMode = DeviceFormFactor.getUiMode();
+        boolean isTabletUi = DeviceFormFactor.isNonMultiDisplayContextOnTablet(mContext);
+        String currentModeLabel;
+        if (currentUiMode == DeviceFormFactor.UI_MODE_MOBILE) {
+            currentModeLabel = "移动版（底部工具栏）";
+        } else if (currentUiMode == DeviceFormFactor.UI_MODE_DESKTOP) {
+            currentModeLabel = "桌面版（顶部标签栏）";
+        } else {
+            currentModeLabel = "自动（当前：" + (isTabletUi ? "桌面版" : "移动版") + "）";
+        }
+
+        LinearLayout modeCard = new LinearLayout(mContext);
+        modeCard.setOrientation(LinearLayout.HORIZONTAL);
+        modeCard.setGravity(Gravity.CENTER_VERTICAL);
+        int cardPadH = dpToPx(14);
+        int cardPadV = dpToPx(10);
+        modeCard.setPadding(cardPadH, cardPadV, cardPadH, cardPadV);
+
+        GradientDrawable modeCardBg = new GradientDrawable();
+        modeCardBg.setShape(GradientDrawable.RECTANGLE);
+        modeCardBg.setCornerRadius(dpToPx(14));
+        modeCardBg.setColor(isNight ? 0x1EFFFFFF : 0x0C000000);
+        modeCard.setBackground(modeCardBg);
+
+        ImageView modeIconView = new ImageView(mContext);
+        modeIconView.setImageDrawable(
+                createLemurVectorIcon(
+                        isTabletUi ? ICON_DESKTOP_MONITOR : ICON_WINDOW_MGR,
+                        accentColor,
+                        20));
+        LinearLayout.LayoutParams iconLp =
+                new LinearLayout.LayoutParams(dpToPx(20), dpToPx(20));
+        iconLp.setMarginEnd(dpToPx(10));
+        modeCard.addView(modeIconView, iconLp);
+
+        TextView modeTitleView = new TextView(mContext);
+        modeTitleView.setText("界面模式");
+        modeTitleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        modeTitleView.setTextColor(textSecondaryColor);
+        modeCard.addView(modeTitleView);
+
+        TextView modeValueView = new TextView(mContext);
+        modeValueView.setText(currentModeLabel);
+        modeValueView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        modeValueView.setTextColor(textPrimaryColor);
+        modeValueView.setTypeface(Typeface.DEFAULT_BOLD);
+        LinearLayout.LayoutParams valueLp =
+                new LinearLayout.LayoutParams(
+                        0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
+        valueLp.setMarginStart(dpToPx(6));
+        modeCard.addView(modeValueView, valueLp);
+
+        TextView modeSwitchBtn = new TextView(mContext);
+        modeSwitchBtn.setText("切换");
+        modeSwitchBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        modeSwitchBtn.setTextColor(accentColor);
+        modeSwitchBtn.setTypeface(Typeface.DEFAULT_BOLD);
+        modeCard.addView(modeSwitchBtn);
+
+        modeCard.setClickable(true);
+        modeCard.setOnClickListener(v -> showUiModeSelectionDialog(hostActivity, dialog));
+
+        LinearLayout.LayoutParams cardLp =
+                new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        cardLp.topMargin = dpToPx(12);
+        sheet.addView(modeCard, cardLp);
 
         dialog.setContentView(
                 outerHost,
@@ -1691,6 +1761,26 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
                 rippleColor,
                 v -> triggerMenuAction(dialog, R.id.extensions_webstore_menu_id));
 
+        // Tool 9: 界面模式
+        addLemurToolSquareTile(
+                toolsGrid,
+                createLemurVectorIcon(ICON_WINDOW_MGR, textPrimaryColor, 24),
+                "界面模式",
+                true,
+                false,
+                tileSurfaceColor,
+                activeSurfaceColor,
+                textPrimaryColor,
+                textSecondaryColor,
+                accentColor,
+                rippleColor,
+                v -> {
+                    if (dialog.isShowing()) {
+                        dialog.dismiss();
+                    }
+                    showUiModeSelectionDialog(hostActivity, null);
+                });
+
         scrollView.post(
                 () -> {
                     if (scrollView.getHeight() > maxScrollHeight) {
@@ -1728,6 +1818,47 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
             dialog.dismiss();
         }
         mAppMenuDelegate.onOptionsItemSelected(itemId, null, null);
+    }
+
+    private void showUiModeSelectionDialog(Activity hostActivity, @Nullable Dialog parentDialog) {
+        String[] options = new String[] {
+            "跟随系统（自动按屏幕尺寸识别）",
+            "移动版（手机界面：底部工具栏，隐藏顶部标签栏）",
+            "桌面版（电脑/平板：顶部标签栏，常规顶部工具栏）"
+        };
+        int currentMode = DeviceFormFactor.getUiMode();
+        int checkedItem = 0;
+        if (currentMode == DeviceFormFactor.UI_MODE_MOBILE) {
+            checkedItem = 1;
+        } else if (currentMode == DeviceFormFactor.UI_MODE_DESKTOP) {
+            checkedItem = 2;
+        }
+
+        new android.app.AlertDialog.Builder(hostActivity)
+                .setTitle("选择界面模式")
+                .setSingleChoiceItems(
+                        options,
+                        checkedItem,
+                        (d, which) -> {
+                            d.dismiss();
+                            int newMode;
+                            if (which == 1) {
+                                newMode = DeviceFormFactor.UI_MODE_MOBILE;
+                            } else if (which == 2) {
+                                newMode = DeviceFormFactor.UI_MODE_DESKTOP;
+                            } else {
+                                newMode = DeviceFormFactor.UI_MODE_AUTO;
+                            }
+                            if (newMode != DeviceFormFactor.getUiMode()) {
+                                DeviceFormFactor.setUiMode(newMode);
+                                if (parentDialog != null && parentDialog.isShowing()) {
+                                    parentDialog.dismiss();
+                                }
+                                hostActivity.recreate();
+                            }
+                        })
+                .setNegativeButton("取消", null)
+                .show();
     }
 
     private void addLemurMainMenuTile(
@@ -2294,9 +2425,9 @@ def is_lemur_branch(src_dir: Path) -> bool:
             try:
                 res = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True, text=True, cwd=cwd)
                 branch = res.stdout.strip()
-                if branch in ("lemur-style-app-menu", "lemur"):
+                if branch in ("lemur-style-app-menu", "lemur", "old-android", "old-version") or "old-" in branch:
                     return True
-                if branch in ("main", "old-android"):
+                if branch in ("main",):
                     return False
             except Exception:
                 pass
@@ -2322,6 +2453,13 @@ def main() -> None:
     patch_app_menu_properties_delegate(src_dir)
     patch_app_menu_handler_impl(src_dir)
     patch_tabbed_app_menu_delegate(src_dir)
+    try:
+        from patch_ui_mode import patch_device_form_factor, patch_ids, patch_chrome_activity
+        patch_device_form_factor(src_dir)
+        patch_ids(src_dir)
+        patch_chrome_activity(src_dir)
+    except Exception as e:
+        print(f"[patch_lemur_app_menu] Notice: UI mode sub-patching: {e}")
     print(f"Successfully applied Lemur-style toolbar icons, 3-line menu, and 4-square extensions sheet in {src_dir}")
 
 

@@ -211,6 +211,10 @@ void ExtensionManagement::SetAllowUnpackedWithoutDeveloperModeForTesting(
     path.write_text(text)
 PYCODE
 
+# ext: app menu
+sed -i 's|return ExtensionUi.isEnabled(getProfileFromTabModel());|return true;|' "$TABBED_APP_MENU_DELEGATE" 2>/dev/null || true
+sed -i 's|return profile != null && ExtensionUi.isEnabled(profile);|return true;|' "$APP_MENU_DELEGATE" 2>/dev/null || true
+
 # The toolbar icon toggles the menu, so the duplicate close button is not needed.
 perl -0pi -e 's|\n        android:padding="12dp"||g; s|(android:id="\@\+id/extensions_menu_close_button"\n)(?!        android:visibility="gone"\n)|$1        android:visibility="gone"\n|' "$EXTENSIONS_MENU_HEADER"
 
@@ -3964,6 +3968,11 @@ fi
 # Apply store inline installation mechanism (Chrome Web Store & Edge Addons)
 python3 "$SCRIPT_DIR/patch_store_inline_install.py" "$SRC_DIR"
 
+# Apply UI mode (Desktop / Mobile form factor) switch patch & TabModel safety
+python3 "$SCRIPT_DIR/patch_ui_mode.py" "$SRC_DIR"
+sed -i 's/  CHECK(tab);/  if (!tab) return;/' "$SRC_DIR/chrome/browser/ui/android/tab_model/tab_model_observer_jni_bridge.cc" 2>/dev/null || true
+sed -i 's/        assert tab.isInitialized();/        if (tab == null || !tab.isInitialized()) return;/' "$SRC_DIR/chrome/android/java/src/org/chromium/chrome/browser/tabmodel/TabModelObserverJniBridge.java" 2>/dev/null || true
+
 CURRENT_BRANCH="$(git -C "$SCRIPT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
 
 # 严格分支隔离判定：
@@ -4023,7 +4032,7 @@ restore_modern_android_sdk_baseline() {
     done
 }
 
-if [ "$CURRENT_BRANCH" = "lemur-style-app-menu" ] || [ "$CURRENT_BRANCH" = "lemur" ] || [ "${LEMUR_APP_MENU:-0}" = "1" ]; then
+if [ "$CURRENT_BRANCH" = "lemur-style-app-menu" ] || [ "$CURRENT_BRANCH" = "lemur" ] || [ "$CURRENT_BRANCH" = "old-android" ] || [ "$CURRENT_BRANCH" = "old-version" ] || [[ "$CURRENT_BRANCH" == *"old-"* ]] || [ "${LEMUR_APP_MENU:-0}" = "1" ]; then
     python3 "$SCRIPT_DIR/patch_lemur_app_menu.py" "$SRC_DIR"
 fi
 

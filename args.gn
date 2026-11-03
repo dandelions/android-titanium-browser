@@ -1,5 +1,5 @@
 chrome_public_manifest_package = "io.github.jqssun.helium"
-is_desktop_android = true
+is_desktop_android = false
 target_os = "android"
 target_cpu = "arm"
 enable_android_secondary_abi = false
@@ -41,6 +41,6 @@ enable_av1_decoder = true
 enable_dav1d_decoder = true
 include_both_v8_snapshots = false
 include_both_v8_snapshots_android_secondary_abi = false
-v8_enable_drumbrake = true
-v8_drumbrake_bounds_checks = true
+v8_enable_drumbrake = false
+v8_drumbrake_bounds_checks = false
 generate_linker_map = false
