@@ -2199,6 +2199,32 @@ def patch_suggestion_layout_scroll_listener(path):
     path.write_text(text)
 
 
+def patch_dropdown_alignment_wrapper(path):
+    text = path.read_text()
+    wrapper_pattern = re.compile(
+        r"(?m)^[ \t]*(?:(?:public|protected|private)\s+)?"
+        r"void heliumSetAlignToBottom\(boolean alignToBottom\) \{\n"
+        r"[ \t]*mLayoutScrollListener\.setAlignToBottom\(alignToBottom\);\n"
+        r"[ \t]*\}"
+    )
+    text = wrapper_pattern.sub("", text)
+
+    class_pattern = re.compile(
+        r"\bclass\s+OmniboxSuggestionsDropdown\b[^{}]*\{"
+    )
+    class_match = class_pattern.search(text)
+    if class_match is None:
+        raise SystemExit(f"OmniboxSuggestionsDropdown class not found in {path}")
+
+    wrapper = """    void heliumSetAlignToBottom(boolean alignToBottom) {
+        mLayoutScrollListener.setAlignToBottom(alignToBottom);
+    }
+"""
+    suffix = text[class_match.end():].lstrip("\r\n")
+    text = text[:class_match.end()] + "\n" + wrapper + suffix
+    path.write_text(text)
+
+
 ntp = Path(sys.argv[1])
 coordinator = Path(sys.argv[2])
 dropdown = Path(sys.argv[3])
@@ -2515,29 +2541,7 @@ replace_if_missing(
 """,
 )
 patch_suggestion_layout_scroll_listener(dropdown)
-replace_if_missing(
-    dropdown,
-    "void heliumSetAlignToBottom(boolean alignToBottom)",
-    """    public void resetSelection() {
-""",
-    """    void heliumSetAlignToBottom(boolean alignToBottom) {
-        mLayoutScrollListener.setAlignToBottom(alignToBottom);
-    }
-
-    public void resetSelection() {
-""",
-)
-dropdown_text = dropdown.read_text()
-wrapper_pattern = re.compile(
-    r"    void heliumSetAlignToBottom\(boolean alignToBottom\) \{\n[\s\S]*?\n    \}"
-)
-wrapper = """    void heliumSetAlignToBottom(boolean alignToBottom) {
-        mLayoutScrollListener.setAlignToBottom(alignToBottom);
-    }"""
-if wrapper_pattern.search(dropdown_text):
-    dropdown.write_text(wrapper_pattern.sub(wrapper, dropdown_text, count=1))
-else:
-    raise SystemExit(f"heliumSetAlignToBottom wrapper was not added to {dropdown}")
+patch_dropdown_alignment_wrapper(dropdown)
 container_text = container.read_text()
 container_text = re.sub(
     r"([A-Za-z_$][A-Za-z0-9_$]*)\.getLayoutScrollListener\(\)\.(?:setAlignToBottom|heliumSetAlignToBottom)\([^;]+\);",
