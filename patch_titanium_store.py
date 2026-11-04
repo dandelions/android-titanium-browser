@@ -1,0 +1,158 @@
+#!/usr/bin/env python3
+"""Restore Titanium's native extension-store installation path."""
+
+import re
+import sys
+from pathlib import Path
+
+CHROME_ACTIVITY = Path(
+    "chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActivity.java"
+)
+DOWNLOAD_CRX_UTIL = Path("chrome/browser/download/download_crx_util.cc")
+
+TITANIUM_ALLOWLIST = '''
+  if (const auto& o = item.GetRequestInitiator(); o && o->scheme() == "chrome-extension") return true;
+  for (const char* d : {"addons.opera.com", "operacdn.com", "microsoftedge.microsoft.com", "edge.microsoft.com", "delivery.mp.microsoft.com"}) if (item.GetURL().DomainIs(d) || item.GetReferrerUrl().DomainIs(d)) return true;'''
+
+
+def _matching_brace(text: str, open_index: int) -> int:
+    depth = 0
+    in_string = False
+    escaped = False
+    for index in range(open_index, len(text)):
+        char = text[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+        elif char == '"':
+            in_string = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return index
+    raise RuntimeError("Unclosed generated code block")
+
+
+def clean_chrome_activity(path: Path) -> bool:
+    if not path.is_file():
+        return False
+    text = path.read_text(encoding="utf-8")
+    original = text
+    text = re.sub(
+        r"(?m)^[ \t]*injectStoreInlineInstallSupport\(tab\);[ \t]*\n?", "", text
+    )
+
+    for name in ("HELIUM_CWS_SCRIPT", "HELIUM_EDGE_SCRIPT"):
+        marker = f"private static final String {name}"
+        while marker in text:
+            start = text.rfind("\n", 0, text.index(marker)) + 1
+            semicolon = text.index("=", text.index(marker)) + 1
+            in_string = False
+            escaped = False
+            end = -1
+            for index in range(semicolon, len(text)):
+                char = text[index]
+                if in_string:
+                    if escaped:
+                        escaped = False
+                    elif char == "\\":
+                        escaped = True
+                    elif char == '"':
+                        in_string = False
+                elif char == '"':
+                    in_string = True
+                elif char == ";":
+                    end = index + 1
+                    break
+            if end < 0:
+                raise RuntimeError(f"Could not find end of {name} in {path}")
+            text = text[:start] + text[end:]
+
+    method_marker = "private void injectStoreInlineInstallSupport(Tab tab)"
+    while method_marker in text:
+        method_start = text.index(method_marker)
+        line_start = text.rfind("\n", 0, method_start) + 1
+        comment = text.rfind("// Helium: Native inline installation", 0, method_start)
+        if comment >= line_start - 100:
+            line_start = text.rfind("\n", 0, comment) + 1
+        open_brace = text.find("{", method_start)
+        close_brace = _matching_brace(text, open_brace)
+        text = text[:line_start] + text[close_brace + 1:]
+
+    if text != original:
+        path.write_text(text, encoding="utf-8")
+        return True
+    return False
+
+
+def restore_titanium_allowlist(path: Path) -> bool:
+    if not path.is_file():
+        return False
+    text = path.read_text(encoding="utf-8")
+    original = text
+    text = re.sub(
+        r'(?m)^[ \t]*download_item\.GetURL\(\)\.path\(\)\.ends_with\("\.crx"\) \|\|[ \t]*\n',
+        "",
+        text,
+    )
+    text = re.sub(
+        r'(?m)^[ \t]*download_item\.GetTargetFilePath\(\)\.MatchesExtension\(FILE_PATH_LITERAL\("\.crx"\)\) \|\|[ \t]*\n',
+        "",
+        text,
+    )
+    marker = "bool OffStoreInstallAllowedByPrefs("
+    start = text.find(marker)
+    if start < 0:
+        raise RuntimeError(f"OffStoreInstallAllowedByPrefs not found in {path}")
+    open_brace = text.find("{", start)
+    close_brace = _matching_brace(text, open_brace)
+    function = text[start:close_brace + 1]
+    body_start = function.find("{") + 1
+    body_end = len(function) - 1
+    body = function[body_start:body_end]
+
+    body = re.sub(
+        r"(?m)^[ \t]*// Helium: Whitelist store domains for inline CRX installation\n[\s\S]*?^[ \t]{2,}\}[ \t]*\n?",
+        "",
+        body,
+        count=1,
+    )
+    body = re.sub(
+        r"(?m)^[ \t]*if \(const auto& o = item\.GetRequestInitiator\(\);[^\n]*\n?",
+        "",
+        body,
+    )
+    body = re.sub(
+        r"(?m)^[ \t]*for \(const char\* d : \{[^}\n]*\}\) if \(item\.GetURL\(\)\.DomainIs\(d\) \|\| item\.GetReferrerUrl\(\)\.DomainIs\(d\)\) return true;[ \t]*\n?",
+        "",
+        body,
+    )
+
+    normalized = function[:body_start] + TITANIUM_ALLOWLIST + body + "}"
+    result = text[:start] + normalized + text[close_brace + 1:]
+    if result != text:
+        path.write_text(result, encoding="utf-8")
+        return True
+    return False
+
+
+def patch_source_tree(source_root: Path) -> bool:
+    changed = clean_chrome_activity(source_root / CHROME_ACTIVITY)
+    changed = restore_titanium_allowlist(source_root / DOWNLOAD_CRX_UTIL) or changed
+    return changed
+
+
+if __name__ == "__main__":
+    try:
+        changed = patch_source_tree(Path(sys.argv[1] if len(sys.argv) > 1 else "."))
+    except (OSError, RuntimeError, ValueError) as error:
+        print(f"[patch_titanium_store] {error}", file=sys.stderr)
+        raise SystemExit(1)
+    print("[patch_titanium_store] restored Titanium native store flow" if changed else
+          "[patch_titanium_store] Titanium native store flow already active")
