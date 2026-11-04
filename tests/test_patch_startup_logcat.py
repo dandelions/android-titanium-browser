@@ -24,6 +24,9 @@ class StartupLogcatPatchTest(unittest.TestCase):
     private static final String TAG = "ChromeApplicationImplHooks";
     public static void postAttachBaseContext() {
     }
+
+    public static void onCreate() {
+    }
 }
 """
         )
@@ -49,6 +52,30 @@ class StartupLogcatPatchTest(unittest.TestCase):
         self.assertFalse(PATCH.patch_source_tree(self.root))
         self.assertEqual(first_result, self.hook_path.read_text())
         self.assertEqual(1, first_result.count(PATCH.MARKER))
+
+    def test_repairs_legacy_extra_method_closing_brace(self):
+        legacy = """final class ChromeApplicationImplHooks {
+    private static final String TAG = "ChromeApplicationImplHooks";
+    public static void postAttachBaseContext() {
+        // Helium startup logcat capture
+        try {
+            startCapture();
+        } catch (Exception e) {
+            reportError(e);
+        }
+    }
+}
+    public static void onCreate() {
+    }
+}
+"""
+        self.hook_path.write_text(legacy)
+
+        self.assertTrue(PATCH.patch_hook(self.hook_path))
+        result = self.hook_path.read_text()
+        self.assertEqual(result.count("{"), result.count("}"))
+        self.assertEqual(1, result.count(PATCH.MARKER))
+        self.assertIn("\n    public static void onCreate() {", result)
 
     def test_missing_hook_fails_explicitly(self):
         self.hook_path.write_text("final class ChromeApplicationImplHooks {}\n")

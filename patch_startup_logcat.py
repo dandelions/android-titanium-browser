@@ -6,6 +6,7 @@ from pathlib import Path
 
 MARKER = "Helium startup logcat capture"
 HOOK = "public static void postAttachBaseContext() {"
+NEXT_HOOK = "public static void onCreate() {"
 BODY = '''public static void postAttachBaseContext() {
         // Helium startup logcat capture
         try {
@@ -34,12 +35,17 @@ BODY = '''public static void postAttachBaseContext() {
 
 def patch_hook(path: Path) -> bool:
     text = path.read_text()
-    if MARKER in text:
-        return False
-    if HOOK not in text:
+    start = text.find(HOOK)
+    if start < 0:
         raise RuntimeError(f"postAttachBaseContext hook not found in {path}")
-    text = text.replace(HOOK, BODY, 1)
-    path.write_text(text)
+    end = text.find(NEXT_HOOK, start + len(HOOK))
+    if end < 0:
+        raise RuntimeError(f"onCreate hook not found after postAttachBaseContext in {path}")
+
+    patched = text[:start] + BODY + "\n\n    " + text[end:]
+    if patched == text:
+        return False
+    path.write_text(patched)
     return True
 
 
