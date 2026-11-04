@@ -368,8 +368,128 @@ def patch_tab_model_observer_bridge(src_dir: Path) -> None:
             print(f"[patch_ui_mode] Patched {java_path} to guard against uninitialized tab JNI calls")
 
 
+def remove_ui_mode_patches(src_dir: Path) -> None:
+    device_path = src_dir / DEVICE_FORM_FACTOR_REL
+    if device_path.exists():
+        text = device_path.read_text(encoding="utf-8")
+        text = re.sub(
+            r"    public static final int UI_MODE_AUTO = 0;.*?    public static void setUiMode\(int mode\) \{.*?    \}\n",
+            "",
+            text,
+            count=1,
+            flags=re.DOTALL,
+        )
+        replacements = (
+            (
+                """    public static boolean isTablet() {
+        if (sIsTabletForTesting != null) {
+            return sIsTabletForTesting;
+        }
+        int mode = getUiMode();
+        if (mode == UI_MODE_MOBILE) return false;
+        if (mode == UI_MODE_DESKTOP) return true;
+        return detectScreenWidthBucket(ContextUtils.getApplicationContext())
+                >= SCREEN_BUCKET_TABLET;
+    }""",
+                """    public static boolean isTablet() {
+        if (sIsTabletForTesting != null) {
+            return sIsTabletForTesting;
+        }
+        return detectScreenWidthBucket(ContextUtils.getApplicationContext())
+                >= SCREEN_BUCKET_TABLET;
+    }""",
+            ),
+            (
+                """    public static boolean isNonMultiDisplayContextOnTablet(Context context) {
+        int mode = getUiMode();
+        if (mode == UI_MODE_MOBILE) return false;
+        if (mode == UI_MODE_DESKTOP) return true;
+        return detectScreenWidthBucket(context) >= SCREEN_BUCKET_TABLET;
+    }""",
+                """    public static boolean isNonMultiDisplayContextOnTablet(Context context) {
+        return detectScreenWidthBucket(context) >= SCREEN_BUCKET_TABLET;
+    }""",
+            ),
+            (
+                """    public static boolean isWindowOnTablet(WindowAndroid windowAndroid) {
+        int mode = getUiMode();
+        if (mode == UI_MODE_MOBILE) return false;
+        if (mode == UI_MODE_DESKTOP) return true;
+        return detectScreenWidthBucket(windowAndroid) >= SCREEN_BUCKET_TABLET;
+    }""",
+                """    public static boolean isWindowOnTablet(WindowAndroid windowAndroid) {
+        return detectScreenWidthBucket(windowAndroid) >= SCREEN_BUCKET_TABLET;
+    }""",
+            ),
+            (
+                """    public static boolean isNonMultiDisplayContextOnLargeTablet(Context context) {
+        int mode = getUiMode();
+        if (mode == UI_MODE_MOBILE) return false;
+        if (mode == UI_MODE_DESKTOP) return true;
+        return detectScreenWidthBucket(context) == SCREEN_BUCKET_LARGE_TABLET;
+    }""",
+                """    public static boolean isNonMultiDisplayContextOnLargeTablet(Context context) {
+        return detectScreenWidthBucket(context) == SCREEN_BUCKET_LARGE_TABLET;
+    }""",
+            ),
+        )
+        for patched, original in replacements:
+            text = text.replace(patched, original, 1)
+        device_path.write_text(text, encoding="utf-8")
+
+    ids_path = src_dir / IDS_REL
+    if ids_path.exists():
+        text = ids_path.read_text(encoding="utf-8")
+        text = re.sub(r"^\s*<item type=\"id\" name=\"ui_mode_(?:auto|mobile|desktop|menu)_id\" />\n", "", text, flags=re.MULTILINE)
+        ids_path.write_text(text, encoding="utf-8")
+
+    activity_path = src_dir / ACTIVITY_REL
+    if activity_path.exists():
+        text = activity_path.read_text(encoding="utf-8")
+        text = text.replace(
+            """        boolean isTablet = DeviceFormFactor.isNonMultiDisplayContextOnTablet(this);
+        boolean wasTablet = isTablet;""",
+            """        boolean isTablet = smallestWidth >= DeviceFormFactor.MINIMUM_TABLET_WIDTH_DP;
+        boolean wasTablet =
+                mConfig.smallestScreenWidthDp >= DeviceFormFactor.MINIMUM_TABLET_WIDTH_DP;""",
+            1,
+        )
+        text = re.sub(
+            r"        if \(id == R\.id\.ui_mode_auto_menu_id.*?        if \(id == R\.id\.preferences_id\) \{\n",
+            "        if (id == R.id.preferences_id) {\n",
+            text,
+            count=1,
+            flags=re.DOTALL,
+        )
+        activity_path.write_text(text, encoding="utf-8")
+
+    tabbed_path = src_dir / TABBED_DELEGATE_REL
+    if tabbed_path.exists():
+        text = tabbed_path.read_text(encoding="utf-8")
+        text = re.sub(
+            r"    private ListItem buildUiModeChoiceItem\(int id, String title\) \{.*?    private ListItem buildSettingsItem\(\) \{",
+            "    private ListItem buildSettingsItem() {",
+            text,
+            count=1,
+            flags=re.DOTALL,
+        )
+        text = re.sub(r"^\s*modelList\.add\(buildUiModeItem\(\)\);\n", "", text, flags=re.MULTILINE)
+        tabbed_path.write_text(text, encoding="utf-8")
+
+
 def main() -> None:
-    src_dir = Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
+    remove_only = len(sys.argv) > 1 and sys.argv[1] == "--remove-ui-mode"
+    extensions_only = len(sys.argv) > 1 and sys.argv[1] == "--extensions-only"
+    argument_index = 2 if (remove_only or extensions_only) else 1
+    src_dir = Path(sys.argv[argument_index] if len(sys.argv) > argument_index else ".").resolve()
+    if remove_only:
+        remove_ui_mode_patches(src_dir)
+        print(f"[patch_ui_mode] Removed UI mode patches from {src_dir}")
+        return
+    if extensions_only:
+        patch_extensions_visibility(src_dir)
+        print(f"[patch_ui_mode] Applied extension visibility only to {src_dir}")
+        return
     patch_device_form_factor(src_dir)
     patch_ids(src_dir)
     patch_chrome_activity(src_dir)
