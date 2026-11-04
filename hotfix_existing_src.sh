@@ -4058,6 +4058,9 @@ fi
 # Apply store inline installation mechanism (Chrome Web Store & Edge Addons)
 python3 "$SCRIPT_DIR/patch_store_inline_install.py" "$SRC_DIR"
 
+# Apply bounded logcat capture at the earliest Helium application hook.
+python3 "$SCRIPT_DIR/patch_startup_logcat.py" "$SRC_DIR"
+
 # Apply UI mode (Desktop / Mobile form factor) switch patch & TabModel safety
 python3 "$SCRIPT_DIR/patch_ui_mode.py" "$SRC_DIR"
 sed -i 's/  CHECK(tab);/  if (!tab) return;/' "$SRC_DIR/chrome/browser/ui/android/tab_model/tab_model_observer_jni_bridge.cc" 2>/dev/null || true

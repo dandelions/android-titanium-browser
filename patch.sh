@@ -3859,6 +3859,9 @@ fi
 # Apply store inline installation mechanism (Chrome Web Store & Edge Addons)
 python3 "$SCRIPT_DIR/patch_store_inline_install.py" .
 
+# Capture startup logcat before Chromium initialization proceeds.
+python3 "$SCRIPT_DIR/patch_startup_logcat.py" .
+
 # Apply UI mode (Desktop / Mobile form factor) switch patch & TabModel safety
 python3 "$SCRIPT_DIR/patch_ui_mode.py" .
 sed -i 's/  CHECK(tab);/  if (!tab) return;/' chrome/browser/ui/android/tab_model/tab_model_observer_jni_bridge.cc 2>/dev/null || true
