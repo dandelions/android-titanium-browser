@@ -2147,6 +2147,7 @@ OMNIBOX_DROPDOWN_EMBEDDER_INTERFACE=chrome/browser/ui/android/omnibox/java/src/o
 FEED_SURFACE_COORDINATOR=chrome/android/feed/core/java/src/org/chromium/chrome/browser/feed/FeedSurfaceCoordinator.java
 python3 - "$NEW_TAB_PAGE" "$NEW_TAB_PAGE_COORDINATOR" "$OMNIBOX_SUGGESTIONS_DROPDOWN" "$OMNIBOX_SUGGESTIONS_CONTAINER" "$OMNIBOX_DROPDOWN_EMBEDDER" "$OMNIBOX_DROPDOWN_EMBEDDER_INTERFACE" "$FEED_SURFACE_COORDINATOR" <<'PYCODE'
 from pathlib import Path
+import re
 import sys
 
 
@@ -2163,6 +2164,55 @@ def replace_if_present(path, old, new):
     text = path.read_text()
     if old in text:
         path.write_text(text.replace(old, new, 1))
+
+
+def patch_suggestion_layout_scroll_listener(path):
+    text = path.read_text()
+    class_start = text.find("class SuggestionLayoutScrollListener")
+    if class_start < 0:
+        raise SystemExit(f"SuggestionLayoutScrollListener class not found in {path}")
+
+    reset_anchor = "/* package */ void resetScrollState() {"
+    reset_pos = text.find(reset_anchor, class_start)
+    if reset_pos < 0:
+        raise SystemExit(f"resetScrollState anchor not found in {path}")
+
+    field_anchor = "private boolean mCurrentGestureAffectedKeyboardState;"
+    field_pos = text.find(field_anchor, class_start, reset_pos)
+    if field_pos < 0:
+        raise SystemExit(f"SuggestionLayoutScrollListener field anchor not found in {path}")
+    if "private boolean mAlignToBottom;" not in text[class_start:reset_pos]:
+        field_end = field_pos + len(field_anchor)
+        text = text[:field_end] + "\n        private boolean mAlignToBottom;" + text[field_end:]
+        reset_pos += len("\n        private boolean mAlignToBottom;")
+
+    setter = """        void setAlignToBottom(boolean alignToBottom) {
+            if (mAlignToBottom == alignToBottom) return;
+            mAlignToBottom = alignToBottom;
+            setReverseLayout(alignToBottom);
+            setStackFromEnd(alignToBottom);
+            if (!alignToBottom) scrollToPositionWithOffset(0, 0);
+            requestLayout();
+        }
+
+"""
+    setter_pattern = re.compile(
+        r"        void setAlignToBottom\(boolean alignToBottom\) \{\n[\s\S]*?\n        \}"
+    )
+    class_region = text[class_start:reset_pos]
+    setter_matches = list(setter_pattern.finditer(class_region))
+    if len(setter_matches) > 1:
+        raise SystemExit(f"Multiple setAlignToBottom methods found in {path}")
+    if setter_matches:
+        match = setter_matches[0]
+        text = text[:class_start + match.start()] + setter.rstrip() + text[class_start + match.end():]
+    else:
+        doc_anchor = "        /**\n         * Reset the internal scroll tracker."
+        doc_pos = text.find(doc_anchor, class_start, reset_pos)
+        if doc_pos < 0:
+            raise SystemExit(f"resetScrollState documentation anchor not found in {path}")
+        text = text[:doc_pos] + setter + text[doc_pos:]
+    path.write_text(text)
 
 
 ntp = Path(sys.argv[1])
@@ -2480,22 +2530,58 @@ replace_if_missing(
          * Reset the internal scroll tracker. This needs to be called either when the
 """,
 )
-replace_if_present(
-    container,
-    "setAlignToBottom(omniboxAlignment.top == 0);",
-    "setAlignToBottom(omniboxAlignment.isBottomToolbar);",
+patch_suggestion_layout_scroll_listener(dropdown)
+replace_if_missing(
+    dropdown,
+    "void heliumSetAlignToBottom(boolean alignToBottom)",
+    """    public void resetSelection() {
+""",
+    """    void heliumSetAlignToBottom(boolean alignToBottom) {
+        mLayoutScrollListener.setAlignToBottom(alignToBottom);
+    }
+
+    public void resetSelection() {
+""",
 )
+dropdown_text = dropdown.read_text()
+wrapper_pattern = re.compile(
+    r"    void heliumSetAlignToBottom\(boolean alignToBottom\) \{\n[\s\S]*?\n    \}"
+)
+wrapper = """    void heliumSetAlignToBottom(boolean alignToBottom) {
+        mLayoutScrollListener.setAlignToBottom(alignToBottom);
+    }"""
+if wrapper_pattern.search(dropdown_text):
+    dropdown.write_text(wrapper_pattern.sub(wrapper, dropdown_text, count=1))
+else:
+    raise SystemExit(f"heliumSetAlignToBottom wrapper was not added to {dropdown}")
+container_text = container.read_text()
+container_text = re.sub(
+    r"([A-Za-z_$][A-Za-z0-9_$]*)\.getLayoutScrollListener\(\)\.(?:setAlignToBottom|heliumSetAlignToBottom)\([^;]+\);",
+    r"\1.heliumSetAlignToBottom(omniboxAlignment.isBottomToolbar);",
+    container_text,
+)
+container_text = container_text.replace(
+    "mDropdown.setAlignToBottom(omniboxAlignment.top == 0);",
+    "mDropdown.heliumSetAlignToBottom(omniboxAlignment.isBottomToolbar);",
+)
+container.write_text(container_text)
 replace_if_missing(
     container,
-    "setAlignToBottom(omniboxAlignment.isBottomToolbar);",
+    "heliumSetAlignToBottom(omniboxAlignment.isBottomToolbar);",
     """        mOmniboxAlignment = omniboxAlignment;
         mDropdown.setPaddingRelative(
 """,
     """        mOmniboxAlignment = omniboxAlignment;
-        mDropdown.getLayoutScrollListener().setAlignToBottom(omniboxAlignment.isBottomToolbar);
+        mDropdown.heliumSetAlignToBottom(omniboxAlignment.isBottomToolbar);
         mDropdown.setPaddingRelative(
 """,
 )
+container_text = container.read_text()
+if re.search(
+    r"\.getLayoutScrollListener\(\)\.(?:setAlignToBottom|heliumSetAlignToBottom)\(",
+    container_text,
+):
+    raise SystemExit(f"Container still calls a layout-listener method directly: {container}")
 replace_if_present(
     embedder,
     ".getInsets(WindowInsetsCompat.Type.statusBars())",
