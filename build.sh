@@ -191,6 +191,22 @@ configure_network_env() {
 }
 configure_network_env
 
+ensure_titanium_extension_bundle() {
+    local bundle_dir="$SCRIPT_DIR/extensions/dist"
+    local bundle_index="$bundle_dir/bundled.json"
+    local bundle_crx="$bundle_dir/titanium.crx"
+    if [ -f "$bundle_crx" ] && grep -q '"external_crx": "titanium.crx"' "$bundle_index" 2>/dev/null; then
+        return 0
+    fi
+    echo "Fetching Titanium extension for bundled installation..."
+    python3 "$SCRIPT_DIR/extensions/bundle.py" \
+        "$bundle_dir" \
+        titanium \
+        https://github.com/jqssun/android-titanium-extension/releases/latest/download/titanium.crx
+}
+
+ensure_titanium_extension_bundle
+
 if [ "$SKIP_SYSTEM_DEPS" != "1" ]; then
     sudo apt-get update
     sudo apt-get install -y sudo lsb-release file nano git curl python3 python3-pillow imagemagick librsvg2-bin ccache zstd bzip2 openjdk-17-jre-headless

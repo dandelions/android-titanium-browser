@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -2366,6 +2367,50 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
 """
 
 
+def _without_ui_mode_methods(methods: str) -> str:
+    methods = re.sub(
+        r"\n        // UI Mode \(移动版 / 桌面版\) switcher banner\n.*?        dialog\.setContentView\(",
+        "\n        dialog.setContentView(",
+        methods,
+        count=1,
+        flags=re.DOTALL,
+    )
+    methods = re.sub(
+        r"\n        // Tool 9: 界面模式\n.*?        scrollView\.post\(",
+        "\n        scrollView.post(",
+        methods,
+        count=1,
+        flags=re.DOTALL,
+    )
+    methods = re.sub(
+        r"\n    private void showUiModeSelectionDialog\(@Nullable Activity hostActivity, @Nullable Dialog parentDialog\) \{.*?\n    private void addLemurMainMenuTile\(",
+        "\n    private void addLemurMainMenuTile(",
+        methods,
+        count=1,
+        flags=re.DOTALL,
+    )
+    return methods
+
+
+def is_old_compat_branch(src_dir: Path) -> bool:
+    try:
+        for cwd in (str(src_dir), os.path.dirname(os.path.abspath(__file__)), "."):
+            result = subprocess.run(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                capture_output=True,
+                text=True,
+                cwd=cwd,
+            )
+            branch = result.stdout.strip()
+            if branch == "old-android" or branch == "old-version" or branch.startswith("old-"):
+                return True
+            if branch in ("main", "lemur", "lemur-style-app-menu"):
+                return False
+    except Exception:
+        pass
+    return os.environ.get("OLD_VERSION") == "1" or os.environ.get("OLD_ANDROID") == "1"
+
+
 def patch_tabbed_app_menu_delegate(src_dir: Path) -> None:
     path = src_dir / TABBED_DELEGATE_REL
     if not path.exists():
@@ -2464,14 +2509,21 @@ def main() -> None:
     patch_extensions_menu_mediator(src_dir)
     patch_app_menu_properties_delegate(src_dir)
     patch_app_menu_handler_impl(src_dir)
+    if not is_old_compat_branch(src_dir):
+        global LEMUR_MENU_METHODS, TABBED_IMPORTS
+        LEMUR_MENU_METHODS = _without_ui_mode_methods(LEMUR_MENU_METHODS)
+        TABBED_IMPORTS = [
+            item for item in TABBED_IMPORTS if "DeviceFormFactor" not in item
+        ]
     patch_tabbed_app_menu_delegate(src_dir)
-    try:
-        from patch_ui_mode import patch_device_form_factor, patch_ids, patch_chrome_activity
-        patch_device_form_factor(src_dir)
-        patch_ids(src_dir)
-        patch_chrome_activity(src_dir)
-    except Exception as e:
-        print(f"[patch_lemur_app_menu] Notice: UI mode sub-patching: {e}")
+    if is_old_compat_branch(src_dir):
+        try:
+            from patch_ui_mode import patch_device_form_factor, patch_ids, patch_chrome_activity
+            patch_device_form_factor(src_dir)
+            patch_ids(src_dir)
+            patch_chrome_activity(src_dir)
+        except Exception as e:
+            print(f"[patch_lemur_app_menu] Notice: UI mode sub-patching: {e}")
     print(f"Successfully applied Lemur-style toolbar icons, 3-line menu, and 4-square extensions sheet in {src_dir}")
 
 
