@@ -185,7 +185,7 @@ storePassword=your-store-password
 
 ## 7. 启动闪退日志
 
-应用会在 Chromium 初始化前启动 logcat 采集，并将应用进程可读取的日志写入应用专属外部目录：
+应用会在 Chromium 初始化前启动 logcat 采集，并通过当前应用进程 PID 过滤，只将 Helium 进程日志写入应用专属外部目录：
 
 ```text
 /Android/data/app.vanadium.browser/files/logs/startup-logcat.txt

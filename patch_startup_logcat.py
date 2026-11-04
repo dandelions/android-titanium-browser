@@ -21,6 +21,7 @@ BODY = '''public static void postAttachBaseContext() {
                             "/system/bin/logcat",
                             "-b", "all",
                             "-v", "threadtime",
+                            "--pid=" + android.os.Process.myPid(),
                             "-f", logFile.getAbsolutePath(),
                             "-r", "4096",
                             "-n", "3")
