@@ -2366,7 +2366,64 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
 """
 
 
-def patch_tabbed_app_menu_delegate(src_dir: Path) -> None:
+def without_ui_mode(methods: str) -> str:
+    sections = (
+        (
+            "        // UI Mode (移动版 / 桌面版) switcher banner\n",
+            "        dialog.setContentView(\n",
+        ),
+        (
+            "        // Tool 9: 界面模式\n",
+            "        scrollView.post(\n",
+        ),
+        (
+            "    private void showUiModeSelectionDialog(",
+            "    private void addLemurMainMenuTile(\n",
+        ),
+    )
+    for start, end in sections:
+        start_pos = methods.find(start)
+        end_pos = methods.find(end, start_pos + len(start)) if start_pos >= 0 else -1
+        if start_pos < 0 or end_pos < 0:
+            raise SystemExit(f"Lemur UI mode section not found: {start.strip()}")
+        methods = methods[:start_pos] + methods[end_pos:]
+
+    for marker in ("DeviceFormFactor.getUiMode()", "showUiModeSelectionDialog", "UI Mode (移动版", "// Tool 9: 界面模式"):
+        if marker in methods:
+            raise SystemExit(f"UI mode patch remained in standard Lemur methods: {marker}")
+    return methods
+
+
+def clean_ui_mode_from_lemur_menu(path: Path) -> None:
+    if not path.exists():
+        return
+
+    text = path.read_text(encoding="utf-8")
+    start_marker = "    // Helium: Lemur Browser-style rounded bottom popup menu panel.\n"
+    method_anchor = "    private ListItem buildSettingsItem() {\n"
+    start_pos = text.find(start_marker)
+    if start_pos < 0:
+        return
+    end_pos = text.find(method_anchor, start_pos)
+    if end_pos < 0:
+        raise SystemExit(f"buildSettingsItem anchor not found after Lemur marker in {path}")
+
+    methods = text[start_pos:end_pos]
+    if not any(
+        marker in methods
+        for marker in (
+            "UI Mode (移动版",
+            "// Tool 9: 界面模式",
+            "showUiModeSelectionDialog",
+        )
+    ):
+        return
+
+    cleaned_methods = without_ui_mode(methods)
+    path.write_text(text[:start_pos] + cleaned_methods + text[end_pos:], encoding="utf-8")
+
+
+def patch_tabbed_app_menu_delegate(src_dir: Path, include_ui_mode: bool) -> None:
     path = src_dir / TABBED_DELEGATE_REL
     if not path.exists():
         raise SystemExit(f"File not found: {path}")
@@ -2403,27 +2460,52 @@ def patch_tabbed_app_menu_delegate(src_dir: Path) -> None:
 
     start_marker = "    // Helium: Lemur Browser-style rounded bottom popup menu panel.\n"
     method_anchor = "    private ListItem buildSettingsItem() {\n"
+    menu_methods = (
+        LEMUR_MENU_METHODS if include_ui_mode else without_ui_mode(LEMUR_MENU_METHODS)
+    )
     if start_marker in text:
         start_idx = text.find(start_marker)
         if method_anchor in text:
             end_idx = text.find(method_anchor, start_idx)
             if end_idx == -1:
                 raise SystemExit(f"buildSettingsItem anchor not found after Lemur marker in {path}")
-            text = text[:start_idx] + LEMUR_MENU_METHODS + text[end_idx:]
+            text = text[:start_idx] + menu_methods + text[end_idx:]
         else:
             last_brace = text.rfind("}")
-            text = text[:start_idx] + LEMUR_MENU_METHODS + "\n}\n"
+            text = text[:start_idx] + menu_methods + "\n}\n"
     else:
         if method_anchor in text:
-            text = text.replace(method_anchor, LEMUR_MENU_METHODS + method_anchor, 1)
+            text = text.replace(method_anchor, menu_methods + method_anchor, 1)
         else:
             last_brace = text.rfind("}")
             if last_brace != -1:
-                text = text[:last_brace] + LEMUR_MENU_METHODS + "\n}\n"
+                text = text[:last_brace] + menu_methods + "\n}\n"
             else:
                 raise SystemExit(f"closing brace not found in {path}")
 
     path.write_text(text, encoding="utf-8")
+
+
+def current_repo_branch(src_dir: Path) -> str:
+    for cwd in (Path(__file__).resolve().parent, src_dir):
+        try:
+            result = subprocess.run(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                capture_output=True,
+                text=True,
+                cwd=cwd,
+                check=False,
+            )
+        except OSError:
+            continue
+        branch = result.stdout.strip()
+        if branch and branch != "HEAD":
+            return branch
+    return ""
+
+
+def is_old_android_branch(src_dir: Path) -> bool:
+    return current_repo_branch(src_dir) in ("old-android", "old-version")
 
 
 def is_lemur_branch(src_dir: Path) -> bool:
@@ -2431,21 +2513,12 @@ def is_lemur_branch(src_dir: Path) -> bool:
         return True
     if os.environ.get("LEMUR_APP_MENU") == "0":
         return False
-    try:
-        import subprocess
-        for cwd in [str(src_dir), os.path.dirname(os.path.abspath(__file__)), "."]:
-            try:
-                res = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True, text=True, cwd=cwd)
-                branch = res.stdout.strip()
-                if branch in ("lemur-style-app-menu", "lemur", "old-android", "old-version") or "old-" in branch:
-                    return True
-                if branch in ("main",):
-                    return False
-            except Exception:
-                pass
-    except Exception:
-        pass
-    return False
+    return current_repo_branch(src_dir) in (
+        "lemur-style-app-menu",
+        "lemur",
+        "old-android",
+        "old-version",
+    )
 
 
 def main() -> None:
@@ -2457,6 +2530,7 @@ def main() -> None:
         print(f"Not lemur-style-app-menu branch and LEMUR_APP_MENU is not enabled. Skipping Lemur menu patch.")
         return
 
+    include_ui_mode = is_old_android_branch(src_dir)
     patch_menu_button(src_dir)
     patch_extensions_toolbar_coordinator(src_dir)
     patch_extensions_toolbar_coordinator_impl(src_dir)
@@ -2464,14 +2538,23 @@ def main() -> None:
     patch_extensions_menu_mediator(src_dir)
     patch_app_menu_properties_delegate(src_dir)
     patch_app_menu_handler_impl(src_dir)
-    patch_tabbed_app_menu_delegate(src_dir)
+    patch_tabbed_app_menu_delegate(src_dir, include_ui_mode)
     try:
-        from patch_ui_mode import patch_device_form_factor, patch_ids, patch_chrome_activity
-        patch_device_form_factor(src_dir)
-        patch_ids(src_dir)
-        patch_chrome_activity(src_dir)
-    except Exception as e:
-        print(f"[patch_lemur_app_menu] Notice: UI mode sub-patching: {e}")
+        from patch_ui_mode import (
+            clean_ui_mode_from_standard_branches,
+            patch_chrome_activity,
+            patch_device_form_factor,
+            patch_ids,
+        )
+
+        if include_ui_mode:
+            patch_device_form_factor(src_dir)
+            patch_ids(src_dir)
+            patch_chrome_activity(src_dir)
+        else:
+            clean_ui_mode_from_standard_branches(src_dir)
+    except Exception as error:
+        print(f"[patch_lemur_app_menu] Notice: UI mode branch cleanup failed: {error}")
     print(f"Successfully applied Lemur-style toolbar icons, 3-line menu, and 4-square extensions sheet in {src_dir}")
 
 

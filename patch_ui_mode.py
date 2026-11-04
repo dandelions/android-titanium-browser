@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import os
 from pathlib import Path
 import re
 import sys
@@ -28,6 +27,30 @@ TAB_MODEL_OBSERVER_JAVA_REL = (
 )
 
 
+def is_old_android_branch(src_dir: Path) -> bool:
+    import subprocess
+
+    script_dir = Path(__file__).resolve().parent
+    for cwd in (script_dir, src_dir):
+        try:
+            result = subprocess.run(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                capture_output=True,
+                text=True,
+                cwd=cwd,
+                check=False,
+            )
+        except OSError:
+            continue
+        branch = result.stdout.strip()
+        if branch in ("old-android", "old-version"):
+            return True
+        if branch in ("main", "lemur", "lemur-style-app-menu"):
+            return False
+
+    return False
+
+
 def patch_device_form_factor(src_dir: Path) -> None:
     path = src_dir / DEVICE_FORM_FACTOR_REL
     if not path.exists():
@@ -35,16 +58,57 @@ def patch_device_form_factor(src_dir: Path) -> None:
         return
 
     text = path.read_text(encoding="utf-8")
-    if "UI_MODE_AUTO" in text:
-        return
 
     constants = """    public static final int UI_MODE_AUTO = 0;
     public static final int UI_MODE_MOBILE = 1;
     public static final int UI_MODE_DESKTOP = 2;
     public static final String PREF_UI_MODE = "helium_browser_ui_mode";
+    public static final String PREF_UI_MODE_CRASH_COUNT = "helium_ui_mode_crash_count";
+    public static final String PREF_UI_MODE_PENDING_VERIFY = "helium_ui_mode_pending_verify";
+
+    private static boolean sCrashRecoveryChecked;
+
+    private static void checkAndRecoverFromCrashIfNeeded() {
+        if (sCrashRecoveryChecked) return;
+        sCrashRecoveryChecked = true;
+        try {
+            android.content.SharedPreferences prefs = ContextUtils.getAppSharedPreferences();
+            int mode = prefs.getInt(PREF_UI_MODE, UI_MODE_AUTO);
+            if (mode != UI_MODE_AUTO) {
+                boolean pendingVerify = prefs.getBoolean(PREF_UI_MODE_PENDING_VERIFY, false);
+                int crashCount = prefs.getInt(PREF_UI_MODE_CRASH_COUNT, 0);
+                if (pendingVerify && crashCount >= 1) {
+                    android.util.Log.w("HeliumUiMode", "UI mode " + mode + " failed on previous run; recovering to default UI_MODE_AUTO");
+                    prefs.edit()
+                            .putInt(PREF_UI_MODE, UI_MODE_AUTO)
+                            .putBoolean(PREF_UI_MODE_PENDING_VERIFY, false)
+                            .putInt(PREF_UI_MODE_CRASH_COUNT, 0)
+                            .commit();
+                    return;
+                }
+                prefs.edit()
+                        .putBoolean(PREF_UI_MODE_PENDING_VERIFY, true)
+                        .putInt(PREF_UI_MODE_CRASH_COUNT, 1)
+                        .commit();
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    public static void markUiModeStartupSuccess() {
+        try {
+            android.content.SharedPreferences prefs = ContextUtils.getAppSharedPreferences();
+            if (prefs.getBoolean(PREF_UI_MODE_PENDING_VERIFY, false)) {
+                prefs.edit()
+                        .putBoolean(PREF_UI_MODE_PENDING_VERIFY, false)
+                        .putInt(PREF_UI_MODE_CRASH_COUNT, 0)
+                        .commit();
+            }
+        } catch (Throwable ignored) {}
+    }
 
     public static int getUiMode() {
         try {
+            checkAndRecoverFromCrashIfNeeded();
             return ContextUtils.getAppSharedPreferences().getInt(PREF_UI_MODE, UI_MODE_AUTO);
         } catch (Throwable ignored) {
             return UI_MODE_AUTO;
@@ -53,15 +117,55 @@ def patch_device_form_factor(src_dir: Path) -> None:
 
     public static void setUiMode(int mode) {
         try {
-            ContextUtils.getAppSharedPreferences().edit().putInt(PREF_UI_MODE, mode).apply();
+            sCrashRecoveryChecked = true;
+            android.content.SharedPreferences.Editor editor = ContextUtils.getAppSharedPreferences().edit();
+            editor.putInt(PREF_UI_MODE, mode);
+            if (mode == UI_MODE_AUTO) {
+                editor.putBoolean(PREF_UI_MODE_PENDING_VERIFY, false);
+                editor.putInt(PREF_UI_MODE_CRASH_COUNT, 0);
+            } else {
+                editor.putBoolean(PREF_UI_MODE_PENDING_VERIFY, true);
+                editor.putInt(PREF_UI_MODE_CRASH_COUNT, 1);
+            }
+            editor.commit();
+        } catch (Throwable ignored) {}
+    }
+
+    static {
+        try {
+            Thread.UncaughtExceptionHandler defaultHandler =
+                    Thread.getDefaultUncaughtExceptionHandler();
+            Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
+                try {
+                    int mode = ContextUtils.getAppSharedPreferences().getInt(PREF_UI_MODE, UI_MODE_AUTO);
+                    if (mode != UI_MODE_AUTO) {
+                        android.util.Log.e("HeliumUiMode", "Crash detected in UI mode " + mode + "; recovering default UI_MODE_AUTO", throwable);
+                        ContextUtils.getAppSharedPreferences().edit()
+                                .putInt(PREF_UI_MODE, UI_MODE_AUTO)
+                                .putBoolean(PREF_UI_MODE_PENDING_VERIFY, false)
+                                .putInt(PREF_UI_MODE_CRASH_COUNT, 0)
+                                .commit();
+                    }
+                } catch (Throwable ignored) {}
+                if (defaultHandler != null) {
+                    defaultHandler.uncaughtException(thread, throwable);
+                }
+            });
         } catch (Throwable ignored) {}
     }
 """
 
-    class_anchor = "public class DeviceFormFactor {\n"
-    if class_anchor not in text:
-        raise SystemExit(f"DeviceFormFactor class anchor not found in {path}")
-    text = text.replace(class_anchor, class_anchor + constants + "\n", 1)
+    mode_start = text.find("    public static final int UI_MODE_AUTO = 0;")
+    if mode_start >= 0:
+        tablet_start = text.find("    public static boolean isTablet() {", mode_start)
+        if tablet_start < 0:
+            raise SystemExit(f"DeviceFormFactor UI mode block end not found in {path}")
+        text = text[:mode_start] + constants + "\n\n" + text[tablet_start:]
+    else:
+        class_anchor = "public class DeviceFormFactor {\n"
+        if class_anchor not in text:
+            raise SystemExit(f"DeviceFormFactor class anchor not found in {path}")
+        text = text.replace(class_anchor, class_anchor + constants + "\n", 1)
 
     old_is_tablet = """    public static boolean isTablet() {
         if (sIsTabletForTesting != null) {
@@ -120,7 +224,7 @@ def patch_device_form_factor(src_dir: Path) -> None:
         text = text.replace(old_is_large, new_is_large, 1)
 
     path.write_text(text, encoding="utf-8")
-    print(f"[patch_ui_mode] Patched {path}")
+    print(f"[patch_ui_mode] Patched {path} with UI mode and crash recovery")
 
 
 def patch_ids(src_dir: Path) -> None:
@@ -171,10 +275,10 @@ def patch_chrome_activity(src_dir: Path) -> None:
     if old_tablet_mode in text:
         text = text.replace(old_tablet_mode, new_tablet_mode, 1)
 
-    # In case previous incomplete replacement removed smallestWidth, restore it
     incomplete_tablet_mode = """        boolean isTablet = DeviceFormFactor.isNonMultiDisplayContextOnTablet(this);
         boolean wasTablet = isTablet;"""
     if incomplete_tablet_mode in text and "int smallestWidth" not in text:
+        # Restore the width calculation if a previous patch removed it.
         text = text.replace(incomplete_tablet_mode, new_tablet_mode, 1)
 
     # In onMenuOrKeyboardAction:
@@ -218,6 +322,28 @@ def patch_chrome_activity(src_dir: Path) -> None:
         handler_anchor = "        if (id == R.id.preferences_id) {\n"
         if handler_anchor in text:
             text = text.replace(handler_anchor, ui_handler + handler_anchor, 1)
+
+    startup_success_statement = (
+        "        try { DeviceFormFactor.markUiModeStartupSuccess(); } "
+        "catch (Throwable ignored) {}\n"
+    )
+    text = text.replace(startup_success_statement, "")
+    if "DeviceFormFactor.markUiModeStartupSuccess();" not in text:
+        native_start = text.find("    public void finishNativeInitialization() {")
+        completion_anchor = """    }
+
+    /**
+     * @return Whether native initialization has been completed for this activity.
+     */
+    public boolean didFinishNativeInitialization()"""
+        completion_pos = text.find(completion_anchor, native_start)
+        if native_start < 0 or completion_pos < 0:
+            raise SystemExit(f"finishNativeInitialization completion anchor not found in {path}")
+        text = (
+            text[:completion_pos]
+            + startup_success_statement
+            + text[completion_pos:]
+        )
 
     path.write_text(text, encoding="utf-8")
     print(f"[patch_ui_mode] Patched {path}")
@@ -303,6 +429,76 @@ def patch_tabbed_app_menu_delegate(src_dir: Path) -> None:
     print(f"[patch_ui_mode] Patched {path}")
 
 
+def clean_ui_mode_from_standard_branches(src_dir: Path) -> None:
+    """Removes UI mode patches from standard branches (main, lemur) as requested."""
+    # 1. TabbedAppMenuPropertiesDelegate.java
+    tabbed_path = src_dir / TABBED_DELEGATE_REL
+    if tabbed_path.exists():
+        text = tabbed_path.read_text(encoding="utf-8")
+        if "modelList.add(buildUiModeItem());\n" in text:
+            text = text.replace("        modelList.add(buildUiModeItem());\n", "")
+        if "private ListItem buildUiModeItem()" in text:
+            text = re.sub(r"    private ListItem buildUiModeChoiceItem\([\s\S]*?    private ListItem buildSettingsItem\(\) \{\n", "    private ListItem buildSettingsItem() {\n", text)
+        tabbed_path.write_text(text, encoding="utf-8")
+
+    from patch_lemur_app_menu import clean_ui_mode_from_lemur_menu
+
+    clean_ui_mode_from_lemur_menu(tabbed_path)
+
+    # 2. ChromeActivity.java
+    act_path = src_dir / ACTIVITY_REL
+    if act_path.exists():
+        text = act_path.read_text(encoding="utf-8")
+        if "R.id.ui_mode_auto_menu_id" in text:
+            text = re.sub(r"        if \(id == R\.id\.ui_mode_auto_menu_id[\s\S]*?        if \(id == R\.id\.preferences_id\) \{\n", "        if (id == R.id.preferences_id) {\n", text)
+        if "DeviceFormFactor.markUiModeStartupSuccess();" in text:
+            text = text.replace("        try { DeviceFormFactor.markUiModeStartupSuccess(); } catch (Throwable ignored) {}\n", "")
+        act_path.write_text(text, encoding="utf-8")
+
+    # 3. ids.xml
+    ids_path = src_dir / IDS_REL
+    if ids_path.exists():
+        text = ids_path.read_text(encoding="utf-8")
+        for name in ("ui_mode_auto_menu_id", "ui_mode_mobile_menu_id", "ui_mode_desktop_menu_id", "ui_mode_menu_id"):
+            text = text.replace(f'    <item type="id" name="{name}" />\n', "")
+        ids_path.write_text(text, encoding="utf-8")
+
+    # 4. DeviceFormFactor.java
+    dff_path = src_dir / DEVICE_FORM_FACTOR_REL
+    if dff_path.exists():
+        text = dff_path.read_text(encoding="utf-8")
+        mode_start = text.find("    public static final int UI_MODE_AUTO = 0;")
+        if mode_start >= 0:
+            tablet_start = text.find("    public static boolean isTablet() {", mode_start)
+            if tablet_start < 0:
+                raise SystemExit(f"DeviceFormFactor UI mode block end not found in {dff_path}")
+            text = text[:mode_start] + text[tablet_start:]
+            text = re.sub(r"    public static boolean isTablet\(\) \{\n[\s\S]*?\n    \}",
+                          """    public static boolean isTablet() {
+        if (sIsTabletForTesting != null) {
+            return sIsTabletForTesting;
+        }
+        return detectScreenWidthBucket(ContextUtils.getApplicationContext())
+                >= SCREEN_BUCKET_TABLET;
+    }""", text, count=1)
+            # Revert isNonMultiDisplayContextOnTablet
+            text = re.sub(r"    public static boolean isNonMultiDisplayContextOnTablet\(Context context\) \{\n[\s\S]*?        return detectScreenWidthBucket\(context\) >= SCREEN_BUCKET_TABLET;\n    \}",
+                          """    public static boolean isNonMultiDisplayContextOnTablet(Context context) {
+        return detectScreenWidthBucket(context) >= SCREEN_BUCKET_TABLET;
+    }""", text)
+            # Revert isWindowOnTablet
+            text = re.sub(r"    public static boolean isWindowOnTablet\(WindowAndroid windowAndroid\) \{\n[\s\S]*?        return detectScreenWidthBucket\(windowAndroid\) >= SCREEN_BUCKET_TABLET;\n    \}",
+                          """    public static boolean isWindowOnTablet(WindowAndroid windowAndroid) {
+        return detectScreenWidthBucket(windowAndroid) >= SCREEN_BUCKET_TABLET;
+    }""", text)
+            # Revert isNonMultiDisplayContextOnLargeTablet
+            text = re.sub(r"    public static boolean isNonMultiDisplayContextOnLargeTablet\(Context context\) \{\n[\s\S]*?        return detectScreenWidthBucket\(context\) == SCREEN_BUCKET_LARGE_TABLET;\n    \}",
+                          """    public static boolean isNonMultiDisplayContextOnLargeTablet(Context context) {
+        return detectScreenWidthBucket(context) == SCREEN_BUCKET_LARGE_TABLET;
+    }""", text)
+        dff_path.write_text(text, encoding="utf-8")
+
+
 def patch_extensions_visibility(src_dir: Path) -> None:
     # 1. ExtensionsToolbarCoordinatorImpl.java: ensure extensions button is pinned and visible
     ext_path = src_dir / EXT_TOOLBAR_COORD_IMPL_REL
@@ -370,13 +566,21 @@ def patch_tab_model_observer_bridge(src_dir: Path) -> None:
 
 def main() -> None:
     src_dir = Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
-    patch_device_form_factor(src_dir)
-    patch_ids(src_dir)
-    patch_chrome_activity(src_dir)
-    patch_tabbed_app_menu_delegate(src_dir)
+
+    # Core stability & extensions visibility patches apply to all branches
     patch_extensions_visibility(src_dir)
     patch_tab_model_observer_bridge(src_dir)
-    print(f"[patch_ui_mode] Successfully applied UI mode, Extensions & TabModel patches to {src_dir}")
+
+    # UI Mode (Desktop/Mobile) is only added to old-version / old-android branch
+    if is_old_android_branch(src_dir):
+        patch_device_form_factor(src_dir)
+        patch_ids(src_dir)
+        patch_chrome_activity(src_dir)
+        patch_tabbed_app_menu_delegate(src_dir)
+        print(f"[patch_ui_mode] Applied UI mode with crash recovery to old-version branch in {src_dir}")
+    else:
+        clean_ui_mode_from_standard_branches(src_dir)
+        print(f"[patch_ui_mode] Standard branch detected (main/lemur). Skipped UI mode patches.")
 
 
 if __name__ == "__main__":
