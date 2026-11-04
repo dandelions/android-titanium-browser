@@ -45,28 +45,26 @@ CWS_SCRIPT = r"""(function() {
 
     function triggerInstall(extId) {
         var id = extId || getExtId();
-        if (!id || id.length !== 32) return false;
+        if (!/^[a-p]{32}$/i.test(id || '')) return false;
         var crxUrl = 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=156.0.8078.79&acceptformat=crx2,crx3&x=id%3D' + id + '%26uc';
-        var a = document.createElement('a');
-        a.href = crxUrl;
-        a.download = id + '.crx';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
+        window.location.assign(crxUrl);
         return true;
+    }
+
+    function reportInstallStart(id, cb) {
+        var started = triggerInstall(id);
+        if (typeof cb === 'function') cb(started ? 'success' : 'error');
     }
 
     try {
         window.chrome = window.chrome || {};
         window.chrome.webstorePrivate = window.chrome.webstorePrivate || {};
         window.chrome.webstorePrivate.install = function(id, cb) {
-            triggerInstall(id);
-            if (typeof cb === 'function') cb('success');
+            reportInstallStart(id, cb);
         };
         window.chrome.webstorePrivate.beginInstallWithManifest3 = function(details, cb) {
             var id = (details && details.id) ? details.id : getExtId();
-            triggerInstall(id);
-            if (typeof cb === 'function') cb('success');
+            reportInstallStart(id, cb);
         };
         window.chrome.webstorePrivate.completeInstall = function(id, cb) {
             if (typeof cb === 'function') cb();
@@ -75,7 +73,7 @@ CWS_SCRIPT = r"""(function() {
 
     function attachButtonHooks() {
         var id = getExtId();
-        if (!id) return;
+        if (!/^[a-p]{32}$/i.test(id)) return;
         var buttons = document.querySelectorAll('button, [role="button"]');
         buttons.forEach(function(btn) {
             if (btn._helium_hooked) return;
@@ -84,9 +82,9 @@ CWS_SCRIPT = r"""(function() {
                 btn._helium_hooked = true;
                 btn.removeAttribute('disabled');
                 btn.addEventListener('click', function(e) {
+                    if (!triggerInstall(id)) return;
                     e.preventDefault();
                     e.stopPropagation();
-                    triggerInstall(id);
                 }, true);
             }
         });
@@ -112,14 +110,10 @@ EDGE_SCRIPT = r"""(function() {
 
     function triggerEdgeInstall(extId) {
         var id = extId || getEdgeExtId();
-        if (!id) return;
+        if (!/^[a-p]{32}$/i.test(id || '')) return false;
         var crxUrl = 'https://edge.microsoft.com/extensionwebstorebase/v1/crx?response=redirect&acceptformat=crx3&x=id%3D' + id + '%26installsource%3Dondemand%26uc';
-        var a = document.createElement('a');
-        a.href = crxUrl;
-        a.download = id + '.crx';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
+        window.location.assign(crxUrl);
+        return true;
     }
 
     function attachEdgeHooks() {
@@ -131,9 +125,9 @@ EDGE_SCRIPT = r"""(function() {
             btn.removeAttribute('disabled');
             var btnId = btn.id ? btn.id.split('-')[1] : id;
             btn.addEventListener('click', function(e) {
+                if (!triggerEdgeInstall(btnId || id)) return;
                 e.preventDefault();
                 e.stopPropagation();
-                triggerEdgeInstall(btnId || id);
             }, true);
         });
     }
@@ -150,49 +144,50 @@ def patch_download_crx_util(src_dir: Path) -> None:
         return
 
     content = path.read_text(encoding="utf-8")
-    if "Helium: Whitelist store domains for inline CRX installation" in content:
-        print("download_crx_util.cc already patched for store inline install")
-        return
 
-    # 1. Update OffStoreInstallAllowedByPrefs to whitelist Google and Edge domains
-    whitelist_injection = (
-        "  // Helium: Whitelist store domains for inline CRX installation\n"
-        "  if (const auto& o = item.GetRequestInitiator(); o && o->scheme() == \"chrome-extension\") return true;\n"
-        "  for (const char* d : {\"clients2.google.com\", \"clients2.googleusercontent.com\",\n"
-        "                       \"chromewebstore.google.com\", \"chrome.google.com\",\n"
-        "                       \"google.com\", \"googleusercontent.com\",\n"
-        "                       \"microsoftedge.microsoft.com\", \"edge.microsoft.com\",\n"
-        "                       \"delivery.mp.microsoft.com\", \"addons.opera.com\", \"operacdn.com\"}) {\n"
-        "    if (item.GetURL().DomainIs(d) || item.GetReferrerUrl().DomainIs(d)) return true;\n"
-        "  }\n"
-    )
+    whitelist_injection = '''  // Helium: Whitelist store domains for inline CRX installation
+  if (const auto& o = item.GetRequestInitiator(); o && o->scheme() == "chrome-extension") return true;
+  for (const char* d : {"clients2.google.com", "clients2.googleusercontent.com",
+                       "chromewebstore.google.com", "chrome.google.com",
+                       "google.com", "googleusercontent.com",
+                       "microsoftedge.microsoft.com", "edge.microsoft.com",
+                       "delivery.mp.microsoft.com", "addons.opera.com", "operacdn.com"}) {
+    if (item.GetURL().DomainIs(d) || item.GetReferrerUrl().DomainIs(d)) return true;
+  }
+'''
 
-    if "bool OffStoreInstallAllowedByPrefs(" in content:
-        # Check if an older one-liner was present
-        old_oneliner = re.search(r"bool OffStoreInstallAllowedByPrefs\([^)]*\)\s*\{\s*(if \(const auto& o = item\.GetRequestInitiator\(\)[\s\S]*?return true;\s*)", content)
+    if "Helium: Whitelist store domains for inline CRX installation" not in content:
+        if "bool OffStoreInstallAllowedByPrefs(" not in content:
+            raise RuntimeError("Could not find OffStoreInstallAllowedByPrefs in download_crx_util.cc")
+        old_oneliner = re.search(
+            r'''bool OffStoreInstallAllowedByPrefs\([^)]*\)\s*\{\s*(if \(const auto& o = item\.GetRequestInitiator\(\)[\s\S]*?return true;\s*)''',
+            content,
+        )
         if old_oneliner:
             content = content.replace(old_oneliner.group(1), whitelist_injection, 1)
         else:
-            content = re.sub(
-                r"(bool OffStoreInstallAllowedByPrefs\([^)]*\)\s*\{\n)",
-                r"\1" + whitelist_injection,
+            content, replacements = re.subn(
+                r'''(bool OffStoreInstallAllowedByPrefs\([^)]*\)\s*\{\n)''',
+                lambda match: match.group(1) + whitelist_injection,
                 content,
                 count=1,
             )
+            if replacements != 1:
+                raise RuntimeError("Could not insert store allowlist in download_crx_util.cc")
 
-    # 2. Update IsExtensionDownload to also identify .crx files
-    crx_check = (
-        "  if (download_item.GetMimeType() == extensions::Extension::kMimeType ||\n"
-        "      download_item.GetURL().path().ends_with(\".crx\") ||\n"
-        "      download_item.GetTargetFilePath().MatchesExtension(FILE_PATH_LITERAL(\".crx\")) ||\n"
-        "      extensions::UserScript::IsURLUserScript(download_item.GetURL(),\n"
-        "                                              download_item.GetMimeType())) {\n"
-    )
-    old_crx_check = re.search(
-        r"  if \(download_item\.GetMimeType\(\) == extensions::Extension::kMimeType \|\|\s*extensions::UserScript::IsURLUserScript\([^)]*\)\) \{",
-        content,
-    )
-    if old_crx_check:
+    crx_target_check = 'download_item.GetTargetFilePath().MatchesExtension(FILE_PATH_LITERAL(".crx"))'
+    if crx_target_check not in content:
+        old_crx_check = re.search(
+            r'''  if \(download_item\.GetMimeType\(\) == extensions::Extension::kMimeType \|\|\s*extensions::UserScript::IsURLUserScript\(download_item\.GetURL\(\),\s*download_item\.GetMimeType\(\)\)\) \{''',
+            content,
+        )
+        if not old_crx_check:
+            raise RuntimeError("Could not find the CRX download check in download_crx_util.cc")
+        crx_check = '''  if (download_item.GetMimeType() == extensions::Extension::kMimeType ||
+      download_item.GetURL().path().ends_with(".crx") ||
+      download_item.GetTargetFilePath().MatchesExtension(FILE_PATH_LITERAL(".crx")) ||
+      extensions::UserScript::IsURLUserScript(download_item.GetURL(),
+                                              download_item.GetMimeType())) {'''
         content = content.replace(old_crx_check.group(0), crx_check, 1)
 
     path.write_text(content, encoding="utf-8")
@@ -218,20 +213,6 @@ def patch_chrome_activity(src_dir: Path) -> None:
         path.write_text(content, encoding="utf-8")
         print("Cleaned up invalid injectStoreInlineInstallSupport(tab) from onInitialLayoutInflationComplete")
 
-    if "private void injectStoreInlineInstallSupport(Tab tab)" in content:
-        # Check if the onUrlUpdated call is missing despite helper method being present
-        if "PersonalizeResults.Execute(tab);\n              injectStoreInlineInstallSupport(tab);" not in content:
-            if "PersonalizeResults.Execute(tab);" in content:
-                content = content.replace(
-                    "PersonalizeResults.Execute(tab);",
-                    "PersonalizeResults.Execute(tab);\n              injectStoreInlineInstallSupport(tab);",
-                    1,
-                )
-                path.write_text(content, encoding="utf-8")
-                print("Updated ChromeActivity.java with injectStoreInlineInstallSupport in onUrlUpdated")
-        print("ChromeActivity.java already patched for store inline install")
-        return
-
     # Escape quotes and backslashes for Java string literal
     def to_java_string(js_code: str) -> str:
         escaped = js_code.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n\"\n            + \"")
@@ -239,6 +220,49 @@ def patch_chrome_activity(src_dir: Path) -> None:
 
     java_cws = to_java_string(CWS_SCRIPT)
     java_edge = to_java_string(EDGE_SCRIPT)
+
+    if "private void injectStoreInlineInstallSupport(Tab tab)" in content:
+        for name, value in (("HELIUM_CWS_SCRIPT", java_cws), ("HELIUM_EDGE_SCRIPT", java_edge)):
+            marker = f"private static final String {name}"
+            start = content.find(marker)
+            if start == -1:
+                raise RuntimeError(f"Could not find {name} in ChromeActivity.java")
+            literal_start = content.find('"', start)
+            if literal_start == -1:
+                raise RuntimeError(f"Could not find the value for {name} in ChromeActivity.java")
+            in_string = False
+            escaped = False
+            end = -1
+            for index in range(literal_start, len(content)):
+                char = content[index]
+                if in_string:
+                    if escaped:
+                        escaped = False
+                    elif ord(char) == 92:
+                        escaped = True
+                    elif char == '"':
+                        in_string = False
+                elif char == '"':
+                    in_string = True
+                elif char == ";":
+                    end = index + 1
+                    break
+            if end == -1:
+                raise RuntimeError(f"Could not find the end of {name} in ChromeActivity.java")
+            replacement = f"private static final String {name} =" + chr(10) + "            " + value + ";"
+            content = content[:start] + replacement + content[end:]
+
+        url_hook = content.find("PersonalizeResults.Execute(tab);")
+        if url_hook >= 0 and "injectStoreInlineInstallSupport(tab);" not in content[url_hook:url_hook + 160]:
+            content = content.replace(
+                "PersonalizeResults.Execute(tab);",
+                "PersonalizeResults.Execute(tab);" + chr(10) + "              injectStoreInlineInstallSupport(tab);",
+                1,
+            )
+        path.write_text(content, encoding="utf-8")
+        print("Updated ChromeActivity.java store inline install scripts")
+        return
+
 
     helper_methods = f"""
     // Helium: Native inline installation for Chrome Web Store & Edge Addons
