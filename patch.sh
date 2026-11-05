@@ -22,7 +22,18 @@ cp $SCRIPT_DIR/extensions/stage_bundled_extensions.inc helium/dist/
 sed -i 's|"//components/privacy_sandbox/privacy_sandbox_attestations/preload:privacy_sandbox_attestations_assets",|&"//helium/dist:extension_assets",|' chrome/android/BUILD.gn
 sed -i 's|if (!base::PathService::Get(base::DIR_MODULE, \&cur)) {|if (!base::PathService::Get(chrome::DIR_USER_DATA, \&cur)) {|' chrome/common/chrome_paths.cc
 sed -i 's|#include "extensions/buildflags/buildflags.h"|&\n#include "helium/dist/stage_bundled_extensions.inc"|' chrome/browser/extensions/external_pref_loader.cc
-sed -i 's|ReadStandaloneExtensionPrefFiles(prefs);|&StageBundledExtensions(base_path_id_, base_path_, prefs);|' chrome/browser/extensions/external_pref_loader.cc
+if ! grep -q 'StageBundledExtensions(base_path_id_, base_path_, prefs);' chrome/browser/extensions/external_pref_loader.cc; then
+    if grep -q 'ReadStandaloneExtensionPrefFiles(prefs);' chrome/browser/extensions/external_pref_loader.cc; then
+        sed -i 's|ReadStandaloneExtensionPrefFiles(prefs);|&\n    StageBundledExtensions(base_path_id_, base_path_, prefs);|' chrome/browser/extensions/external_pref_loader.cc
+    else
+        echo "Unable to inject bundled extension loader: Chromium external_pref_loader.cc signature is unsupported." >&2
+        exit 1
+    fi
+fi
+if ! grep -q 'StageBundledExtensions(base_path_id_, base_path_, prefs);' chrome/browser/extensions/external_pref_loader.cc; then
+    echo "Bundled extension loader injection was not applied." >&2
+    exit 1
+fi
 sed -i 's|if (extension.location() == mojom::ManifestLocation::kCommandLine) {|if (extension.location() == mojom::ManifestLocation::kExternalPref) return false;\n&|' chrome/browser/extensions/extension_safety_check_utils.cc
 
 sed -i 's|if (!_omit_dex) {|if (_is_base_module \&\& !_omit_dex) {|' build/config/android/rules.gni

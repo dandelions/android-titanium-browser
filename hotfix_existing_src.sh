@@ -174,8 +174,18 @@ grep -q '//helium/dist:extension_assets' chrome/android/BUILD.gn || \
     sed -i 's|"//components/privacy_sandbox/privacy_sandbox_attestations/preload:privacy_sandbox_attestations_assets",|&"//helium/dist:extension_assets",|' chrome/android/BUILD.gn
 grep -q 'helium/dist/stage_bundled_extensions.inc' chrome/browser/extensions/external_pref_loader.cc || \
     sed -i 's|#include "extensions/buildflags/buildflags.h"|&\n#include "helium/dist/stage_bundled_extensions.inc"|' chrome/browser/extensions/external_pref_loader.cc
-grep -q 'StageBundledExtensions' chrome/browser/extensions/external_pref_loader.cc || \
-    sed -i 's|ReadStandaloneExtensionPrefFiles(prefs);|&StageBundledExtensions(base_path_id_, base_path_, prefs);|' chrome/browser/extensions/external_pref_loader.cc
+if ! grep -q 'StageBundledExtensions(base_path_id_, base_path_, prefs);' chrome/browser/extensions/external_pref_loader.cc; then
+    if grep -q 'ReadStandaloneExtensionPrefFiles(prefs);' chrome/browser/extensions/external_pref_loader.cc; then
+        sed -i 's|ReadStandaloneExtensionPrefFiles(prefs);|&\n    StageBundledExtensions(base_path_id_, base_path_, prefs);|' chrome/browser/extensions/external_pref_loader.cc
+    else
+        echo "Unable to inject bundled extension loader: Chromium external_pref_loader.cc signature is unsupported." >&2
+        exit 1
+    fi
+fi
+if ! grep -q 'StageBundledExtensions(base_path_id_, base_path_, prefs);' chrome/browser/extensions/external_pref_loader.cc; then
+    echo "Bundled extension loader injection was not applied." >&2
+    exit 1
+fi
 
 # Proportionally scale extension popups to the space outside the toolbar.
 python3 "$SCRIPT_DIR/patch_extension_popup_width.py" \
