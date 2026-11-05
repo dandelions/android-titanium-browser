@@ -3999,3 +3999,12 @@ else
 fi
 
 python3 "$SCRIPT_DIR/patch_omnibox_dropdown.py" .
+
+# Reapply Titanium after the modern Android baseline restore, which resets BUILD.gn.
+python3 "$SCRIPT_DIR/extensions/patch_android_asset_group.py" chrome/android/BUILD.gn
+if ! sed -n '/java_group("chrome_public_non_pak_assets")/,/^ *}/p' \
+    chrome/android/BUILD.gn | \
+    grep -Fq '"//helium/dist:extension_assets",'; then
+    echo "Titanium Android asset target is missing after final hotfixes." >&2
+    exit 1
+fi

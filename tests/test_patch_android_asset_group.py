@@ -44,6 +44,15 @@ class AndroidAssetGroupPatchTest(unittest.TestCase):
             '      "//chrome/android/webapk_assets",',
             target_group,
         )
+    def test_final_reapply_follows_modern_baseline_restore(self):
+        hotfix = (REPO / "hotfix_existing_src.sh").read_text()
+        restore = hotfix.index("restore_modern_android_sdk_baseline \"$SRC_DIR\"")
+        final_reapply = hotfix.index(
+            'patch_android_asset_group.py" \\\n    "$SRC_DIR/chrome/android/BUILD.gn"',
+            restore,
+        )
+        self.assertGreater(final_reapply, restore)
+        self.assertIn("Titanium Android asset target is missing after final hotfixes.", hotfix[final_reapply:])
 
 
 if __name__ == "__main__":
