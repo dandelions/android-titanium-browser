@@ -12,16 +12,17 @@ PATCH_SCRIPT = REPO / "extensions" / "patch_android_asset_group.py"
 class AndroidAssetGroupPatchTest(unittest.TestCase):
     def test_inserts_without_privacy_sandbox_anchor_and_is_idempotent(self):
         source = """\
-java_group("other_assets") {
-  deps = [
-    "//helium/dist:extension_assets",
-  ]
-}
-java_group("chrome_public_non_pak_assets") {
-  deps = [
-    "//chrome/android:webapk_assets",
-  ]
-}
+  java_group("other_assets") {
+    deps = [
+      "//helium/dist:extension_assets",
+    ]
+  }
+  java_group("chrome_public_non_pak_assets") {
+    deps = [
+      "//chrome/android/webapk_assets",
+      "//components/privacy_sandbox/privacy_sandbox_attestations/preload:privacy_sandbox_attestations_assets",
+    ]
+  }
 """
         with tempfile.TemporaryDirectory() as temp:
             path = pathlib.Path(temp) / "BUILD.gn"
@@ -39,8 +40,8 @@ java_group("chrome_public_non_pak_assets") {
         )[1]
         self.assertIn(
             'deps = [\n'
-            '    "//helium/dist:extension_assets",\n'
-            '    "//chrome/android:webapk_assets",',
+            '      "//helium/dist:extension_assets",\n'
+            '      "//chrome/android/webapk_assets",',
             target_group,
         )
 

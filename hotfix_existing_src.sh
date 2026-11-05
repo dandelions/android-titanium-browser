@@ -173,7 +173,13 @@ cp -f "$SCRIPT_DIR/extensions/stage_bundled_extensions.inc" \
 python3 "$SCRIPT_DIR/extensions/patch_external_extensions_path.py" \
     "$SRC_DIR/chrome/common/chrome_paths.cc"
 python3 "$SCRIPT_DIR/extensions/patch_android_asset_group.py" \
-    chrome/android/BUILD.gn
+    "$SRC_DIR/chrome/android/BUILD.gn"
+if ! sed -n '/java_group("chrome_public_non_pak_assets")/,/^ *}/p' \
+    "$SRC_DIR/chrome/android/BUILD.gn" | \
+    grep -Fq '"//helium/dist:extension_assets",'; then
+    echo "Titanium Android asset target was not added to chrome_public_non_pak_assets." >&2
+    exit 1
+fi
 grep -q 'helium/dist/stage_bundled_extensions.inc' chrome/browser/extensions/external_pref_loader.cc || \
     sed -i 's|#include "extensions/buildflags/buildflags.h"|&\n#include "helium/dist/stage_bundled_extensions.inc"|' chrome/browser/extensions/external_pref_loader.cc
 if ! grep -q 'StageBundledExtensions(base_path_id_, base_path_, prefs);' chrome/browser/extensions/external_pref_loader.cc; then

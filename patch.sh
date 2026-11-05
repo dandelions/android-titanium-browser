@@ -20,6 +20,12 @@ sed -i '/com.google.ar.core.min_apk_version/d' third_party/arcore-android-sdk-cl
 cp -r $SCRIPT_DIR/extensions/dist helium/
 cp $SCRIPT_DIR/extensions/stage_bundled_extensions.inc helium/dist/
 python3 "$SCRIPT_DIR/extensions/patch_android_asset_group.py" chrome/android/BUILD.gn
+if ! sed -n '/java_group("chrome_public_non_pak_assets")/,/^ *}/p' \
+    chrome/android/BUILD.gn | \
+    grep -Fq '"//helium/dist:extension_assets",'; then
+    echo "Titanium Android asset target was not added to chrome_public_non_pak_assets." >&2
+    exit 1
+fi
 python3 "$SCRIPT_DIR/extensions/patch_external_extensions_path.py" chrome/common/chrome_paths.cc
 sed -i 's|#include "extensions/buildflags/buildflags.h"|&\n#include "helium/dist/stage_bundled_extensions.inc"|' chrome/browser/extensions/external_pref_loader.cc
 if ! grep -q 'StageBundledExtensions(base_path_id_, base_path_, prefs);' chrome/browser/extensions/external_pref_loader.cc; then
