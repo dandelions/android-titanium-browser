@@ -333,6 +333,52 @@ configure_out_dir() {
     show_out_dir_state "$out_dir"
 }
 
+verify_titanium_source_patch() {
+    local source_dir="$1"
+    local required_file
+    for required_file in \
+        "$source_dir/helium/dist/BUILD.gn" \
+        "$source_dir/helium/dist/bundled.json" \
+        "$source_dir/helium/dist/titanium.crx" \
+        "$source_dir/helium/dist/stage_bundled_extensions.inc"; do
+        if [ ! -s "$required_file" ]; then
+            echo "Titanium source asset is missing: $required_file" >&2
+            return 1
+        fi
+    done
+    grep -Fq '"titanium.crx",' "$source_dir/helium/dist/BUILD.gn" || {
+        echo "Titanium CRX is missing from the Android asset target." >&2
+        return 1
+    }
+    grep -Fq '"external_crx": "titanium.crx"' "$source_dir/helium/dist/bundled.json" || {
+        echo "Titanium CRX is missing from bundled.json." >&2
+        return 1
+    }
+    grep -Fq '"//helium/dist:extension_assets",' "$source_dir/chrome/android/BUILD.gn" || {
+        echo "Titanium Android asset target is not referenced by chrome/android/BUILD.gn." >&2
+        return 1
+    }
+    grep -Fq 'StageBundledExtensions(base_path_id_, base_path_, prefs);' \
+        "$source_dir/chrome/browser/extensions/external_pref_loader.cc" || {
+        echo "Titanium loader call is missing from external_pref_loader.cc." >&2
+        return 1
+    }
+}
+
+verify_titanium_apk() {
+    local apk="$1"
+    local bundled_index
+    if ! unzip -l "$apk" | grep -Fq 'assets/extensions/titanium.crx'; then
+        echo "Titanium CRX is missing from APK: $apk" >&2
+        return 1
+    fi
+    bundled_index="$(unzip -p "$apk" assets/extensions/bundled.json 2>/dev/null || true)"
+    printf '%s' "$bundled_index" | grep -Fq '"external_crx": "titanium.crx"' || {
+        echo "Titanium entry is missing from APK bundled.json: $apk" >&2
+        return 1
+    }
+}
+
 copy_first_output() {
     local search_dir="$1"
     local name_pattern="$2"
@@ -657,6 +703,7 @@ elif [ "$FAST_LOCAL_BUILD" = "1" ]; then
         "$SCRIPT_DIR/hotfix_existing_src.sh" "$PWD"
     fi
 fi
+verify_titanium_source_patch "$PWD"
 restore_build_state
 
 if [ "$SKIP_SYSTEM_DEPS" != "1" ]; then
@@ -717,5 +764,8 @@ if [ "$BUILD_ARM64" = "1" ]; then
         fi
     fi
 fi
+for release_apk in $release_outputs; do
+    verify_titanium_apk "$release_apk"
+done
 echo "Build outputs:"
 ls -lh $release_outputs

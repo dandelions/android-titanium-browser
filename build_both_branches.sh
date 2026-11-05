@@ -144,6 +144,15 @@ get_branch_prefix() {
     fi
 }
 
+apk_contains_titanium() {
+    local apk="$1"
+    local bundled_index
+    [ -s "$apk" ] || return 1
+    unzip -l "$apk" 2>/dev/null | grep -Fq 'assets/extensions/titanium.crx' || return 1
+    bundled_index="$(unzip -p "$apk" assets/extensions/bundled.json 2>/dev/null || true)"
+    printf '%s' "$bundled_index" | grep -Fq '"external_crx": "titanium.crx"'
+}
+
 check_branch_artifacts() {
     local branch="$1"
     local prefix
@@ -162,6 +171,14 @@ check_branch_artifacts() {
         return 1
     fi
     if [ "$BUILD_AAB" = "1" ] && [ ! -s "$release_dir/${prefix}-arm64-v8a.aab" ]; then
+        return 1
+    fi
+    if [ "$branch_arm" = "1" ] && ! apk_contains_titanium "$release_dir/${prefix}-armeabi-v7a.apk"; then
+        echo "Existing ${prefix}-armeabi-v7a.apk is missing the bundled Titanium extension. Rebuilding."
+        return 1
+    fi
+    if [ "$BUILD_ARM64" = "1" ] && ! apk_contains_titanium "$release_dir/${prefix}-arm64-v8a.apk"; then
+        echo "Existing ${prefix}-arm64-v8a.apk is missing the bundled Titanium extension. Rebuilding."
         return 1
     fi
 
