@@ -354,8 +354,10 @@ verify_titanium_source_patch() {
         echo "Titanium CRX is missing from bundled.json." >&2
         return 1
     }
-    grep -Fq '"//helium/dist:extension_assets",' "$source_dir/chrome/android/BUILD.gn" || {
-        echo "Titanium Android asset target is not referenced by chrome/android/BUILD.gn." >&2
+    sed -n '/java_group("chrome_public_non_pak_assets")/,/^ *}/p' \
+        "$source_dir/chrome/android/BUILD.gn" | \
+        grep -Fq '"//helium/dist:extension_assets",' || {
+        echo "Titanium Android asset target is not referenced by chrome_public_non_pak_assets." >&2
         return 1
     }
     grep -Fq '#include "helium/dist/stage_bundled_extensions.inc"' \
