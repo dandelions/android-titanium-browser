@@ -3877,11 +3877,11 @@ if [[ "$CURRENT_BRANCH" == old-* ]] || [ "${OLD_VERSION:-0}" = "1" ] || [ "${OLD
     sed -i 's/  CHECK(tab);/  if (!tab) return;/' chrome/browser/ui/android/tab_model/tab_model_observer_jni_bridge.cc 2>/dev/null || true
     sed -i 's/        assert tab.isInitialized();/        if (tab == null || !tab.isInitialized()) return;/' chrome/android/java/src/org/chromium/chrome/browser/tabmodel/TabModelObserverJniBridge.java 2>/dev/null || true
 else
-    # Remove any previous UI mode injection, then keep extension visibility and TabModel safety.
+    # Remove stale old-android crash guards while keeping standard extension visibility.
     python3 "$SCRIPT_DIR/patch_ui_mode.py" --remove-ui-mode .
     python3 "$SCRIPT_DIR/patch_ui_mode.py" --extensions-only .
-    sed -i 's/  CHECK(tab);/  if (!tab) return;/' chrome/browser/ui/android/tab_model/tab_model_observer_jni_bridge.cc 2>/dev/null || true
-    sed -i 's/        assert tab.isInitialized();/        if (tab == null || !tab.isInitialized()) return;/' chrome/android/java/src/org/chromium/chrome/browser/tabmodel/TabModelObserverJniBridge.java 2>/dev/null || true
+    sed -i 's/  if (!tab) return;/  CHECK(tab);/' chrome/browser/ui/android/tab_model/tab_model_observer_jni_bridge.cc 2>/dev/null || true
+    sed -i 's/        if (tab == null || !tab.isInitialized()) return;/        assert tab.isInitialized();/' chrome/android/java/src/org/chromium/chrome/browser/tabmodel/TabModelObserverJniBridge.java 2>/dev/null || true
 fi
 
 # Restore Titanium's native store flow in previously patched source trees.
