@@ -153,6 +153,30 @@ if [ -z "$TARGET_VERSION" ] || [ "$CHROMIUM_VERSION" != "$TARGET_VERSION" ]; the
 fi
 echo "Applying local hotfixes to Chromium $CHROMIUM_VERSION in $SRC_DIR"
 
+# Refresh bundled Titanium assets during incremental builds. FAST_LOCAL_BUILD skips
+# patch.sh, so keep the generated Android asset target in the existing checkout.
+BUNDLED_INDEX="$SCRIPT_DIR/extensions/dist/bundled.json"
+BUNDLED_CRX="$SCRIPT_DIR/extensions/dist/titanium.crx"
+if [ ! -f "$BUNDLED_CRX" ] || ! grep -q '"external_crx": "titanium.crx"' "$BUNDLED_INDEX" 2>/dev/null; then
+    python3 "$SCRIPT_DIR/extensions/bundle.py" \
+        "$SCRIPT_DIR/extensions/dist" \
+        titanium \
+        https://github.com/jqssun/android-titanium-extension/releases/latest/download/titanium.crx
+fi
+mkdir -p "$SRC_DIR/helium/dist"
+cp -f "$SCRIPT_DIR/extensions/dist/BUILD.gn" \
+      "$SCRIPT_DIR/extensions/dist/bundled.json" \
+      "$SCRIPT_DIR/extensions/dist/titanium.crx" \
+      "$SRC_DIR/helium/dist/"
+cp -f "$SCRIPT_DIR/extensions/stage_bundled_extensions.inc" \
+      "$SRC_DIR/helium/dist/stage_bundled_extensions.inc"
+grep -q '//helium/dist:extension_assets' chrome/android/BUILD.gn || \
+    sed -i 's|"//components/privacy_sandbox/privacy_sandbox_attestations/preload:privacy_sandbox_attestations_assets",|&"//helium/dist:extension_assets",|' chrome/android/BUILD.gn
+grep -q 'helium/dist/stage_bundled_extensions.inc' chrome/browser/extensions/external_pref_loader.cc || \
+    sed -i 's|#include "extensions/buildflags/buildflags.h"|&\n#include "helium/dist/stage_bundled_extensions.inc"|' chrome/browser/extensions/external_pref_loader.cc
+grep -q 'StageBundledExtensions' chrome/browser/extensions/external_pref_loader.cc || \
+    sed -i 's|ReadStandaloneExtensionPrefFiles(prefs);|&StageBundledExtensions(base_path_id_, base_path_, prefs);|' chrome/browser/extensions/external_pref_loader.cc
+
 # Proportionally scale extension popups to the space outside the toolbar.
 python3 "$SCRIPT_DIR/patch_extension_popup_width.py" \
     "$EXTENSION_ACTION_POPUP" \

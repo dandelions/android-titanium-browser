@@ -304,6 +304,14 @@ configure_out_dir() {
     set_gn_arg "$desired_args" ext_version_enabled true
     set_gn_arg "$desired_args" ext_version_increment "\"$BUILD_VERSION_INCREMENT\""
     append_common_gn_args "$desired_args"
+    if [ -f "$SCRIPT_DIR/extensions/dist/bundled.json" ] && [ -f "$SCRIPT_DIR/extensions/dist/titanium.crx" ]; then
+        local bundled_extensions_hash
+        bundled_extensions_hash="$(sha256sum \
+            "$SCRIPT_DIR/extensions/dist/BUILD.gn" \
+            "$SCRIPT_DIR/extensions/dist/bundled.json" \
+            "$SCRIPT_DIR/extensions/dist/titanium.crx" | sha256sum | awk '{print $1}')"
+        printf '# bundled_extensions_hash = %s\n' "$bundled_extensions_hash" >> "$desired_args"
+    fi
 
     if [ -f "$out_dir/build.ninja" ] && cmp -s "$desired_args" "$out_dir/args.gn"; then
         echo "GN args unchanged in $out_dir; reusing existing build.ninja."
