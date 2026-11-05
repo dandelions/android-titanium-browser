@@ -20,7 +20,7 @@ sed -i '/com.google.ar.core.min_apk_version/d' third_party/arcore-android-sdk-cl
 cp -r $SCRIPT_DIR/extensions/dist helium/
 cp $SCRIPT_DIR/extensions/stage_bundled_extensions.inc helium/dist/
 sed -i 's|"//components/privacy_sandbox/privacy_sandbox_attestations/preload:privacy_sandbox_attestations_assets",|&"//helium/dist:extension_assets",|' chrome/android/BUILD.gn
-sed -i 's|if (!base::PathService::Get(base::DIR_MODULE, \&cur)) {|if (!base::PathService::Get(chrome::DIR_USER_DATA, \&cur)) {|' chrome/common/chrome_paths.cc
+python3 "$SCRIPT_DIR/extensions/patch_external_extensions_path.py" chrome/common/chrome_paths.cc
 sed -i 's|#include "extensions/buildflags/buildflags.h"|&\n#include "helium/dist/stage_bundled_extensions.inc"|' chrome/browser/extensions/external_pref_loader.cc
 if ! grep -q 'StageBundledExtensions(base_path_id_, base_path_, prefs);' chrome/browser/extensions/external_pref_loader.cc; then
     if grep -q 'ReadStandaloneExtensionPrefFiles(prefs);' chrome/browser/extensions/external_pref_loader.cc; then

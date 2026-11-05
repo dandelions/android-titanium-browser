@@ -358,9 +358,20 @@ verify_titanium_source_patch() {
         echo "Titanium Android asset target is not referenced by chrome/android/BUILD.gn." >&2
         return 1
     }
+    grep -Fq '#include "helium/dist/stage_bundled_extensions.inc"' \
+        "$source_dir/chrome/browser/extensions/external_pref_loader.cc" || {
+        echo "Titanium loader include is missing from external_pref_loader.cc." >&2
+        return 1
+    }
     grep -Fq 'StageBundledExtensions(base_path_id_, base_path_, prefs);' \
         "$source_dir/chrome/browser/extensions/external_pref_loader.cc" || {
         echo "Titanium loader call is missing from external_pref_loader.cc." >&2
+        return 1
+    }
+    sed -n '/case chrome::DIR_EXTERNAL_EXTENSIONS:/,/break;/p' \
+        "$source_dir/chrome/common/chrome_paths.cc" | \
+        grep -Fq 'PathService::Get(chrome::DIR_USER_DATA, &cur)' || {
+        echo "Titanium staging directory is not writable user data." >&2
         return 1
     }
 }
