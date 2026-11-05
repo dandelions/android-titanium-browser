@@ -4165,6 +4165,7 @@ if is_old_version_branch; then
     if [ -f "$SCRIPT_DIR/patch_android_min_sdk.py" ]; then
         python3 "$SCRIPT_DIR/patch_android_min_sdk.py" "$SRC_DIR"
     fi
+    python3 "$SCRIPT_DIR/verify_old_android_features.py" "$SRC_DIR"
 else
     restore_modern_android_sdk_baseline "$SRC_DIR"
 fi

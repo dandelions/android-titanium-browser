@@ -307,7 +307,7 @@ configure_out_dir() {
     sed -i "/^default_android_sdk_version/d" "$desired_args"
     if is_old_android_build; then
         set_gn_arg "$desired_args" default_min_sdk_version 28
-        set_gn_arg "$desired_args" is_desktop_android false
+        set_gn_arg "$desired_args" is_desktop_android true
         set_gn_arg "$desired_args" v8_enable_drumbrake false
         set_gn_arg "$desired_args" v8_drumbrake_bounds_checks false
     else
