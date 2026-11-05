@@ -172,8 +172,8 @@ cp -f "$SCRIPT_DIR/extensions/stage_bundled_extensions.inc" \
       "$SRC_DIR/helium/dist/stage_bundled_extensions.inc"
 python3 "$SCRIPT_DIR/extensions/patch_external_extensions_path.py" \
     "$SRC_DIR/chrome/common/chrome_paths.cc"
-grep -q '//helium/dist:extension_assets' chrome/android/BUILD.gn || \
-    sed -i 's|"//components/privacy_sandbox/privacy_sandbox_attestations/preload:privacy_sandbox_attestations_assets",|&"//helium/dist:extension_assets",|' chrome/android/BUILD.gn
+python3 "$SCRIPT_DIR/extensions/patch_android_asset_group.py" \
+    chrome/android/BUILD.gn
 grep -q 'helium/dist/stage_bundled_extensions.inc' chrome/browser/extensions/external_pref_loader.cc || \
     sed -i 's|#include "extensions/buildflags/buildflags.h"|&\n#include "helium/dist/stage_bundled_extensions.inc"|' chrome/browser/extensions/external_pref_loader.cc
 if ! grep -q 'StageBundledExtensions(base_path_id_, base_path_, prefs);' chrome/browser/extensions/external_pref_loader.cc; then
