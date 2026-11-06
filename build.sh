@@ -392,11 +392,13 @@ verify_titanium_source_patch() {
         echo "Chrome Web Store download allowlist is missing from download_crx_util.cc." >&2
         return 1
     }
-    grep -Fq 'GetTargetFilePath().MatchesExtension(FILE_PATH_LITERAL(".crx"))' \
-        "$source_dir/chrome/browser/download/download_crx_util.cc" || {
-        echo "CRX filename detection is missing from download_crx_util.cc." >&2
+    if ! grep -Fq 'GetTargetFilePath().MatchesExtension(FILE_PATH_LITERAL(".crx"))' \
+        "$source_dir/chrome/browser/download/download_crx_util.cc" && \
+        ! grep -Fq 'GetTargetFilePath().MatchesExtension(FILE_PATH_LITERAL(".crx"))' \
+        "$source_dir/extensions/browser/extension_util.cc"; then
+        echo "CRX filename detection is missing from the extension download code." >&2
         return 1
-    }
+    fi
 }
 
 verify_titanium_apk() {

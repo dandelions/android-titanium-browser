@@ -9,6 +9,7 @@ CHROME_ACTIVITY = Path(
     "chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActivity.java"
 )
 DOWNLOAD_CRX_UTIL = Path("chrome/browser/download/download_crx_util.cc")
+EXTENSION_UTIL = Path("extensions/browser/extension_util.cc")
 
 CWS_INLINE_SCRIPT = r'''(function() {
   if (window._helium_cws_inline_install) return;
@@ -161,6 +162,44 @@ def patch_chrome_activity(root: Path) -> bool:
     return False
 
 
+def patch_extension_download_detection(root: Path) -> bool:
+    path = root / EXTENSION_UTIL
+    if not path.is_file():
+        raise RuntimeError(f"Could not find extension download detection in {path}")
+    text = path.read_text(encoding="utf-8")
+    original = text
+    marker = "bool IsExtensionDownload(const download::DownloadItem& download_item) {"
+    if text.count(marker) != 1:
+        raise RuntimeError(f"Could not find an unambiguous extension download function in {path}")
+    start = text.index(marker)
+    end = text.find("\n}", start)
+    if end < 0:
+        raise RuntimeError(f"Could not find end of extension download function in {path}")
+    function = text[start:end]
+    detection = 'download_item.GetTargetFilePath().MatchesExtension(FILE_PATH_LITERAL(".crx"))'
+    if detection not in function:
+        anchor = "download_item.GetMimeType() == Extension::kMimeType"
+        if function.count(anchor) != 1:
+            raise RuntimeError(f"Could not extend CRX download detection in {path}")
+        function = function.replace(
+            anchor,
+            anchor + '\n      || download_item.GetURL().path().ends_with(".crx")'
+            + '\n      || ' + detection,
+            1,
+        )
+        text = text[:start] + function + text[end:]
+    include = '#include "base/files/file_path.h"'
+    if include not in text:
+        anchor = '#include "base/command_line.h"'
+        if text.count(anchor) != 1:
+            raise RuntimeError(f"Could not add file path include in {path}")
+        text = text.replace(anchor, anchor + "\n" + include, 1)
+    if text != original:
+        path.write_text(text, encoding="utf-8")
+        return True
+    return False
+
+
 def patch_download_crx_util(root: Path) -> bool:
     path = root / DOWNLOAD_CRX_UTIL
     if not path.is_file():
@@ -174,6 +213,7 @@ def patch_download_crx_util(root: Path) -> bool:
     open_brace = text.find("{", start)
     if "clients2.google.com" not in text[start:open_brace + 500]:
         text = text[:open_brace + 1] + "\n" + CWS_ALLOWLIST + text[open_brace + 1:]
+    detection_changed = False
     if 'download_item.GetTargetFilePath().MatchesExtension(FILE_PATH_LITERAL(".crx"))' not in text:
         old = re.compile(
             r"  if \(download_item\.GetMimeType\(\) == extensions::Extension::kMimeType \|\|\s*"
@@ -187,11 +227,11 @@ def patch_download_crx_util(root: Path) -> bool:
                                               download_item.GetMimeType())) {'''
         text, count = old.subn(replacement, text, count=1)
         if count != 1:
-            raise RuntimeError(f"Could not extend CRX download detection in {path}")
+            detection_changed = patch_extension_download_detection(root)
     if text != original:
         path.write_text(text, encoding="utf-8")
         return True
-    return False
+    return detection_changed
 
 
 def patch_source_tree(root: Path) -> bool:

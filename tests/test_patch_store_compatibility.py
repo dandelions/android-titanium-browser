@@ -99,6 +99,53 @@ void CheckDownload(const DownloadItem& download_item) {
             PATCH.patch_chrome_activity(self.root)
         self.assertEqual(self.activity_path.read_text(encoding="utf-8"), source)
 
+    def test_chromium_156_extension_download_detection(self):
+        self.download_path.write_text(
+            '''bool OffStoreInstallAllowedByPrefs(Profile* profile, const DownloadItem& item) {
+  return false;
+}
+bool IsTrustedExtensionDownload(Profile* profile, const DownloadItem& item) {
+  return extensions::util::IsExtensionDownload(item);
+}
+''', encoding="utf-8"
+        )
+        extension_path = self.root / PATCH.EXTENSION_UTIL
+        extension_path.parent.mkdir(parents=True)
+        extension_path.write_text(
+            '''#include "base/command_line.h"
+bool IsExtensionDownload(const download::DownloadItem& download_item) {
+  if (download_item.GetTargetDisposition() ==
+      download::DownloadItem::TARGET_DISPOSITION_PROMPT) {
+    return false;
+  }
+
+  if (download_item.GetMimeType() == Extension::kMimeType) {
+    return true;
+  }
+  return false;
+}
+''', encoding="utf-8"
+        )
+        self.assertTrue(PATCH.patch_source_tree(self.root))
+        result = extension_path.read_text(encoding="utf-8")
+        self.assertIn('#include "base/files/file_path.h"', result)
+        self.assertIn('download_item.GetURL().path().ends_with(".crx")', result)
+        self.assertIn('download_item.GetTargetFilePath().MatchesExtension(FILE_PATH_LITERAL(".crx"))', result)
+        self.assertLess(result.index('TARGET_DISPOSITION_PROMPT'), result.index('ends_with(".crx")'))
+        self.assertIn('clients2.google.com', self.download_path.read_text(encoding="utf-8"))
+        self.assertFalse(PATCH.patch_source_tree(self.root))
+        self.assertEqual(result, extension_path.read_text(encoding="utf-8"))
+
+    def test_missing_extension_download_detection_fails(self):
+        self.download_path.write_text(
+            'bool OffStoreInstallAllowedByPrefs(Profile* profile, const DownloadItem& item) {\n'
+            '  return false;\n}\n', encoding="utf-8"
+        )
+        before = self.download_path.read_text(encoding="utf-8")
+        with self.assertRaisesRegex(RuntimeError, "Could not find extension download detection"):
+            PATCH.patch_download_crx_util(self.root)
+        self.assertEqual(before, self.download_path.read_text(encoding="utf-8"))
+
     def test_missing_sources_are_a_noop(self):
         empty_root = Path(self.temporary_directory.name) / "empty"
         empty_root.mkdir()
