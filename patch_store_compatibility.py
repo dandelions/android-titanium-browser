@@ -140,10 +140,21 @@ def patch_chrome_activity(root: Path) -> bool:
             raise RuntimeError(f"Could not find ChromeActivity closing brace in {path}")
         text = text[:closing] + helper + text[closing:]
     if "injectStoreInlineInstallSupport(tab);" not in text:
-        anchor = "PersonalizeResults.Execute(tab);"
-        if anchor not in text:
-            raise RuntimeError(f"Could not find URL update hook in {path}")
-        text = text.replace(anchor, anchor + "\n              injectStoreInlineInstallSupport(tab);", 1)
+        load_finished = re.compile(
+            r"(?m)^(?P<indent>[ \t]*)public void onPageLoadFinished\(Tab tab, GURL url\)\s*\{"
+        )
+        matches = list(load_finished.finditer(text))
+        if len(matches) == 1:
+            match = matches[0]
+            insertion = "\n" + match.group("indent") + "    injectStoreInlineInstallSupport(tab);"
+            text = text[:match.end()] + insertion + text[match.end():]
+        elif len(matches) > 1:
+            raise RuntimeError(f"Ambiguous page load hooks in {path}")
+        else:
+            anchor = "PersonalizeResults.Execute(tab);"
+            if text.count(anchor) != 1:
+                raise RuntimeError(f"Could not find an unambiguous page update hook in {path}")
+            text = text.replace(anchor, anchor + "\n              injectStoreInlineInstallSupport(tab);", 1)
     if text != original:
         path.write_text(text, encoding="utf-8")
         return True

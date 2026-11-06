@@ -63,6 +63,42 @@ void CheckDownload(const DownloadItem& download_item) {
         self.assertEqual(first_activity, self.activity_path.read_text(encoding="utf-8"))
         self.assertEqual(first_download, self.download_path.read_text(encoding="utf-8"))
 
+    def test_page_load_finished_hook_matches_chromium_156(self):
+        source = '''class ChromeActivity {
+    void initialize() {
+        new TabModelSelectorTabObserver(tabModelSelector) {
+            @Override
+            public void onPageLoadFinished(Tab tab, GURL url) {
+                postDeferredStartupIfNeeded();
+                OfflinePageUtils.showOfflineSnackbarIfNecessary(tab);
+            }
+        };
+    }
+}
+'''
+        self.activity_path.write_text(source, encoding="utf-8")
+        self.assertTrue(PATCH.patch_source_tree(self.root))
+        result = self.activity_path.read_text(encoding="utf-8")
+        self.assertIn(
+            "public void onPageLoadFinished(Tab tab, GURL url) {\n"
+            "                injectStoreInlineInstallSupport(tab);",
+            result,
+        )
+        self.assertEqual(result.count("injectStoreInlineInstallSupport(tab);"), 1)
+        self.assertFalse(PATCH.patch_source_tree(self.root))
+        self.assertEqual(self.activity_path.read_text(encoding="utf-8"), result)
+
+    def test_ambiguous_page_load_hooks_fail_without_writing(self):
+        source = '''class ChromeActivity {
+    public void onPageLoadFinished(Tab tab, GURL url) {}
+    public void onPageLoadFinished(Tab tab, GURL url) {}
+}
+'''
+        self.activity_path.write_text(source, encoding="utf-8")
+        with self.assertRaisesRegex(RuntimeError, "Ambiguous page load hooks"):
+            PATCH.patch_chrome_activity(self.root)
+        self.assertEqual(self.activity_path.read_text(encoding="utf-8"), source)
+
     def test_missing_sources_are_a_noop(self):
         empty_root = Path(self.temporary_directory.name) / "empty"
         empty_root.mkdir()
