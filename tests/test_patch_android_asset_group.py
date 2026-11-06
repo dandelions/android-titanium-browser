@@ -53,6 +53,12 @@ class AndroidAssetGroupPatchTest(unittest.TestCase):
         )
         self.assertGreater(final_reapply, restore)
         self.assertIn("Titanium Android asset target is missing after final hotfixes.", hotfix[final_reapply:])
+        self.assertIn('Chrome Web Store compatibility after the native Titanium cleanup.', hotfix)
+        self.assertIn('patch_store_compatibility.py" "$SRC_DIR"', hotfix)
+        self.assertGreater(hotfix.index('patch_store_compatibility.py" "$SRC_DIR"'), hotfix.index('patch_titanium_store.py" "$SRC_DIR"'))
+        build = (REPO / "build.sh").read_text()
+        self.assertIn("Chrome Web Store compatibility script is missing", build)
+        self.assertIn("Chrome Web Store desktop CRX parameters are missing", build)
 
 
 if __name__ == "__main__":

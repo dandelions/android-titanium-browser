@@ -3887,6 +3887,8 @@ fi
 
 # Restore Titanium's native store flow in previously patched source trees.
 python3 "$SCRIPT_DIR/patch_titanium_store.py" .
+# Restore Chrome Web Store compatibility after the native Titanium cleanup.
+python3 "$SCRIPT_DIR/patch_store_compatibility.py" .
 # 严格分支隔离判定：
 # 标准分支（main, lemur）绝对禁止任何 API 28 / 低版本修改，仅允许作用于 old-version / old-android 分支
 is_old_version_branch() {

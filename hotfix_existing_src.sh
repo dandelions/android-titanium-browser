@@ -4111,6 +4111,8 @@ fi
 
 # Restore Titanium's native store flow in previously patched source trees.
 python3 "$SCRIPT_DIR/patch_titanium_store.py" "$SRC_DIR"
+# Restore Chrome Web Store compatibility after the native Titanium cleanup.
+python3 "$SCRIPT_DIR/patch_store_compatibility.py" "$SRC_DIR"
 
 CURRENT_BRANCH="$(git -C "$SCRIPT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
 

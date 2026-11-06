@@ -370,10 +370,31 @@ verify_titanium_source_patch() {
         echo "Titanium loader call is missing from external_pref_loader.cc." >&2
         return 1
     }
-    sed -n '/case chrome::DIR_EXTERNAL_EXTENSIONS:/,/break;/p' \
-        "$source_dir/chrome/common/chrome_paths.cc" | \
-        grep -Fq 'PathService::Get(chrome::DIR_USER_DATA, &cur)' || {
+    grep -Fq 'PathService::Get(chrome::DIR_USER_DATA, &cur)' \
+        "$source_dir/chrome/common/chrome_paths.cc" || {
         echo "Titanium staging directory is not writable user data." >&2
+        return 1
+    }
+    local chrome_activity="$source_dir/chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActivity.java"
+    grep -Fq 'HELIUM_CWS_SCRIPT' "$chrome_activity" || {
+        echo "Chrome Web Store compatibility script is missing from ChromeActivity.java." >&2
+        return 1
+    }
+    grep -Fq 'os=win&arch=x64&prod=chromecrx' "$chrome_activity" || {
+        echo "Chrome Web Store desktop CRX parameters are missing from ChromeActivity.java." >&2
+        return 1
+    }
+    grep -Fq 'injectStoreInlineInstallSupport(tab);' "$chrome_activity" || {
+        echo "Chrome Web Store install hook is missing from ChromeActivity.java." >&2
+        return 1
+    }
+    grep -Fq 'clients2.google.com' "$source_dir/chrome/browser/download/download_crx_util.cc" || {
+        echo "Chrome Web Store download allowlist is missing from download_crx_util.cc." >&2
+        return 1
+    }
+    grep -Fq 'GetTargetFilePath().MatchesExtension(FILE_PATH_LITERAL(".crx"))' \
+        "$source_dir/chrome/browser/download/download_crx_util.cc" || {
+        echo "CRX filename detection is missing from download_crx_util.cc." >&2
         return 1
     }
 }

@@ -266,13 +266,14 @@ def patch_extensions_toolbar_coordinator_impl(src_dir: Path) -> None:
         java.util.LinkedHashSet<String> ordered = new java.util.LinkedHashSet<>();
         if (pinned != null) {
             for (String id : pinned) {
-                if (id != null && !id.isEmpty()) {
+                if (id != null && !id.isEmpty()
+                        && !"jlbggdgofbcndkkdimpeccablefilpkm".equals(id)) {
                     ordered.add(id);
                 }
             }
         }
         for (String id : all) {
-            if (id != null && !id.isEmpty()) {
+            if (id != null && !id.isEmpty() && !"jlbggdgofbcndkkdimpeccablefilpkm".equals(id)) {
                 ordered.add(id);
             }
         }
