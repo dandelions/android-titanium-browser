@@ -81,6 +81,25 @@ void CheckDownload(const DownloadItem& download_item) {
         self.assertEqual(first_activity, self.activity_path.read_text(encoding="utf-8"))
         self.assertEqual(first_download, self.download_path.read_text(encoding="utf-8"))
 
+    def test_cleans_lemur_extension_util_only_in_download_function(self):
+        path = self.root / PATCH.EXTENSION_UTIL
+        path.parent.mkdir(parents=True)
+        path.write_text('''bool IsExtensionDownload(const download::DownloadItem& download_item) {
+  return download_item.GetMimeType() == Extension::kMimeType
+      || download_item.GetURL().path().ends_with(".crx")
+      || download_item.GetTargetFilePath().MatchesExtension(FILE_PATH_LITERAL(".crx"));
+}
+bool Other(const download::DownloadItem& download_item) {
+  return download_item.GetURL().path().ends_with(".crx");
+}
+''', encoding="utf-8")
+        self.assertTrue(PATCH.clean_legacy_extension_detection(path))
+        result = path.read_text(encoding="utf-8")
+        self.assertIn("return download_item.GetMimeType() == Extension::kMimeType;", result)
+        self.assertEqual(result.count('ends_with(".crx")'), 1)
+        self.assertFalse(PATCH.clean_legacy_extension_detection(path))
+        self.assertEqual(result, path.read_text(encoding="utf-8"))
+
     def test_missing_sources_are_a_noop(self):
         empty_root = Path(self.temporary_directory.name) / "empty"
         empty_root.mkdir()

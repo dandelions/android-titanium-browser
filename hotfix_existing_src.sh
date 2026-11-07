@@ -251,6 +251,8 @@ if [ -f "$LAUNCH_INTENT_HOOKS" ]; then
     sed -i 's|if (!Intent\.ACTION_VIEW\.equals(intent\.getAction())) {|if (!Intent.ACTION_VIEW.equals(intent.getAction()) \|\| !android.webkit.URLUtil.isNetworkUrl(IntentHandler.getUrlFromIntent(intent))) {|' "$LAUNCH_INTENT_HOOKS"
     sed -i 's|if (urlFromIntent == null) {|if (!android.webkit.URLUtil.isNetworkUrl(urlFromIntent)) {|' "$LAUNCH_INTENT_HOOKS"
     sed -i 's|static Intent maybeModifyCustomTabIntents(Context context, Intent intent) {|static Intent maybeModifyCustomTabIntents(Context context, Intent intent) { if (!android.webkit.URLUtil.isNetworkUrl(IntentHandler.getUrlFromIntent(intent))) { return intent; }|' "$LAUNCH_INTENT_HOOKS"
+    grep -q 'maybeModifyCustomTabIntents(Intent intent) { if (!android.webkit.URLUtil.isNetworkUrl' "$LAUNCH_INTENT_HOOKS" || \
+        sed -i 's|static void maybeModifyCustomTabIntents(Intent intent) {|& if (!android.webkit.URLUtil.isNetworkUrl(IntentHandler.getUrlFromIntent(intent))) { return; }|' "$LAUNCH_INTENT_HOOKS"
 fi
 if [ -f "$HOME_MODULES_CONFIG_MANAGER" ]; then
     sed -i 's|readBoolean(getSettingsPreferenceKey(moduleType), true)|readBoolean(getSettingsPreferenceKey(moduleType), !HomeModulesUtils.belongsToEducationalTipModule(moduleType))|' "$HOME_MODULES_CONFIG_MANAGER"
@@ -267,11 +269,14 @@ feature_overrides.EnableFeature(kAndroidMediaPicker);\
 feature_overrides.EnableFeature(features::kUserMediaScreenCapturing);\
 feature_overrides.EnableFeature(media::kAndroidEnableBackgroundMediaCapturing);\
 feature_overrides.EnableFeature(media::kAutoPictureInPictureAndroid);\
-feature_overrides.EnableFeature(media::kContextMenuPictureInPictureAndroid);\
 feature_overrides.EnableFeature(chrome::android::kLoadAllTabsAtStartup);\
 feature_overrides.EnableFeature(chrome::android::kChromeNativeUrlOverriding);\
+feature_overrides.EnableFeature(download::features::kEnableDownloadSaveAsContextMenu);\
 #if 0
 d}' "$FIELD_TRIALS"
+sed -i '/feature_overrides.EnableFeature(media::kContextMenuPictureInPictureAndroid);/d' "$FIELD_TRIALS"
+grep -q 'feature_overrides.EnableFeature(download::features::kEnableDownloadSaveAsContextMenu);' "$FIELD_TRIALS" || \
+    sed -i '/feature_overrides.EnableFeature(chrome::android::kLoadAllTabsAtStartup);/a\feature_overrides.EnableFeature(download::features::kEnableDownloadSaveAsContextMenu);' "$FIELD_TRIALS"
 grep -q 'feature_overrides.EnableFeature(chrome::android::kChromeNativeUrlOverriding);' "$FIELD_TRIALS" || \
     sed -i '/feature_overrides.EnableFeature(chrome::android::kLoadAllTabsAtStartup);/a\feature_overrides.EnableFeature(chrome::android::kChromeNativeUrlOverriding);' "$FIELD_TRIALS"
 

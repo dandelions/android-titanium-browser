@@ -41,12 +41,13 @@ grep -q 'ClearExternalUninstallBit(info.extension_id)' chrome/browser/extensions
 # Disallow uninstalling bundled extensions in ExtensionService::UninstallExtension
 grep -q 'reason != UNINSTALL_REASON_REINSTALL' chrome/browser/extensions/extension_service.cc || perl -0pi -e 's~(\n  bool external_uninstall =[\s\S]*?\(reason == UNINSTALL_REASON_ORPHANED_SHARED_MODULE\);\n)~$1#if BUILDFLAG(IS_ANDROID)\n  if (extension->location() == mojom::ManifestLocation::kExternalPref &&\n      reason != UNINSTALL_REASON_REINSTALL) {\n    ExtensionRegistry::Get(profile_)->TriggerOnUninstallationDenied(\n        extension.get());\n    return false;\n  }\n#endif\n~' chrome/browser/extensions/extension_service.cc
 
-sed -i 's|if (!_omit_dex) {|if (_is_base_module \&\& !_omit_dex) {|' build/config/android/rules.gni
+sed -i '/android_apk_or_module_srcjar_deps_common/{n;s|if (!_omit_dex) {|if (_is_base_module \&\& !_omit_dex) {|}' build/config/android/rules.gni
 sed -i '/safelyRemovePreference(prefFragment/d' helium/chromium_src/chrome/browser/language/android/java/src/org/chromium/chrome/browser/language/settings/LanguageSettingsExt.java # language
 sed -i '/safelyRemovePreference($/{N;/PREF_JAVASCRIPT_OPTIMIZER/d}' helium/chromium_src/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettingsExt.java # optimizer
 sed -i 's|if (!Intent\.ACTION_VIEW\.equals(intent\.getAction())) {|if (!Intent.ACTION_VIEW.equals(intent.getAction()) \|\| !android.webkit.URLUtil.isNetworkUrl(IntentHandler.getUrlFromIntent(intent))) {|' helium/chromium_src/chrome/android/java/src/org/chromium/chrome/browser/LaunchIntentDispatcherHooks.java # scheme guard
 sed -i 's|if (urlFromIntent == null) {|if (!android.webkit.URLUtil.isNetworkUrl(urlFromIntent)) {|' helium/chromium_src/chrome/android/java/src/org/chromium/chrome/browser/LaunchIntentDispatcherHooks.java # scheme guard
 sed -i 's|static Intent maybeModifyCustomTabIntents(Context context, Intent intent) {|static Intent maybeModifyCustomTabIntents(Context context, Intent intent) { if (!android.webkit.URLUtil.isNetworkUrl(IntentHandler.getUrlFromIntent(intent))) { return intent; }|' helium/chromium_src/chrome/android/java/src/org/chromium/chrome/browser/LaunchIntentDispatcherHooks.java # scheme guard
+sed -i 's|static void maybeModifyCustomTabIntents(Intent intent) {|& if (!android.webkit.URLUtil.isNetworkUrl(IntentHandler.getUrlFromIntent(intent))) { return; }|' helium/chromium_src/chrome/android/java/src/org/chromium/chrome/browser/LaunchIntentDispatcherHooks.java # scheme guard
 sed -i 's|readBoolean(getSettingsPreferenceKey(moduleType), true)|readBoolean(getSettingsPreferenceKey(moduleType), !HomeModulesUtils.belongsToEducationalTipModule(moduleType))|' chrome/browser/magic_stack/android/java/src/org/chromium/chrome/browser/magic_stack/HomeModulesConfigManager.java # ntp
 sed -i 's|private static boolean verifyPackage(Context ctx, String pkgName, byte\[\] sha256CertDigestBytes) {|& if (true) return false; |' helium/android_config/parser/java/src/app/helium/config/HeliumConfParser.java # config parser
 
@@ -65,9 +66,9 @@ feature_overrides.EnableFeature(kAndroidMediaPicker);\
 feature_overrides.EnableFeature(features::kUserMediaScreenCapturing);\
 feature_overrides.EnableFeature(media::kAndroidEnableBackgroundMediaCapturing);\
 feature_overrides.EnableFeature(media::kAutoPictureInPictureAndroid);\
-feature_overrides.EnableFeature(media::kContextMenuPictureInPictureAndroid);\
 feature_overrides.EnableFeature(chrome::android::kLoadAllTabsAtStartup);\
 feature_overrides.EnableFeature(chrome::android::kChromeNativeUrlOverriding);\
+feature_overrides.EnableFeature(download::features::kEnableDownloadSaveAsContextMenu);\
 #if 0
 d}' chrome/browser/chrome_browser_field_trials.cc
 sed -i '/^bool ShouldFallbackToSWIfGLES3NotSupported() {$/,/^}$/ s|^  return true;$|  return false;|' ui/gl/gl_features.cc # virt

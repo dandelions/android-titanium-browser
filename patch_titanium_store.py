@@ -9,6 +9,7 @@ CHROME_ACTIVITY = Path(
     "chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActivity.java"
 )
 DOWNLOAD_CRX_UTIL = Path("chrome/browser/download/download_crx_util.cc")
+EXTENSION_UTIL = Path("extensions/browser/extension_util.cc")
 
 TITANIUM_ALLOWLIST = '''
   if (const auto& o = item.GetRequestInitiator(); o && o->scheme() == "chrome-extension") return true;
@@ -142,9 +143,29 @@ def restore_titanium_allowlist(path: Path) -> bool:
     return False
 
 
+def clean_legacy_extension_detection(path: Path) -> bool:
+    if not path.is_file():
+        return False
+    text = path.read_text(encoding="utf-8")
+    marker = "bool IsExtensionDownload(const download::DownloadItem& download_item) {"
+    start = text.find(marker)
+    if start < 0:
+        return False
+    end = _matching_brace(text, text.find("{", start)) + 1
+    function = text[start:end]
+    legacy = ('\n      || download_item.GetURL().path().ends_with(".crx")'
+              '\n      || download_item.GetTargetFilePath().MatchesExtension(FILE_PATH_LITERAL(".crx"))')
+    cleaned = function.replace(legacy, "", 1)
+    if cleaned == function:
+        return False
+    path.write_text(text[:start] + cleaned + text[end:], encoding="utf-8")
+    return True
+
+
 def patch_source_tree(source_root: Path) -> bool:
     changed = clean_chrome_activity(source_root / CHROME_ACTIVITY)
     changed = restore_titanium_allowlist(source_root / DOWNLOAD_CRX_UTIL) or changed
+    changed = clean_legacy_extension_detection(source_root / EXTENSION_UTIL) or changed
     return changed
 
 
