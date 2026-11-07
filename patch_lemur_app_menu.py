@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-import json
 import os
 import re
 from pathlib import Path
 import subprocess
 import sys
+
+from patch_titanium_visibility import bundled_titanium_id
 
 
 MENU_BUTTON_REL = (
@@ -240,19 +241,10 @@ def patch_extensions_toolbar_coordinator_impl(src_dir: Path) -> None:
     if old_show_ext_menu in text:
         text = text.replace(old_show_ext_menu, new_show_ext_menu, 1)
 
-    # The ID comes from the signed CRX bundled for this build.
-    index_path = src_dir / "helium/dist/bundled.json"
-    if not index_path.is_file():
-        index_path = Path(__file__).resolve().parent / "extensions/dist/bundled.json"
     try:
-        index = json.loads(index_path.read_text(encoding="utf-8"))
-        ids = [key for key, value in index.items()
-               if isinstance(value, dict) and value.get("external_crx") == "titanium.crx"]
-    except (OSError, ValueError, AttributeError) as error:
-        raise SystemExit(f"Cannot read bundled Titanium ID from {index_path}: {error}")
-    if len(ids) != 1 or not re.fullmatch(r"[a-p]{32}", ids[0]):
-        raise SystemExit(f"Expected one valid bundled Titanium ID in {index_path}")
-    titanium_id = ids[0]
+        titanium_id = bundled_titanium_id(src_dir)
+    except RuntimeError as error:
+        raise SystemExit(str(error)) from error
 
     anchor = """    @Override
     public ToolbarWidthConsumer getActionListWidthConsumer() {

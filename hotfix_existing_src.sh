@@ -4229,6 +4229,7 @@ else
 fi
 
 python3 "$SCRIPT_DIR/patch_omnibox_dropdown.py" "$SRC_DIR"
+python3 "$SCRIPT_DIR/patch_titanium_visibility.py" "$SRC_DIR"
 
 # Reapply Titanium after the modern Android baseline restore, which resets BUILD.gn.
 python3 "$SCRIPT_DIR/extensions/patch_android_asset_group.py" \
