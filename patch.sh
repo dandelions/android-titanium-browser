@@ -3999,3 +3999,4 @@ else
 fi
 
 python3 "$SCRIPT_DIR/patch_omnibox_dropdown.py" .
+python3 "$SCRIPT_DIR/patch_titanium_visibility.py" . || exit 1
