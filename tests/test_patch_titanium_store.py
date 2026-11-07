@@ -81,6 +81,37 @@ void CheckDownload(const DownloadItem& download_item) {
         self.assertEqual(first_activity, self.activity_path.read_text(encoding="utf-8"))
         self.assertEqual(first_download, self.download_path.read_text(encoding="utf-8"))
 
+    def test_migrates_old_lemur_multiline_cws_allowlist(self):
+        self.download_path.write_text('''bool OffStoreInstallAllowedByPrefs(const DownloadItem& item) {
+  if (const auto& o = item.GetRequestInitiator(); o && o->scheme() == "chrome-extension") return true;
+  for (const char* d : {"clients2.google.com", "clients2.googleusercontent.com",
+                       "chromewebstore.google.com", "chrome.google.com",
+                       "google.com", "googleusercontent.com"}) {
+    if (item.GetURL().DomainIs(d) || item.GetReferrerUrl().DomainIs(d)) return true;
+  }
+  if (item.GetURL().DomainIs("example.com")) return true;
+  return false;
+}
+bool OtherFunction(const DownloadItem& item) {
+  return item.GetURL().DomainIs("google.com");
+}
+''', encoding="utf-8")
+        self.assertTrue(PATCH.patch_source_tree(self.root))
+        download = self.download_path.read_text(encoding="utf-8")
+        self.assertNotIn("clients2.google.com", download)
+        self.assertNotIn("googleusercontent.com", download)
+        self.assertNotIn("chromewebstore.google.com", download)
+        self.assertIn('DomainIs("example.com")', download)
+        self.assertIn('DomainIs("google.com")', download)
+        self.assertIn('"addons.opera.com"', download)
+        self.assertIn('"microsoftedge.microsoft.com"', download)
+        self.assertIn('o->scheme() == "chrome-extension"', download)
+        activity = self.activity_path.read_text(encoding="utf-8")
+        self.assertNotIn("injectStoreInlineInstallSupport", activity)
+        self.assertFalse(PATCH.patch_source_tree(self.root))
+        self.assertEqual(download, self.download_path.read_text(encoding="utf-8"))
+        self.assertEqual(activity, self.activity_path.read_text(encoding="utf-8"))
+
     def test_cleans_lemur_extension_util_only_in_download_function(self):
         path = self.root / PATCH.EXTENSION_UTIL
         path.parent.mkdir(parents=True)
