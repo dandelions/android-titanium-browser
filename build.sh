@@ -376,27 +376,8 @@ verify_titanium_source_patch() {
         return 1
     }
     local chrome_activity="$source_dir/chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActivity.java"
-    grep -Fq 'HELIUM_CWS_SCRIPT' "$chrome_activity" || {
-        echo "Chrome Web Store compatibility script is missing from ChromeActivity.java." >&2
-        return 1
-    }
-    grep -Fq 'os=win&arch=x64&prod=chromecrx' "$chrome_activity" || {
-        echo "Chrome Web Store desktop CRX parameters are missing from ChromeActivity.java." >&2
-        return 1
-    }
-    grep -Fq 'injectStoreInlineInstallSupport(tab);' "$chrome_activity" || {
-        echo "Chrome Web Store install hook is missing from ChromeActivity.java." >&2
-        return 1
-    }
-    grep -Fq 'clients2.google.com' "$source_dir/chrome/browser/download/download_crx_util.cc" || {
-        echo "Chrome Web Store download allowlist is missing from download_crx_util.cc." >&2
-        return 1
-    }
-    if ! grep -Fq 'GetTargetFilePath().MatchesExtension(FILE_PATH_LITERAL(".crx"))' \
-        "$source_dir/chrome/browser/download/download_crx_util.cc" && \
-        ! grep -Fq 'GetTargetFilePath().MatchesExtension(FILE_PATH_LITERAL(".crx"))' \
-        "$source_dir/extensions/browser/extension_util.cc"; then
-        echo "CRX filename detection is missing from the extension download code." >&2
+    if grep -Eq 'HELIUM_CWS_SCRIPT|injectStoreInlineInstallSupport' "$chrome_activity"; then
+        echo "Obsolete Chrome Web Store injection remains in ChromeActivity.java." >&2
         return 1
     fi
 }

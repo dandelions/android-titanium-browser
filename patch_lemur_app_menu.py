@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import json
 import os
 import re
 from pathlib import Path
@@ -239,9 +240,19 @@ def patch_extensions_toolbar_coordinator_impl(src_dir: Path) -> None:
     if old_show_ext_menu in text:
         text = text.replace(old_show_ext_menu, new_show_ext_menu, 1)
 
-    if "public String[] getAllExtensionActionIds()" in text:
-        path.write_text(text, encoding="utf-8")
-        return
+    # The ID comes from the signed CRX bundled for this build.
+    index_path = src_dir / "helium/dist/bundled.json"
+    if not index_path.is_file():
+        index_path = Path(__file__).resolve().parent / "extensions/dist/bundled.json"
+    try:
+        index = json.loads(index_path.read_text(encoding="utf-8"))
+        ids = [key for key, value in index.items()
+               if isinstance(value, dict) and value.get("external_crx") == "titanium.crx"]
+    except (OSError, ValueError, AttributeError) as error:
+        raise SystemExit(f"Cannot read bundled Titanium ID from {index_path}: {error}")
+    if len(ids) != 1 or not re.fullmatch(r"[a-p]{32}", ids[0]):
+        raise SystemExit(f"Expected one valid bundled Titanium ID in {index_path}")
+    titanium_id = ids[0]
 
     anchor = """    @Override
     public ToolbarWidthConsumer getActionListWidthConsumer() {
@@ -337,10 +348,21 @@ def patch_extensions_toolbar_coordinator_impl(src_dir: Path) -> None:
         mExtensionsMenuCoordinator.showContextMenuFromAppMenu(actionId, fallbackAnchorView);
     }"""
 
-    if anchor not in text:
-        raise SystemExit(f"getActionListWidthConsumer anchor not found in {path}")
-
-    path.write_text(text.replace(anchor, addition, 1), encoding="utf-8")
+    addition = addition.replace("jlbggdgofbcndkkdimpeccablefilpkm", titanium_id)
+    if "public String[] getAllExtensionActionIds()" in text:
+        # Refresh the generated list method without replacing unrelated coordinator methods.
+        method = re.compile(
+            r"(?ms)^    @Override\n    public String\[\] getAllExtensionActionIds\(\) \{.*?^    \}\n"
+        )
+        generated = method.search(addition)
+        if generated is None or len(list(method.finditer(text))) != 1:
+            raise SystemExit(f"Cannot refresh extension action list in {path}")
+        text = method.sub(lambda _: generated.group(0), text, count=1)
+    else:
+        if anchor not in text:
+            raise SystemExit(f"getActionListWidthConsumer anchor not found in {path}")
+        text = text.replace(anchor, addition, 1)
+    path.write_text(text, encoding="utf-8")
 
 
 def patch_extensions_menu_coordinator(src_dir: Path) -> None:

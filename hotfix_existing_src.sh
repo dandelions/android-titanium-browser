@@ -292,13 +292,12 @@ fi
 if [ -f "$LAUNCH_INTENT_HOOKS" ]; then
     sed -i 's|if (!Intent\.ACTION_VIEW\.equals(intent\.getAction())) {|if (!Intent.ACTION_VIEW.equals(intent.getAction()) \|\| !android.webkit.URLUtil.isNetworkUrl(IntentHandler.getUrlFromIntent(intent))) {|' "$LAUNCH_INTENT_HOOKS"
     sed -i 's|if (urlFromIntent == null) {|if (!android.webkit.URLUtil.isNetworkUrl(urlFromIntent)) {|' "$LAUNCH_INTENT_HOOKS"
-    sed -i 's|static Intent maybeModifyCustomTabIntents(Context context, Intent intent) {|static Intent maybeModifyCustomTabIntents(Context context, Intent intent) { if (!android.webkit.URLUtil.isNetworkUrl(IntentHandler.getUrlFromIntent(intent))) { return intent; }|' "$LAUNCH_INTENT_HOOKS"
+    sed -i 's|static void maybeModifyCustomTabIntents(Intent intent) {|& if (!android.webkit.URLUtil.isNetworkUrl(IntentHandler.getUrlFromIntent(intent))) { return; }|' "$LAUNCH_INTENT_HOOKS"
 fi
 if [ -f "$HOME_MODULES_CONFIG_MANAGER" ]; then
     sed -i 's|readBoolean(getSettingsPreferenceKey(moduleType), true)|readBoolean(getSettingsPreferenceKey(moduleType), !HomeModulesUtils.belongsToEducationalTipModule(moduleType))|' "$HOME_MODULES_CONFIG_MANAGER"
 fi
 sed -i '/removeEntryForKey(fragmentName, "translate_switch")/d' "$SETTINGS_SEARCH_COORDINATOR"
-sed -i '/^bool ShouldFallbackToSWIfGLES3NotSupported() {$/,/^}$/ s|^  return true;$|  return false;|' "$GL_FEATURES"
 sed -i '/com.google.ar.core.min_apk_version/d' "$ARCORE_MANIFEST"
 # Chromium 152 moves desktop-Android feature enablement into field trials.
 sed -i '/#if BUILDFLAG(IS_DESKTOP_ANDROID)/{
@@ -309,13 +308,17 @@ feature_overrides.EnableFeature(kAndroidMediaPicker);\
 feature_overrides.EnableFeature(features::kUserMediaScreenCapturing);\
 feature_overrides.EnableFeature(media::kAndroidEnableBackgroundMediaCapturing);\
 feature_overrides.EnableFeature(media::kAutoPictureInPictureAndroid);\
-feature_overrides.EnableFeature(media::kContextMenuPictureInPictureAndroid);\
 feature_overrides.EnableFeature(chrome::android::kLoadAllTabsAtStartup);\
 feature_overrides.EnableFeature(chrome::android::kChromeNativeUrlOverriding);\
+feature_overrides.EnableFeature(download::features::kEnableDownloadSaveAsContextMenu);\
 #if 0
 d}' "$FIELD_TRIALS"
 grep -q 'feature_overrides.EnableFeature(chrome::android::kChromeNativeUrlOverriding);' "$FIELD_TRIALS" || \
     sed -i '/feature_overrides.EnableFeature(chrome::android::kLoadAllTabsAtStartup);/a\feature_overrides.EnableFeature(chrome::android::kChromeNativeUrlOverriding);' "$FIELD_TRIALS"
+
+sed -i '/feature_overrides.EnableFeature(media::kContextMenuPictureInPictureAndroid);/d' "$FIELD_TRIALS"
+grep -q 'feature_overrides.EnableFeature(download::features::kEnableDownloadSaveAsContextMenu);' "$FIELD_TRIALS" || \
+    sed -i '/feature_overrides.EnableFeature(chrome::android::kChromeNativeUrlOverriding);/a\feature_overrides.EnableFeature(download::features::kEnableDownloadSaveAsContextMenu);' "$FIELD_TRIALS"
 
 sed -i 's|"platforms": \["win", "mac"\]|"platforms": ["win", "mac", "desktop_android"]|' "$MANIFEST_FEATURES"
 
@@ -4111,8 +4114,6 @@ fi
 
 # Restore Titanium's native store flow in previously patched source trees.
 python3 "$SCRIPT_DIR/patch_titanium_store.py" "$SRC_DIR"
-# Restore Chrome Web Store compatibility after the native Titanium cleanup.
-python3 "$SCRIPT_DIR/patch_store_compatibility.py" "$SRC_DIR"
 
 CURRENT_BRANCH="$(git -C "$SCRIPT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
 
