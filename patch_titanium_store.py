@@ -178,6 +178,9 @@ def clean_extension_detection(path: Path) -> bool:
     return False
 
 
+clean_legacy_extension_detection = clean_extension_detection
+
+
 STORE_DESKTOP_CHECK = """        if (!GURL.isEmptyOrInvalid(url)) {
             String host = url.getHost();
             if ("chromewebstore.google.com".equals(host) || "chrome.google.com".equals(host)) {
