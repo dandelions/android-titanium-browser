@@ -145,7 +145,7 @@ def restore_titanium_allowlist(path: Path) -> bool:
 
     normalized = function[:body_start] + TITANIUM_ALLOWLIST + body + "}"
     result = text[:start] + normalized + text[close_brace + 1:]
-    if result != text:
+    if result != original:
         path.write_text(result, encoding="utf-8")
         return True
     return False
