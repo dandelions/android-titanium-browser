@@ -17,10 +17,12 @@ sed -i 's|<data android:mimeType="message/rfc822"/>|<data android:mimeType="mess
 sed -i '/com.google.ar.core.min_apk_version/d' third_party/arcore-android-sdk-client/AndroidManifest_basesplit.xml
 # sed -i 's|Google LLC|jqssun, Google LLC|' chrome/browser/ui/android/strings/android_chrome_strings.grd
 
-if [ -d "$SCRIPT_DIR/extensions/dist" ]; then
-    mkdir -p helium
-    cp -r $SCRIPT_DIR/extensions/dist helium/
+if [ ! -f "$SCRIPT_DIR/extensions/dist/bundled.json" ] || [ ! -f "$SCRIPT_DIR/extensions/dist/titanium.crx" ]; then
+    echo "Titanium bundle missing; run build.sh to prepare extensions/dist first." >&2
+    exit 1
 fi
+mkdir -p helium
+cp -r "$SCRIPT_DIR/extensions/dist" helium/ || exit 1
 if [ -f "$SCRIPT_DIR/extensions/stage_bundled_extensions.inc" ]; then
     mkdir -p helium/dist
     cp $SCRIPT_DIR/extensions/stage_bundled_extensions.inc helium/dist/
@@ -4000,3 +4002,4 @@ fi
 
 python3 "$SCRIPT_DIR/patch_omnibox_dropdown.py" .
 python3 "$SCRIPT_DIR/patch_titanium_visibility.py" . || exit 1
+python3 "$SCRIPT_DIR/extensions/patch_android_asset_group.py" chrome/android/BUILD.gn || exit 1
