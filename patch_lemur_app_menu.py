@@ -678,11 +678,9 @@ def patch_app_menu_properties_delegate(src_dir: Path) -> None:
     if "default boolean showCustomAppMenu(" in text:
         return
 
-    anchor = "    /** Returns whether the icon row is showing. */\n    boolean shouldShowIconRow();\n}"
-    addition = """    /** Returns whether the icon row is showing. */
-    boolean shouldShowIconRow();
-
-    /**
+    anchor_pre157 = "    /** Returns whether the icon row is showing. */\n    boolean shouldShowIconRow();\n}"
+    anchor_157 = "    boolean shouldKeepMenuBelowTopControls();\n}"
+    addition = """    /**
      * Attempts to show a custom Lemur-style bottom popup app menu for page mode.
      */
     default boolean showCustomAppMenu(
@@ -704,10 +702,17 @@ def patch_app_menu_properties_delegate(src_dir: Path) -> None:
     default void hideCustomAppMenu() {}
 }"""
 
-    if anchor not in text:
-        raise SystemExit(f"shouldShowIconRow anchor not found in {path}")
+    if anchor_157 in text:
+        text = text.replace(anchor_157, "    boolean shouldKeepMenuBelowTopControls();\n\n" + addition, 1)
+    elif anchor_pre157 in text:
+        text = text.replace(anchor_pre157, "    /** Returns whether the icon row is showing. */\n    boolean shouldShowIconRow();\n\n" + addition, 1)
+    else:
+        last_brace = text.rfind("}")
+        if last_brace < 0:
+            raise SystemExit(f"closing brace not found in {path}")
+        text = text[:last_brace] + addition
 
-    path.write_text(text.replace(anchor, addition, 1), encoding="utf-8")
+    path.write_text(text, encoding="utf-8")
 
 
 def patch_app_menu_handler_impl(src_dir: Path) -> None:
