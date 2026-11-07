@@ -161,6 +161,57 @@ bool Other(const download::DownloadItem& download_item) {
         empty_root.mkdir()
         self.assertFalse(PATCH.patch_source_tree(empty_root))
 
+    def test_patches_desktop_site_utils_and_is_idempotent(self):
+        desktop_site_path = self.root / PATCH.DESKTOP_SITE_UTILS
+        desktop_site_path.parent.mkdir(parents=True, exist_ok=True)
+        source = """public class DesktopSiteUtils {
+    public static void maybeDefaultEnableWindowSetting(Activity activity, Profile profile) {
+        WebsitePreferenceBridge.setContentSettingCustomScope(profile, ContentSettingsType.REQUEST_DESKTOP_SITE, "[*.]chromewebstore.google.com", SITE_WILDCARD, ContentSetting.ALLOW);
+        int smallestScreenWidthDp = DisplayUtil.getCurrentSmallestScreenWidth(activity);
+    }
+
+    public static boolean shouldOverrideDesktopSite(
+            Profile profile, @Nullable GURL url, Context context) {
+        if (CommandLine.getInstance().hasSwitch(ChromeSwitches.REQUEST_DESKTOP_SITES)) {
+            return true;
+        }
+        return false;
+    }
+
+    public static boolean isDesktopSiteEnabled(Profile profile, GURL url) {
+        return WebsitePreferenceBridge.getContentSetting(
+                        profile, ContentSettingsType.REQUEST_DESKTOP_SITE, url, url)
+                == ContentSetting.ALLOW;
+    }
+}
+"""
+        desktop_site_path.write_text(source, encoding="utf-8")
+        self.assertTrue(PATCH.patch_desktop_site_utils(desktop_site_path))
+        patched = desktop_site_path.read_text(encoding="utf-8")
+        self.assertNotIn("setContentSettingCustomScope", patched)
+        self.assertIn("chromewebstore.google.com", patched)
+        self.assertIn("chrome.google.com", patched)
+        self.assertEqual(patched.count('"chromewebstore.google.com".equals(host)'), 2)
+        self.assertFalse(PATCH.patch_desktop_site_utils(desktop_site_path))
+        self.assertEqual(patched, desktop_site_path.read_text(encoding="utf-8"))
+
+    def test_patches_webstore_private_and_manifest_v2_handler(self):
+        ws_path = self.root / PATCH.WEBSTORE_PRIVATE_PATHS[0]
+        mv2_path = self.root / PATCH.MANIFEST_V2_HANDLER
+        ws_path.parent.mkdir(parents=True, exist_ok=True)
+        mv2_path.parent.mkdir(parents=True, exist_ok=True)
+        ws_path.write_text(
+            'return RespondNow(ArgumentList(GetMV2DeprecationStatus::Results::Create(\n'
+            '    api::webstore_private::MV2DeprecationStatus::kHardDisable)));\n',
+            encoding="utf-8",
+        )
+        mv2_path.write_text('bool g_allow_mv2_for_testing = false;\n', encoding="utf-8")
+
+        self.assertTrue(PATCH.patch_source_tree(self.root))
+        self.assertIn("MV2DeprecationStatus::kNone", ws_path.read_text(encoding="utf-8"))
+        self.assertIn("bool g_allow_mv2_for_testing = true;", mv2_path.read_text(encoding="utf-8"))
+        self.assertFalse(PATCH.patch_source_tree(self.root))
+
 
 if __name__ == "__main__":
     unittest.main()

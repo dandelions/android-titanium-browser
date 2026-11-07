@@ -235,10 +235,6 @@ fi
 if [ -f chrome/browser/prefs/browser_prefs.cc ]; then
     sed -i 's|kViewSourceLineWrappingEnabled, false|kViewSourceLineWrappingEnabled, true|' chrome/browser/prefs/browser_prefs.cc
 fi
-if [ -f chrome/browser/ui/android/desktop_site/java/src/org/chromium/chrome/browser/desktop_site/DesktopSiteUtils.java ]; then
-    grep -q 'chromewebstore.google.com' chrome/browser/ui/android/desktop_site/java/src/org/chromium/chrome/browser/desktop_site/DesktopSiteUtils.java || \
-        sed -i 's|public static void maybeDefaultEnableWindowSetting(Activity activity, Profile profile) {$|&WebsitePreferenceBridge.setContentSettingCustomScope(profile, ContentSettingsType.REQUEST_DESKTOP_SITE, "[*.]chromewebstore.google.com", SITE_WILDCARD, ContentSetting.ALLOW);|' chrome/browser/ui/android/desktop_site/java/src/org/chromium/chrome/browser/desktop_site/DesktopSiteUtils.java
-fi
 grep -q 'incognito_toggle_menu_id' "$ANDROID_RESOURCE_IDS" || \
     sed -i 's|<item type="id" name="manage_all_windows_menu_id" />|&<item type="id" name="incognito_toggle_menu_id" />|' "$ANDROID_RESOURCE_IDS"
 grep -q 'R.id.incognito_toggle_menu_id' "$TABBED_APP_MENU_DELEGATE" || \
@@ -2084,6 +2080,24 @@ perl -0pi -e 's|  if \(MatchesExtension\(file, FILE_PATH_LITERAL\("\.zip"\)\)\) 
 # type so the conversion is visible to the C++ compiler.
 grep -q 'chrome/browser/profiles/profile.h' "$MENU_DELEGATE_CC" || \
     sed -i '/#include "chrome\/browser\/extensions\/extension_tab_util.h"/a\#include "chrome/browser/profiles/profile.h"' "$MENU_DELEGATE_CC"
+
+# Keep store extensions verifiable and local extensions allowed in install_verifier.cc.
+INSTALL_VERIFIER="$SRC_DIR/extensions/browser/install_verifier.cc"
+if [ -f "$INSTALL_VERIFIER" ]; then
+    sed -i 's|return IsFromStore(extension, context) && CanUseExtensionApis(extension);|return extension.from_webstore() \&\& CanUseExtensionApis(extension);|' "$INSTALL_VERIFIER"
+    perl -0pi -e 's|  if \(AllowedByEnterprisePolicy\(extension->id\(\)\) &&\n      !ExtensionsBrowserClient::Get\(\)\n           ->GetExtensionManagementClient\(context_\)\n           ->IsForceInstalledInLowTrustEnvironment\(\*extension\)\) \{\n    return false;\n  \}\n\n  bool verified = true;|  if (AllowedByEnterprisePolicy(extension->id()) &&\n      !ExtensionsBrowserClient::Get()\n           ->GetExtensionManagementClient(context_)\n           ->IsForceInstalledInLowTrustEnvironment(*extension)) {\n    return false;\n  }\n  if (!extension->from_webstore()) {\n    return false;\n  }\n\n  bool verified = true;|' "$INSTALL_VERIFIER"
+fi
+
+API_SOURCES_GNI="$SRC_DIR/chrome/common/extensions/api/api_sources.gni"
+if [ -f "$API_SOURCES_GNI" ]; then
+    perl -0pi -e 's/^\s+"proxy\.json",\n//mg; s/^(schema_sources_ = \[\n)/$1  "proxy.json",\n/' "$API_SOURCES_GNI"
+    perl -0pi -e 's/^\s+"browser_action\.json",\n//mg; s/^\s+"page_action\.json",\n//mg; s/^(uncompiled_sources_ = \[\n)/$1  "browser_action.json",\n  "page_action.json",\n/' "$API_SOURCES_GNI"
+fi
+
+if [ -f "$SRC_DIR/chrome/common/extensions/api/_manifest_features.json" ]; then
+    grep -q 'platforms.*desktop_android' "$SRC_DIR/chrome/common/extensions/api/_manifest_features.json" 2>/dev/null || \
+        sed -i 's|"platforms": \["win", "mac"\]|"platforms": ["win", "mac", "desktop_android"]|' "$SRC_DIR/chrome/common/extensions/api/_manifest_features.json"
+fi
 
 # Keep local zip/crx/unpacked extensions out of WebStore content verification.
 sed -i 's|if (!InstallVerifier::IsFromStore(extension, context_)) {|if (!extension.from_webstore()) {|' "$VERIFIER"

@@ -10,6 +10,14 @@ CHROME_ACTIVITY = Path(
 )
 DOWNLOAD_CRX_UTIL = Path("chrome/browser/download/download_crx_util.cc")
 EXTENSION_UTIL = Path("extensions/browser/extension_util.cc")
+DESKTOP_SITE_UTILS = Path(
+    "chrome/browser/ui/android/desktop_site/java/src/org/chromium/chrome/browser/desktop_site/DesktopSiteUtils.java"
+)
+WEBSTORE_PRIVATE_PATHS = (
+    Path("extensions/browser/api/webstore_private/webstore_private_api.cc"),
+    Path("chrome/browser/extensions/api/webstore_private/webstore_private_api.cc"),
+)
+MANIFEST_V2_HANDLER = Path("extensions/browser/manifest_v2_handler.cc")
 
 TITANIUM_ALLOWLIST = '''
   if (const auto& o = item.GetRequestInitiator(); o && o->scheme() == "chrome-extension") return true;
@@ -170,10 +178,97 @@ def clean_legacy_extension_detection(path: Path) -> bool:
     return True
 
 
+STORE_DESKTOP_CHECK = """        if (!GURL.isEmptyOrInvalid(url)) {
+            String host = url.getHost();
+            if ("chromewebstore.google.com".equals(host) || "chrome.google.com".equals(host)) {
+                return true;
+            }
+        }
+"""
+
+
+def patch_desktop_site_utils(path: Path) -> bool:
+    if not path.is_file():
+        return False
+    text = path.read_text(encoding="utf-8")
+    original = text
+
+    # Remove historical custom scope call in maybeDefaultEnableWindowSetting
+    text = re.sub(
+        r"(?m)^[ \t]*WebsitePreferenceBridge\.setContentSettingCustomScope\([^\n]*chromewebstore\.google\.com[^\n]*\);?[ \t]*\n?",
+        "",
+        text,
+    )
+    # Remove existing store check if present to ensure clean idempotent re-application
+    text = re.sub(
+        r'(?m)^[ \t]*if \(!GURL\.isEmptyOrInvalid\(url\)\) \{\n[ \t]*String host = url\.getHost\(\);\n[ \t]*if \("chromewebstore\.google\.com"\.equals\(host\) \|\| "chrome\.google\.com"\.equals\(host\)\) \{\n[ \t]*return true;\n[ \t]*\}\n[ \t]*\}\n?',
+        "",
+        text,
+    )
+
+    pattern1 = re.compile(
+        r"(?m)^([ \t]*public static boolean shouldOverrideDesktopSite\s*\([\s\S]*?\)\s*\{[ \t]*\n)"
+    )
+    match1 = pattern1.search(text)
+    if match1:
+        text = text[:match1.end()] + STORE_DESKTOP_CHECK + text[match1.end():]
+
+    pattern2 = re.compile(
+        r"(?m)^([ \t]*public static boolean isDesktopSiteEnabled\s*\([\s\S]*?\)\s*\{[ \t]*\n)"
+    )
+    match2 = pattern2.search(text)
+    if match2:
+        text = text[:match2.end()] + STORE_DESKTOP_CHECK + text[match2.end():]
+
+    if text != original:
+        path.write_text(text, encoding="utf-8")
+        return True
+    return False
+
+
+def patch_webstore_private_api(source_root: Path) -> bool:
+    changed = False
+    for rel_path in WEBSTORE_PRIVATE_PATHS:
+        path = source_root / rel_path
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8")
+        original = text
+        text = text.replace(
+            "api::webstore_private::MV2DeprecationStatus::kHardDisable",
+            "api::webstore_private::MV2DeprecationStatus::kNone",
+        )
+        if text != original:
+            path.write_text(text, encoding="utf-8")
+            changed = True
+    return changed
+
+
+def patch_manifest_v2_handler(path: Path) -> bool:
+    if not path.is_file():
+        return False
+    text = path.read_text(encoding="utf-8")
+    original = text
+    text = text.replace(
+        "bool g_allow_mv2_for_testing = false;",
+        "bool g_allow_mv2_for_testing = true;",
+    )
+    if text != original:
+        path.write_text(text, encoding="utf-8")
+        return True
+    return False
+
+
+clean_extension_detection = clean_legacy_extension_detection
+
+
 def patch_source_tree(source_root: Path) -> bool:
     changed = clean_chrome_activity(source_root / CHROME_ACTIVITY)
     changed = restore_titanium_allowlist(source_root / DOWNLOAD_CRX_UTIL) or changed
     changed = clean_legacy_extension_detection(source_root / EXTENSION_UTIL) or changed
+    changed = patch_desktop_site_utils(source_root / DESKTOP_SITE_UTILS) or changed
+    changed = patch_webstore_private_api(source_root) or changed
+    changed = patch_manifest_v2_handler(source_root / MANIFEST_V2_HANDLER) or changed
     return changed
 
 
