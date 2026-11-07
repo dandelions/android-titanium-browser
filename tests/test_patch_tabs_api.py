@@ -10,6 +10,10 @@ FIXTURE = REPO_ROOT / "tests" / "fixtures" / "chromium_157" / "tabs_api.cc"
 
 def apply_build_tab_list_patch(path: Path):
     text = path.read_text(encoding="utf-8")
+    tabs_ns = "tabs_util" if "tabs_util::GetTabById" in text else "tabs_internal"
+    if tabs_ns != "tabs_internal":
+        text = text.replace("tabs_internal::GetTabById(", f"{tabs_ns}::GetTabById(")
+
     if "HeliumAndroidBuildTabListIncognitoModels" not in text:
         has_tabs_internal = "tabs_internal::CreateTabObjectHelper" in text
         helper_name = (
@@ -155,6 +159,10 @@ def apply_build_tab_list_patch(path: Path):
             text = build_pattern.sub(lambda _: new_build, text, count=1)
         else:
             raise SystemExit(f"BuildTabList pattern not found in {path}")
+
+    if tabs_ns != "tabs_internal":
+        text = text.replace("tabs_internal::GetTabById(", f"{tabs_ns}::GetTabById(")
+
     path.write_text(text, encoding="utf-8")
 
 
@@ -169,7 +177,7 @@ class TestPatchTabsApi(unittest.TestCase):
         self.temp_dir.cleanup()
 
     def test_patch_chromium_157_tabs_api(self):
-        # Simulate line 3112:
+        # Simulate line 3112 and simulate pre-existing tabs_internal::GetTabById
         content = self.tabs_api.read_text(encoding="utf-8")
         content = content.replace(
             "    TabListInterface* tab_list = TabListInterface::From(browser);\n"
@@ -178,6 +186,7 @@ class TestPatchTabsApi(unittest.TestCase):
             "if (!tab_list) { continue; }\n"
             "    for (int i = 0; i < tab_list->GetTabCount(); ++i) {"
         )
+        content += "\n// Test pre-existing tabs_internal call\nvoid test() { tabs_internal::GetTabById(1); }\n"
         self.tabs_api.write_text(content, encoding="utf-8")
 
         apply_build_tab_list_patch(self.tabs_api)
@@ -185,6 +194,8 @@ class TestPatchTabsApi(unittest.TestCase):
         self.assertIn("HeliumAndroidBuildTabListIncognitoModels", result)
         self.assertIn("CreateTabObjectHelper(", result)
         self.assertNotIn("tabs_internal::CreateTabObjectHelper(", result)
+        self.assertNotIn("tabs_internal::GetTabById(", result)
+        self.assertIn("tabs_util::GetTabById(1);", result)
 
         # Idempotence
         apply_build_tab_list_patch(self.tabs_api)
