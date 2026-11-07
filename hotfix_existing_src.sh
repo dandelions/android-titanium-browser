@@ -33,6 +33,10 @@ if [ ! -d "$SRC_DIR" ]; then
     exit 1
 fi
 
+python3 "$SCRIPT_DIR/extensions/stage_bundle.py" \
+    "$SCRIPT_DIR/extensions/dist" "$SRC_DIR" \
+    "$SCRIPT_DIR/extensions/stage_bundled_extensions.inc"
+
 cd "$SRC_DIR"
 SRC_DIR="$(pwd)"
 
