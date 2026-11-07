@@ -3696,102 +3696,108 @@ if start >= 0:
     text = text[:start] + robust_if + text[end:]
 
 if "HeliumAndroidBuildTabListIncognitoModels" not in text:
-    old_build = """    TabListInterface* tab_list = TabListInterface::From(browser);
-    if (!tab_list) { continue; }
-    for (int i = 0; i < tab_list->GetTabCount(); ++i) {
-      if (tab_index > -1 && i != tab_index) {
+    has_tabs_internal = "tabs_internal::CreateTabObjectHelper" in text
+    helper_name = (
+        "tabs_internal::CreateTabObjectHelper"
+        if has_tabs_internal
+        else "CreateTabObjectHelper"
+    )
+    old_build = f"""    TabListInterface* tab_list = TabListInterface::From(browser);
+    if (!tab_list) {{ continue; }}
+    for (int i = 0; i < tab_list->GetTabCount(); ++i) {{
+      if (tab_index > -1 && i != tab_index) {{
         continue;
-      }
+      }}
 
       ::tabs::TabInterface* tab = tab_list->GetTab(i);
       CHECK(tab);
 
-      if (!MatchesTab(tab, url_patterns)) {
+      if (!MatchesTab(tab, url_patterns)) {{
         continue;
-      }
+      }}
 
-      result.Append(tabs_internal::CreateTabObjectHelper(
+      result.Append({helper_name}(
                         tab->GetContents(), extension(), source_context_type(),
                         browser, i)
                         .ToValue());
-    }
-  }
+    }}
+  }}
   return result;"""
     old_build_noindent = old_build.replace(
         "    if (!tab_list) { continue; }\n",
         "if (!tab_list) { continue; }\n",
     )
     old_build_alt = old_build.replace("    if (!tab_list) { continue; }\n", "")
-    new_build = """    TabListInterface* tab_list = TabListInterface::From(browser);
-    if (!tab_list) { continue; }
+    new_build = f"""    TabListInterface* tab_list = TabListInterface::From(browser);
+    if (!tab_list) {{ continue; }}
 #if BUILDFLAG(IS_ANDROID)
     bool has_active_otr_model = false;
-    for (TabModel* model : TabModelList::models()) {
-      if (model && model->IsOffTheRecord() && model->IsActiveModel()) {
+    for (TabModel* model : TabModelList::models()) {{
+      if (model && model->IsOffTheRecord() && model->IsActiveModel()) {{
         has_active_otr_model = true;
         break;
-      }
-    }
+      }}
+    }}
 #endif
-    for (int i = 0; i < tab_list->GetTabCount(); ++i) {
-      if (tab_index > -1 && i != tab_index) {
+    for (int i = 0; i < tab_list->GetTabCount(); ++i) {{
+      if (tab_index > -1 && i != tab_index) {{
         continue;
-      }
+      }}
 
       ::tabs::TabInterface* tab = tab_list->GetTab(i);
       CHECK(tab);
 
 #if BUILDFLAG(IS_ANDROID)
-      if (has_active_otr_model && query_info_.active && *query_info_.active) {
+      if (has_active_otr_model && query_info_.active && *query_info_.active) {{
         continue;
-      }
+      }}
 #endif
-      if (!MatchesTab(tab, url_patterns)) {
+      if (!MatchesTab(tab, url_patterns)) {{
         continue;
-      }
+      }}
 
-      result.Append(tabs_internal::CreateTabObjectHelper(
+      result.Append({helper_name}(
                         tab->GetContents(), extension(), source_context_type(),
                         browser, i)
                         .ToValue());
-    }
-  }
+    }}
+  }}
 #if BUILDFLAG(IS_ANDROID)
   // HeliumAndroidBuildTabListIncognitoModels: include OTR TabModels when
   // querying tabs on Android.
   Profile* calling_profile = Profile::FromBrowserContext(browser_context());
-  for (TabModel* model : TabModelList::models()) {
-    if (!model || !model->IsOffTheRecord() || !model->GetProfile()) {
+  for (TabModel* model : TabModelList::models()) {{
+    if (!model || !model->IsOffTheRecord() || !model->GetProfile()) {{
       continue;
-    }
-    if (!calling_profile->IsSameOrParent(model->GetProfile())) {
+    }}
+    if (!calling_profile->IsSameOrParent(model->GetProfile())) {{
       continue;
-    }
+    }}
     if (!include_incognito_information() &&
-        calling_profile != model->GetProfile()) {
+        calling_profile != model->GetProfile()) {{
       continue;
-    }
-    for (int i = 0; i < model->GetTabCount(); ++i) {
-      if (tab_index > -1 && i != tab_index) {
+    }}
+    for (int i = 0; i < model->GetTabCount(); ++i) {{
+      if (tab_index > -1 && i != tab_index) {{
         continue;
-      }
+      }}
       ::tabs::TabInterface* tab = model->GetTab(i);
-      if (!tab || !tab->GetContents()) {
+      if (!tab || !tab->GetContents()) {{
         continue;
-      }
+      }}
       bool is_active_in_window =
           model->IsActiveModel() && i == model->GetActiveIndex();
       if (query_info_.active.has_value() &&
-          *query_info_.active != is_active_in_window) {
+          *query_info_.active != is_active_in_window) {{
         continue;
-      }
+      }}
       std::optional<bool> saved_active = query_info_.active;
       query_info_.active.reset();
       bool matched = MatchesTab(tab, url_patterns);
       query_info_.active = saved_active;
-      if (!matched) {
+      if (!matched) {{
         continue;
-      }
+      }}
       ExtensionTabUtil::ScrubTabBehavior scrub_tab_behavior =
           ExtensionTabUtil::GetScrubTabBehavior(
               extension(), source_context_type(), tab->GetContents());
@@ -3803,13 +3809,13 @@ if "HeliumAndroidBuildTabListIncognitoModels" not in text:
       tab_val.Set(tabs_constants::kActiveKey, is_active_in_window);
       tab_val.Set(tabs_constants::kSelectedKey, is_active_in_window);
       result.Append(std::move(tab_val));
-    }
-  }
+    }}
+  }}
 #endif
   return result;"""
     build_pattern = re.compile(
-        r"([ \t]*TabListInterface\* tab_list = TabListInterface::From\(browser\);\n"
-        r"(?:[ \t]*if \(!tab_list\) \{ continue; \}\n)*"
+        r"[ \t]*TabListInterface\* tab_list = TabListInterface::From\(browser\);\n"
+        r"(?:[ \t]*if \(!tab_list\) \{ continue; \}\n)?"
         r"[ \t]*for \(int i = 0; i < tab_list->GetTabCount\(\); \+\+i\) \{\n"
         r"[ \t]*if \(tab_index > -1 && i != tab_index\) \{\n"
         r"[ \t]*continue;\n"
@@ -3819,13 +3825,10 @@ if "HeliumAndroidBuildTabListIncognitoModels" not in text:
         r"[ \t]*if \(!MatchesTab\(tab, url_patterns\)\) \{\n"
         r"[ \t]*continue;\n"
         r"[ \t]*\}\n\n"
-        r"[ \t]*result\.Append\(tabs_internal::CreateTabObjectHelper\(\n"
-        r"[ \t]*tab->GetContents\(\), extension\(\), source_context_type\(\),\n"
-        r"[ \t]*browser, i\)\n"
-        r"[ \t]*\.ToValue\(\)\);\n"
+        r"[ \t]*result\.Append\((?:tabs_internal::)?CreateTabObjectHelper\([\s\S]*?\.ToValue\(\)\);\n"
         r"[ \t]*\}\n"
         r"[ \t]*\}\n"
-        r"[ \t]*return result;)"
+        r"[ \t]*return result;"
     )
     if old_build in text:
         text = text.replace(old_build, new_build, 1)
