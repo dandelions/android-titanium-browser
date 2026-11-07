@@ -3,6 +3,9 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
+
+import patch_titanium_visibility
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("lemur", ROOT / "patch_lemur_app_menu.py")
@@ -43,9 +46,18 @@ class TitaniumVisibilityPatchTest(unittest.TestCase):
             root = Path(tmp)
             path = root / lemur.EXT_TOOLBAR_COORD_IMPL_REL
             path.parent.mkdir(parents=True)
-            path.write_text('class Coordinator {}')
-            with self.assertRaises(SystemExit):
-                lemur.patch_extensions_toolbar_coordinator_impl(root)
+            source = """class Coordinator {
+    @Override
+    public ToolbarWidthConsumer getActionListWidthConsumer() {
+        return mActionListWidthConsumer;
+    }
+}
+"""
+            path.write_text(source)
+            with patch.object(patch_titanium_visibility, "__file__", str(root / "isolated.py")):
+                with self.assertRaisesRegex(SystemExit, "Cannot read bundled Titanium ID"):
+                    lemur.patch_extensions_toolbar_coordinator_impl(root)
+            self.assertEqual(source, path.read_text())
 
 
 if __name__ == '__main__':

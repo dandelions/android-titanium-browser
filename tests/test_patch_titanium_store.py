@@ -81,6 +81,31 @@ void CheckDownload(const DownloadItem& download_item) {
         self.assertEqual(first_activity, self.activity_path.read_text(encoding="utf-8"))
         self.assertEqual(first_download, self.download_path.read_text(encoding="utf-8"))
 
+    def test_removes_crx_detection_when_allowlist_already_normalized(self):
+        normalized = (
+            'bool OffStoreInstallAllowedByPrefs(const DownloadItem& item) {'
+            + PATCH.TITANIUM_ALLOWLIST
+            + '\n  return false;\n}\n'
+        )
+        detection = '''void CheckDownload(const DownloadItem& download_item) {
+  if (download_item.GetMimeType() == extensions::Extension::kMimeType ||
+      download_item.GetURL().path().ends_with(".crx") ||
+      download_item.GetTargetFilePath().MatchesExtension(FILE_PATH_LITERAL(".crx")) ||
+      extensions::UserScript::IsURLUserScript(download_item.GetURL(), download_item.GetMimeType())) {
+  }
+}
+'''
+        self.download_path.write_text(normalized + detection)
+        self.assertTrue(PATCH.restore_titanium_allowlist(self.download_path))
+        cleaned = self.download_path.read_text()
+        self.assertNotIn('ends_with(".crx")', cleaned)
+        self.assertNotIn('MatchesExtension(FILE_PATH_LITERAL(".crx"))', cleaned)
+        self.assertIn('download_item.GetMimeType() == extensions::Extension::kMimeType ||', cleaned)
+        self.assertIn('extensions::UserScript::IsURLUserScript', cleaned)
+        self.assertTrue(cleaned.startswith(normalized))
+        self.assertFalse(PATCH.restore_titanium_allowlist(self.download_path))
+        self.assertEqual(cleaned, self.download_path.read_text())
+
     def test_migrates_156_compatibility_output(self):
         import importlib.util
         spec = importlib.util.spec_from_file_location(
