@@ -51,6 +51,7 @@ class TestPatchExtensionPopupWidth(unittest.TestCase):
         self.assertIn("ExtensionActionPopupContents create(long hostPtr, boolean inspectWithDevTools);", contents_java_text)
         self.assertIn("void resizeDueToAutoResize(int width, int height, float scale);", contents_java_text)
         self.assertIn("setMaxSize(int maxWidth, int maxHeight)", contents_java_text)
+        self.assertIn("JniPtr<NativeExtensionActionPopupContents> self, int maxWidth, int maxHeight);", contents_java_text)
 
         contents_cc_text = self.contents_cc.read_text(encoding="utf-8")
         self.assertIn("constexpr gfx::Size kMinSize = {256, 25};", contents_cc_text)

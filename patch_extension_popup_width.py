@@ -483,16 +483,21 @@ else:
         "                long nativeExtensionActionPopupContents, int maxWidth, int maxHeight);\n"
     )
 java_text = java_text.replace(old_jni_set_max_width, new_jni_set_max_size, 1)
+jni_marker = (
+    "JniPtr<NativeExtensionActionPopupContents> self, int maxWidth, int maxHeight);"
+    if is_jni_zero
+    else "long nativeExtensionActionPopupContents, int maxWidth, int maxHeight);"
+)
 jni_anchor = (
     "    @NativeMethods\n    interface Natives {\n"
     if "    @NativeMethods\n    interface Natives {\n" in java_text
     else "    @NativeMethods\n    public interface Natives {\n"
 )
-if "void setMaxSize(" not in java_text:
+if jni_marker not in java_text:
     java_text = replace_if_missing(
         java_contents,
         java_text,
-        "void setMaxSize(",
+        jni_marker,
         jni_anchor,
         jni_anchor + new_jni_set_max_size,
     )
@@ -846,6 +851,7 @@ required_outputs = (
             "ExtensionActionPopupContents create(long hostPtr, boolean inspectWithDevTools);",
             "private void resizeDueToAutoResize(int width, int height, float scale)",
             "void resizeDueToAutoResize(int width, int height, float scale);",
+            jni_marker,
         ),
     ),
 )
