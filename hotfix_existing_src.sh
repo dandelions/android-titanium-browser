@@ -2623,7 +2623,7 @@ text = text.replace(
     "                updateActionPropertiesForAll(webContents);\n",
 )
 anchor = re.search(
-    r"(?m)^    (?:private )?void updateActionPropertiesForAll\(WebContents webContents\) \{$",
+    r"(?m)^    (?:private )?void updateActionPropertiesForAll\((?:@Nullable )?WebContents webContents\) \{$",
     text,
 )
 if anchor is None:
@@ -2631,7 +2631,7 @@ if anchor is None:
 text = text[:anchor.start()] + helper + text[anchor.start():]
 if "mExtensionsToolbarBridge.setActiveWebContents(webContents);" not in text:
     text = re.sub(
-        r"(?m)^(    (?:private )?void updateActionPropertiesForAll\(WebContents webContents\) \{\n)",
+        r"(?m)^(    (?:private )?void updateActionPropertiesForAll\((?:@Nullable )?WebContents webContents\) \{\n)",
         r"\1        mExtensionsToolbarBridge.setActiveWebContents(webContents);\n",
         text,
         count=1,
