@@ -3276,6 +3276,9 @@ old = """#if BUILDFLAG(IS_ANDROID)
 
   Profile* profile = Profile::FromBrowserContext(browser_context());
 """
+tabs_ns = "tabs_util" if "tabs_util::GetTabById" in text else "tabs_internal"
+if tabs_ns != "tabs_internal":
+    text = text.replace("tabs_internal::GetTabById(", f"{tabs_ns}::GetTabById(")
 new = """#if BUILDFLAG(IS_ANDROID)
   const bool helium_android_current_tab_query =
       query_info_.active && *query_info_.active &&
@@ -3335,6 +3338,8 @@ new = """#if BUILDFLAG(IS_ANDROID)
 
   Profile* profile = Profile::FromBrowserContext(browser_context());
 """
+if tabs_ns != "tabs_internal":
+    new = new.replace("tabs_internal::", f"{tabs_ns}::")
 if old in text:
     text = text.replace(old, new, 1)
 elif "helium_android_current_tab_query" not in text:
@@ -3437,6 +3442,9 @@ otr_first = """    for (BrowserWindowInterface* browser : GetAllBrowserWindowInt
       }
     }
 """
+if tabs_ns != "tabs_internal":
+    action_first = action_first.replace("tabs_internal::", f"{tabs_ns}::")
+    otr_first = otr_first.replace("tabs_internal::", f"{tabs_ns}::")
 text = text.replace(action_first, otr_first, 1)
 text = text.replace(
     "if (!contents || !contents->GetBrowserContext()->IsOffTheRecord()) {",
@@ -3645,6 +3653,8 @@ robust_if = """  if (helium_android_current_tab_query) {
     }
     return RespondNow(WithArguments(std::move(direct_result)));
   }"""
+if tabs_ns != "tabs_internal":
+    robust_if = robust_if.replace("tabs_internal::", f"{tabs_ns}::")
 while True:
     unfiltered_match = re.search(
         r"(?m)^[ \t]*const bool helium_android_unfiltered_tab_query =\n", text)
@@ -3859,6 +3869,8 @@ if outer_match:
     text = text[:outer_match.start()] + outer_block + text[inner_start:]
 if outer_pattern.search(text):
     raise SystemExit(f"action contents shadow migration failed in {path}")
+if tabs_ns != "tabs_internal":
+    text = text.replace("tabs_internal::GetTabById(", f"{tabs_ns}::GetTabById(")
 path.write_text(text)
 PYCODE
     if ! grep -qE 'content::WebContents\*[[:space:]]+last_action_contents' "$TABS_API_CC"; then
