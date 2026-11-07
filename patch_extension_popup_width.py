@@ -427,6 +427,7 @@ popup_text = replace_if_missing(
     + "    private class ContentsDelegate implements ExtensionActionPopupContents.Delegate {\n",
 )
 java_text = java_contents.read_text()
+is_jni_zero = "JniUniquePtr<NativeExtensionActionPopupContents>" in java_text
 old_java_set_max_width = (
     "    /** Sets the maximum displayed popup width in device-independent pixels. */\n"
     "    public void setMaxWidth(int maxWidth) {\n"
@@ -435,14 +436,23 @@ old_java_set_max_width = (
     "                .setMaxWidth(mNativeExtensionActionPopupContents, maxWidth);\n"
     "    }\n"
 )
-new_java_set_max_size = (
-    "    /** Sets the maximum displayed popup size in device-independent pixels. */\n"
-    "    public void setMaxSize(int maxWidth, int maxHeight) {\n"
-    "        assert mNativeExtensionActionPopupContents != 0;\n"
-    "        ExtensionActionPopupContentsJni.get()\n"
-    "                .setMaxSize(mNativeExtensionActionPopupContents, maxWidth, maxHeight);\n"
-    "    }\n"
-)
+if is_jni_zero:
+    new_java_set_max_size = (
+        "    /** Sets the maximum displayed popup size in device-independent pixels. */\n"
+        "    public void setMaxSize(int maxWidth, int maxHeight) {\n"
+        "        ExtensionActionPopupContentsJni.get()\n"
+        "                .setMaxSize(mNative, maxWidth, maxHeight);\n"
+        "    }\n"
+    )
+else:
+    new_java_set_max_size = (
+        "    /** Sets the maximum displayed popup size in device-independent pixels. */\n"
+        "    public void setMaxSize(int maxWidth, int maxHeight) {\n"
+        "        assert mNativeExtensionActionPopupContents != 0;\n"
+        "        ExtensionActionPopupContentsJni.get()\n"
+        "                .setMaxSize(mNativeExtensionActionPopupContents, maxWidth, maxHeight);\n"
+        "    }\n"
+    )
 java_text = java_text.replace(old_java_set_max_width, new_java_set_max_size, 1)
 java_text = replace_if_missing(
     java_contents,
@@ -460,23 +470,32 @@ old_jni_set_max_width = (
     "        void setMaxWidth(\n"
     "                long nativeExtensionActionPopupContents, int maxWidth);\n"
 )
-new_jni_set_max_size = (
-    "        /** Sets the maximum displayed popup size in device-independent pixels. */\n"
-    "        void setMaxSize(\n"
-    "                long nativeExtensionActionPopupContents, int maxWidth, int maxHeight);\n"
-)
+if is_jni_zero:
+    new_jni_set_max_size = (
+        "        /** Sets the maximum displayed popup size in device-independent pixels. */\n"
+        "        void setMaxSize(\n"
+        "                JniPtr<NativeExtensionActionPopupContents> self, int maxWidth, int maxHeight);\n\n"
+    )
+else:
+    new_jni_set_max_size = (
+        "        /** Sets the maximum displayed popup size in device-independent pixels. */\n"
+        "        void setMaxSize(\n"
+        "                long nativeExtensionActionPopupContents, int maxWidth, int maxHeight);\n"
+    )
 java_text = java_text.replace(old_jni_set_max_width, new_jni_set_max_size, 1)
-java_text = replace_if_missing(
-    java_contents,
-    java_text,
-    "long nativeExtensionActionPopupContents, int maxWidth, int maxHeight);",
-    "        /**\n"
-    "         * Triggers the loading of the initial URL in the native ExtensionActionPopupContents.\n",
-    new_jni_set_max_size
-    + "\n"
-    "        /**\n"
-    "         * Triggers the loading of the initial URL in the native ExtensionActionPopupContents.\n",
+jni_anchor = (
+    "    @NativeMethods\n    interface Natives {\n"
+    if "    @NativeMethods\n    interface Natives {\n" in java_text
+    else "    @NativeMethods\n    public interface Natives {\n"
 )
+if "void setMaxSize(" not in java_text:
+    java_text = replace_if_missing(
+        java_contents,
+        java_text,
+        "void setMaxSize(",
+        jni_anchor,
+        jni_anchor + new_jni_set_max_size,
+    )
 old_java_resize_callback = (
     "    @CalledByNative\n"
     "    private void resizeDueToAutoResize(int width, int height) {\n"
@@ -542,23 +561,29 @@ if "ExtensionActionPopupContents create(long hostPtr, boolean inspectWithDevTool
         java_contents,
         java_text,
         "ExtensionActionPopupContents create(long hostPtr, boolean inspectWithDevTools);",
-        "    @NativeMethods\n    public interface Natives {\n",
-        "    @NativeMethods\n    public interface Natives {\n" + new_jni_create,
+        jni_anchor,
+        jni_anchor + new_jni_create,
     )
 
 header_text = native_header.read_text()
+if is_jni_zero:
+    new_h_set_max_size = "  void SetMaxSize(int max_width, int max_height);\n"
+    h_load_anchor = "  void LoadInitialPage();\n"
+else:
+    new_h_set_max_size = "  void SetMaxSize(JNIEnv* env, int max_width, int max_height);\n"
+    h_load_anchor = "  void LoadInitialPage(JNIEnv* env);\n"
+
 header_text = header_text.replace(
     "  void SetMaxWidth(JNIEnv* env, int max_width);\n",
-    "  void SetMaxSize(JNIEnv* env, int max_width, int max_height);\n",
+    new_h_set_max_size,
     1,
 )
 header_text = replace_if_missing(
     native_header,
     header_text,
-    "void SetMaxSize(JNIEnv* env, int max_width, int max_height);",
-    "  void LoadInitialPage(JNIEnv* env);\n",
-    "  void LoadInitialPage(JNIEnv* env);\n\n"
-    "  void SetMaxSize(JNIEnv* env, int max_width, int max_height);\n",
+    "void SetMaxSize(",
+    h_load_anchor,
+    h_load_anchor + "\n" + new_h_set_max_size,
 )
 old_header_size = (
     "  // Maximum displayed popup width in device-independent pixels.\n"
@@ -598,6 +623,36 @@ native_text = native_text.replace(
     "constexpr gfx::Size kMinSize = {256, 25};",
     1,
 )
+if is_jni_zero:
+    new_set_max_size = (
+        "void ExtensionActionPopupContents::SetMaxSize(\n"
+        "    int max_width,\n"
+        "    int max_height) {\n"
+        "  max_width_ = std::clamp(max_width, 1, kMaxSize.width());\n"
+        "  max_height_ = std::clamp(max_height, 1, kMaxSize.height());\n"
+        "}\n"
+    )
+    cc_load_anchor = (
+        "void ExtensionActionPopupContents::LoadInitialPage() {\n"
+        "  host_->CreateRendererSoon();\n"
+        "}\n"
+    )
+else:
+    new_set_max_size = (
+        "void ExtensionActionPopupContents::SetMaxSize(\n"
+        "    JNIEnv* env,\n"
+        "    int max_width,\n"
+        "    int max_height) {\n"
+        "  max_width_ = std::clamp(max_width, 1, kMaxSize.width());\n"
+        "  max_height_ = std::clamp(max_height, 1, kMaxSize.height());\n"
+        "}\n"
+    )
+    cc_load_anchor = (
+        "void ExtensionActionPopupContents::LoadInitialPage(JNIEnv* env) {\n"
+        "  host_->CreateRendererSoon();\n"
+        "}\n"
+    )
+
 old_set_max_width_with_frame = (
     "void ExtensionActionPopupContents::SetMaxWidth(JNIEnv* env, int max_width) {\n"
     "  max_width_ = std::clamp(max_width, 1, kMaxSize.width());\n"
@@ -613,28 +668,14 @@ old_set_max_width = (
     "  max_width_ = std::clamp(max_width, 1, kMaxSize.width());\n"
     "}\n"
 )
-new_set_max_size = (
-    "void ExtensionActionPopupContents::SetMaxSize(\n"
-    "    JNIEnv* env,\n"
-    "    int max_width,\n"
-    "    int max_height) {\n"
-    "  max_width_ = std::clamp(max_width, 1, kMaxSize.width());\n"
-    "  max_height_ = std::clamp(max_height, 1, kMaxSize.height());\n"
-    "}\n"
-)
 native_text = native_text.replace(old_set_max_width_with_frame, new_set_max_size, 1)
 native_text = native_text.replace(old_set_max_width, new_set_max_size, 1)
 native_text = replace_if_missing(
     native_contents,
     native_text,
-    new_set_max_size,
-    "void ExtensionActionPopupContents::LoadInitialPage(JNIEnv* env) {\n"
-    "  host_->CreateRendererSoon();\n"
-    "}\n",
-    "void ExtensionActionPopupContents::LoadInitialPage(JNIEnv* env) {\n"
-    "  host_->CreateRendererSoon();\n"
-    "}\n\n"
-    + new_set_max_size,
+    "void ExtensionActionPopupContents::SetMaxSize(",
+    cc_load_anchor,
+    cc_load_anchor + "\n" + new_set_max_size,
 )
 old_resize = (
     "void ExtensionActionPopupContents::ResizeDueToAutoResize(\n"
@@ -714,6 +755,31 @@ native_text = native_text.replace(
     "  render_frame_host->GetView()->EnableAutoResize(kMinSize, kMaxSize);\n",
     1,
 )
+if is_jni_zero:
+    new_native_create = (
+        "static ScopedJavaLocalRef<jobject> JNI_ExtensionActionPopupContents_Create(\n"
+        "    JNIEnv* env,\n"
+        "    jlong host_ptr,\n"
+        "    jboolean inspect_with_devtools) {\n"
+        "  std::unique_ptr<ExtensionViewHost> host(\n"
+        "      reinterpret_cast<ExtensionViewHost*>(host_ptr));\n"
+        "  return ExtensionActionPopupContents::Create(\n"
+        "      std::move(host), inspect_with_devtools);\n"
+        "}\n\n"
+    )
+else:
+    new_native_create = (
+        "static ScopedJavaLocalRef<jobject> JNI_ExtensionActionPopupContents_Create(\n"
+        "    JNIEnv* env,\n"
+        "    jlong host_ptr,\n"
+        "    jboolean inspect_with_devtools) {\n"
+        "  std::unique_ptr<ExtensionViewHost> host(\n"
+        "      reinterpret_cast<ExtensionViewHost*>(host_ptr));\n"
+        "  auto* popup_contents = new ExtensionActionPopupContents(\n"
+        "      std::move(host), inspect_with_devtools);\n"
+        "  return popup_contents->GetJavaObject();\n"
+        "}\n\n"
+    )
 old_native_create_1arg = (
     "static ScopedJavaLocalRef<jobject> JNI_ExtensionActionPopupContents_Create(\n"
     "    JNIEnv* env,\n"
@@ -735,18 +801,6 @@ old_native_create_1arg_false = (
     "  return popup_contents->GetJavaObject();\n"
     "}\n"
 )
-new_native_create = (
-    "static ScopedJavaLocalRef<jobject> JNI_ExtensionActionPopupContents_Create(\n"
-    "    JNIEnv* env,\n"
-    "    jlong host_ptr,\n"
-    "    jboolean inspect_with_devtools) {\n"
-    "  std::unique_ptr<ExtensionViewHost> host(\n"
-    "      reinterpret_cast<ExtensionViewHost*>(host_ptr));\n"
-    "  auto* popup_contents = new ExtensionActionPopupContents(\n"
-    "      std::move(host), inspect_with_devtools);\n"
-    "  return popup_contents->GetJavaObject();\n"
-    "}\n\n"
-)
 native_text = native_text.replace(old_native_create_1arg + "\n", new_native_create, 1)
 native_text = native_text.replace(old_native_create_1arg, new_native_create, 1)
 native_text = native_text.replace(old_native_create_1arg_false + "\n", new_native_create, 1)
@@ -761,7 +815,7 @@ if "jboolean inspect_with_devtools)" not in native_text:
     )
 required = (
     "constexpr gfx::Size kMinSize = {256, 25};",
-    new_set_max_size,
+    "void ExtensionActionPopupContents::SetMaxSize(",
     "new_size.height(),\n      scale);",
     "EnableAutoResize(kMinSize, kMaxSize);",
     "JNI_ExtensionActionPopupContents_Create",
