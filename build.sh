@@ -786,3 +786,16 @@ for release_apk in $release_outputs; do
 done
 echo "Build outputs:"
 ls -lh $release_outputs
+
+if [ -n "$release_outputs" ]; then
+    mkdir -p out/release
+    if [ "${APPEND_BUILD_OUTPUTS:-0}" != "1" ]; then
+        : > out/release/.last_build_outputs
+    fi
+    for ro in $release_outputs; do
+        bname=$(basename "$ro")
+        if ! grep -Fqx "$bname" out/release/.last_build_outputs 2>/dev/null; then
+            printf '%s\n' "$bname" >> out/release/.last_build_outputs
+        fi
+    done
+fi

@@ -420,6 +420,7 @@ build_branch() {
     BUILD_ARM="$branch_arm" \
     BUILD_ARM64="$BUILD_ARM64" \
     BUILD_AAB="$BUILD_AAB" \
+    APPEND_BUILD_OUTPUTS=1 \
     NINJA_JOBS="$NINJA_JOBS" \
     "$SCRIPT_DIR/build.sh"
 
@@ -450,6 +451,9 @@ if [ "$AUTO_PULL" = "1" ]; then
     sync_git_from_remote
     echo ""
 fi
+
+mkdir -p "$SCRIPT_DIR/chromium/src/out/release"
+: > "$SCRIPT_DIR/chromium/src/out/release/.last_build_outputs" 2>/dev/null || true
 
 total_branches="${#BRANCHES[@]}"
 for i in "${!BRANCHES[@]}"; do
@@ -496,5 +500,8 @@ if [ "$AUTO_RELEASE" = "1" ]; then
     HTTPS_PROXY="$DEFAULT_PROXY" \
     MOVE=1 \
     RELEASE_BRANCHES="${BRANCHES[*]}" \
+    BUILD_ARM="$BUILD_ARM" \
+    BUILD_ARM64="$BUILD_ARM64" \
+    BUILD_AAB="$BUILD_AAB" \
     "$SCRIPT_DIR/release.sh"
 fi
