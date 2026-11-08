@@ -1,0 +1,12 @@
+{
+  "management": [{
+    "channel": "stable",
+    "contexts": ["web_page"],
+    "matches": ["https://chromewebstore.google.com/*"]
+  }],
+  "webstorePrivate": [{
+    "channel": "stable",
+    "contexts": ["web_page"],
+    "matches": ["https://chromewebstore.google.com/*"]
+  }]
+}

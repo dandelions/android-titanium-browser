@@ -205,6 +205,19 @@ bool IsExtensionDownload(const download::DownloadItem& download_item) {
         self.assertIn("bool g_allow_mv2_for_testing = true;", mv2_path.read_text(encoding="utf-8"))
         self.assertFalse(PATCH.patch_source_tree(self.root))
 
+    def test_expands_webstore_api_matches_for_legacy_path(self):
+        api_path = self.root / PATCH.API_FEATURES
+        api_path.parent.mkdir(parents=True, exist_ok=True)
+        fixture = Path(__file__).resolve().parent / "fixtures/chromium_157/_api_features.json"
+        api_path.write_text(fixture.read_text(encoding="utf-8"), encoding="utf-8")
+
+        self.assertTrue(PATCH.patch_source_tree(self.root))
+        patched = api_path.read_text(encoding="utf-8")
+        self.assertEqual(patched.count('"https://chrome.google.com/webstore/*"'), 2)
+        self.assertNotIn('"https://chrome.google.com/*"', patched)
+        self.assertFalse(PATCH.patch_source_tree(self.root))
+        self.assertEqual(patched, api_path.read_text(encoding="utf-8"))
+
 
 if __name__ == "__main__":
     unittest.main()

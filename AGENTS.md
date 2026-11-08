@@ -62,3 +62,44 @@ awk -F= '
 ```
 
 If the versions differ, do not use `FAST_LOCAL_BUILD=1`; run the full build instead.
+
+## Remote Build Machine
+
+The configured Chromium build machine is reachable at `192.168.2.30`.
+
+- Repository: `/root/android-helium-browser`
+- Build branch: `main`
+- Chromium source used for this work: `157.0.8103.38`
+- Chromium source directory: `/root/android-helium-browser/chromium/src`
+- Network proxy: `http://192.168.2.1:37896`
+- Build architecture: ARM64 only by default (`BUILD_ARM=0`, `BUILD_ARM64=1`)
+
+Use the existing local SSH credential or approved automation connection to access the machine. Do not write passwords, private keys, or other credentials into this repository. From the remote repository root, update and build with:
+
+```bash
+git -c http.proxy=http://192.168.2.1:37896 pull --ff-only origin main
+git submodule sync --recursive
+git -c http.proxy=http://192.168.2.1:37896 \
+    submodule update --init --recursive --jobs 8
+
+BUILD_PROXY=http://192.168.2.1:37896 \
+BUILD_ARM=0 \
+BUILD_ARM64=1 \
+BUILD_AAB=0 \
+NINJA_JOBS=14 \
+./build.sh
+```
+
+For a downstream-only change after a successful full build and a matching Chromium version, apply the hotfix first and then use the incremental build:
+
+```bash
+./hotfix_existing_src.sh chromium/src
+
+FAST_LOCAL_BUILD=1 \
+BUILD_PROXY=http://192.168.2.1:37896 \
+BUILD_ARM=0 \
+BUILD_ARM64=1 \
+BUILD_AAB=0 \
+NINJA_JOBS=14 \
+./build.sh
+```
