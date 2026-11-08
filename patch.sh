@@ -4028,5 +4028,6 @@ else
 fi
 
 python3 "$SCRIPT_DIR/patch_omnibox_dropdown.py" .
+python3 "$SCRIPT_DIR/patch_toolbar_phone.py" . || exit 1
 python3 "$SCRIPT_DIR/patch_titanium_visibility.py" . || exit 1
 python3 "$SCRIPT_DIR/extensions/patch_android_asset_group.py" chrome/android/BUILD.gn || exit 1
