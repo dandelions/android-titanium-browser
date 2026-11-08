@@ -180,7 +180,7 @@ restore_non_lemur_menu_baseline() {
                 chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsMenuMediator.java \
                 chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java; do
                 if echo "$dirty_files" | grep -qx "$f"; then
-                    if grep -Eq 'Lemur|registerLemurExtensionsMenuOpener|hideCustomAppMenu|createHeliumFourSquaresDrawable|createHeliumThreeLinesDrawable|CUSTOM_EXTENSIONS_MENU_OPENERS|mForceNativeMenuOnce|showCustomAppMenu' "$target_dir/$f" 2>/dev/null; then
+                    if grep -Eq 'Lemur|registerLemurExtensionsMenuOpener|hideCustomAppMenu|createHeliumFourSquaresDrawable|createHeliumThreeLinesDrawable|CUSTOM_EXTENSIONS_MENU_OPENERS|mForceNativeMenuOnce|showCustomAppMenu|executeActionFromAppMenu|mPendingFallbackContextMenuButton|getAllExtensionActionIds|mSuppressNextMenuShow' "$target_dir/$f" 2>/dev/null; then
                         git -C "$target_dir" checkout -- "$f" 2>/dev/null || true
                     fi
                 fi
