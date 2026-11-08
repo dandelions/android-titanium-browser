@@ -73,33 +73,24 @@ The configured Chromium build machine is reachable at `192.168.2.30`.
 - Chromium source directory: `/root/android-helium-browser/chromium/src`
 - Network proxy: `http://192.168.2.1:37896`
 - Build architecture: ARM64 only by default (`BUILD_ARM=0`, `BUILD_ARM64=1`)
+- Local SSH alias: `helium-build` (configured in `~/.ssh/config`, not in this repository)
 
-Use the existing local SSH credential or approved automation connection to access the machine. Do not write passwords, private keys, or other credentials into this repository. From the remote repository root, update and build with:
+The local SSH private key is stored at `~/.ssh/android_helium_build`. Its public key is installed on the build machine. Verify access with `ssh helium-build 'hostname'`; do not copy either key into the repository.
+
+Use the following from this repository root to update the build machine's `main` checkout and prepare its source:
 
 ```bash
-git -c http.proxy=http://192.168.2.1:37896 pull --ff-only origin main
-git submodule sync --recursive
-git -c http.proxy=http://192.168.2.1:37896 \
-    submodule update --init --recursive --jobs 8
-
-BUILD_PROXY=http://192.168.2.1:37896 \
-BUILD_ARM=0 \
-BUILD_ARM64=1 \
-BUILD_AAB=0 \
-NINJA_JOBS=14 \
-./build.sh
+ssh helium-build 'cd /root/android-helium-browser && git -c http.proxy=http://192.168.2.1:37896 pull --ff-only origin main && git submodule sync --recursive && git -c http.proxy=http://192.168.2.1:37896 submodule update --init --recursive --jobs 8'
 ```
 
-For a downstream-only change after a successful full build and a matching Chromium version, apply the hotfix first and then use the incremental build:
+To run the ARM64 full build remotely:
 
 ```bash
-./hotfix_existing_src.sh chromium/src
+ssh helium-build 'cd /root/android-helium-browser && BUILD_PROXY=http://192.168.2.1:37896 BUILD_ARM=0 BUILD_ARM64=1 BUILD_AAB=0 NINJA_JOBS=14 ./build.sh'
+```
 
-FAST_LOCAL_BUILD=1 \
-BUILD_PROXY=http://192.168.2.1:37896 \
-BUILD_ARM=0 \
-BUILD_ARM64=1 \
-BUILD_AAB=0 \
-NINJA_JOBS=14 \
-./build.sh
+Use a full build for a fresh checkout, after a Chromium/Vanadium version change, or whenever the source version differs from `vanadium/args.gn`. For a downstream-only update after a successful full build and a matching Chromium version, run:
+
+```bash
+ssh helium-build 'cd /root/android-helium-browser && ./hotfix_existing_src.sh chromium/src && FAST_LOCAL_BUILD=1 BUILD_PROXY=http://192.168.2.1:37896 BUILD_ARM=0 BUILD_ARM64=1 BUILD_AAB=0 NINJA_JOBS=14 ./build.sh'
 ```
