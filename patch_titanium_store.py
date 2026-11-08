@@ -19,6 +19,7 @@ WEBSTORE_PRIVATE_PATHS = (
 )
 MANIFEST_V2_HANDLER = Path("extensions/browser/manifest_v2_handler.cc")
 API_FEATURES = Path("extensions/common/api/_api_features.json")
+VERSION_INFO = Path("base/version_info/version_info.cc")
 
 TITANIUM_ALLOWLIST = '''
   if (const auto& o = item.GetRequestInitiator(); o && o->scheme() == "chrome-extension") return true;
@@ -259,6 +260,19 @@ def patch_webstore_api_features(path: Path) -> bool:
 
 def patch_webstore_private_api(source_root: Path) -> bool:
     changed = patch_webstore_api_features(source_root / API_FEATURES)
+    old_version_stmt = "  GetFullChromeVersion::Results::Info info;\n  info.version_number = std::string(version);"
+    new_version_stmt = (
+        "  size_t dot_count = 0;\n"
+        "  size_t trim_pos = version.size();\n"
+        "  for (size_t i = 0; i < version.size(); ++i) {\n"
+        "    if (version[i] == '.' && ++dot_count == 4) {\n"
+        "      trim_pos = i;\n"
+        "      break;\n"
+        "    }\n"
+        "  }\n"
+        "  GetFullChromeVersion::Results::Info info;\n"
+        "  info.version_number = std::string(version.substr(0, trim_pos));"
+    )
     for rel_path in WEBSTORE_PRIVATE_PATHS:
         path = source_root / rel_path
         if not path.is_file():
@@ -269,10 +283,52 @@ def patch_webstore_private_api(source_root: Path) -> bool:
             "api::webstore_private::MV2DeprecationStatus::kHardDisable",
             "api::webstore_private::MV2DeprecationStatus::kNone",
         )
+        if new_version_stmt not in text and old_version_stmt in text:
+            text = text.replace(old_version_stmt, new_version_stmt, 1)
         if text != original:
             path.write_text(text, encoding="utf-8")
             changed = True
     return changed
+
+
+def patch_version_info(path: Path) -> bool:
+    if not path.is_file():
+        return False
+    text = path.read_text(encoding="utf-8")
+    original = text
+    old = (
+        "#if BUILDFLAG(IS_ANDROID)\n"
+        "std::string_view GetVersionNumber() {\n"
+        "  return base::android::apk_info::package_version_name();\n"
+        "}\n"
+        "#endif"
+    )
+    new = (
+        "#if BUILDFLAG(IS_ANDROID)\n"
+        "std::string_view GetVersionNumber() {\n"
+        "  static const base::NoDestructor<std::string> version_number([] {\n"
+        "    std::string_view name = base::android::apk_info::package_version_name();\n"
+        "    size_t dot_count = 0;\n"
+        "    for (size_t i = 0; i < name.size(); ++i) {\n"
+        "      if (name[i] == '.' && ++dot_count == 4) {\n"
+        "        return std::string(name.substr(0, i));\n"
+        "      }\n"
+        "    }\n"
+        "    return std::string(name);\n"
+        "  }());\n"
+        "  return *version_number;\n"
+        "}\n"
+        "#endif"
+    )
+    if new in text:
+        return False
+    if old not in text:
+        raise RuntimeError(f"GetVersionNumber anchor not found in {path}")
+    text = text.replace(old, new, 1)
+    if text != original:
+        path.write_text(text, encoding="utf-8")
+        return True
+    return False
 
 
 def patch_manifest_v2_handler(path: Path) -> bool:
@@ -300,6 +356,7 @@ def patch_source_tree(source_root: Path) -> bool:
     changed = patch_desktop_site_utils(source_root / DESKTOP_SITE_UTILS) or changed
     changed = patch_webstore_private_api(source_root) or changed
     changed = patch_manifest_v2_handler(source_root / MANIFEST_V2_HANDLER) or changed
+    changed = patch_version_info(source_root / VERSION_INFO) or changed
     return changed
 
 
