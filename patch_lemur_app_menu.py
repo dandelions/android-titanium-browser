@@ -2689,6 +2689,25 @@ def unpatch_extensions_menu_mediator(src_dir: Path) -> None:
 
     text = text.replace("    private @Nullable ListMenuButton mPendingFallbackContextMenuButton;\n", "")
 
+    app_methods_marker = "    public void executeActionFromAppMenu("
+    if app_methods_marker in text:
+        start_idx = text.find(app_methods_marker)
+        anchor_next = "    private void onPrimaryActionClicked(View anchorView, String extensionId) {"
+        end_idx = text.find(anchor_next, start_idx)
+        if end_idx != -1:
+            text = text[:start_idx] + text[end_idx:]
+
+    fallback_block = """        ListMenuButton fallback = mPendingFallbackContextMenuButton;
+        mPendingFallbackContextMenuButton = null;
+        return fallback;"""
+    if fallback_block in text:
+        text = text.replace(fallback_block, "        return null;")
+
+    text = text.replace(
+        "            if (!(current.getParent() instanceof View)) {\n                break;\n            }",
+        "            if (!(current.getParent() instanceof View)) {\n                return null;\n            }",
+    )
+
     new_ctx_click = """    private void onContextMenuButtonClicked(ListMenuButton buttonView, String actionId) {
         WebContents webContents = getCurrentWebContents();
         if (webContents == null) {
@@ -2711,39 +2730,24 @@ def unpatch_extensions_menu_mediator(src_dir: Path) -> None:
     if new_ctx_click in text:
         text = text.replace(new_ctx_click, old_ctx_click, 1)
 
-    new_find_ctx = """    private @Nullable ListMenuButton findContextMenuButtonForPendingAction() {
-        View current = mPendingActionAnchorView;
-        while (current != null) {
-            if (current instanceof ListMenuButton) {
-                return (ListMenuButton) current;
-            }
-            View button = current.findViewById(R.id.extensions_menu_item_context_menu);
-            if (button instanceof ListMenuButton) {
-                return (ListMenuButton) button;
-            }
-            if (!(current.getParent() instanceof View)) {
-                return null;
-            }
-            current = (View) current.getParent();
-        }
-        return null;
+    new_open_ext_block = """    private void openExtensionFromMenu(String extensionId) {
+        mMenuBridge.executeAction(extensionId, getCurrentWebContents());
     }"""
-    old_find_ctx = """    private @Nullable ListMenuButton findContextMenuButtonForPendingAction() {
-        View current = mPendingActionAnchorView;
-        while (current != null) {
-            View button = current.findViewById(R.id.extensions_menu_item_context_menu);
-            if (button instanceof ListMenuButton) {
-                return (ListMenuButton) button;
-            }
-            if (!(current.getParent() instanceof View)) {
-                return null;
-            }
-            current = (View) current.getParent();
+    old_open_ext_block = """    private void openExtensionFromMenu(String extensionId) {
+        Tab currentTab = mCurrentTabSupplier.get();
+        if (currentTab == null) {
+            return;
         }
-        return null;
+
+        WebContents webContents = currentTab.getWebContents();
+        if (webContents == null) {
+            return;
+        }
+
+        mMenuBridge.executeAction(extensionId, webContents);
     }"""
-    if new_find_ctx in text:
-        text = text.replace(new_find_ctx, old_find_ctx, 1)
+    if new_open_ext_block in text:
+        text = text.replace(new_open_ext_block, old_open_ext_block, 1)
 
     if text != original:
         path.write_text(text, encoding="utf-8")
