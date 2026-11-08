@@ -56,6 +56,56 @@ def patch_layout_scroll_listener(path):
         if doc_pos < 0:
             raise SystemExit(f"resetScrollState documentation anchor not found in {path}")
         text = text[:doc_pos] + setter + text[doc_pos:]
+    replacements = (
+        (
+            """            if (OmniboxFeatures.sResetSuggestionsScroll.isEnabled()) {
+                scrollToPositionWithOffset(0, 0);
+            }
+""",
+            """            if (!mAlignToBottom && OmniboxFeatures.sResetSuggestionsScroll.isEnabled()) {
+                scrollToPositionWithOffset(0, 0);
+            }
+""",
+            "onLayoutChildren scroll reset",
+        ),
+        (
+            """            postOnAnimation(() -> scrollToPositionWithOffset(0, 0));
+""",
+            """            if (!mAlignToBottom) {
+                postOnAnimation(() -> scrollToPositionWithOffset(0, 0));
+            }
+""",
+            "updateVisualState scroll reset",
+        ),
+        (
+            """        if (isParked) {
+            mLayoutScrollListener.scrollToPositionWithOffset(0, 0);
+        }
+""",
+            """        if (isParked && !mLayoutScrollListener.mAlignToBottom) {
+            mLayoutScrollListener.scrollToPositionWithOffset(0, 0);
+        }
+""",
+            "handleSelectionChange scroll reset",
+        ),
+        (
+            """        mLayoutScrollListener.scrollToPositionWithOffset(0, 0);
+        mSelectionController.reset();
+""",
+            """        if (!mLayoutScrollListener.mAlignToBottom) {
+            mLayoutScrollListener.scrollToPositionWithOffset(0, 0);
+        }
+        mSelectionController.reset();
+""",
+            "resetSelection scroll reset",
+        ),
+    )
+    for old, new, name in replacements:
+        if new in text:
+            continue
+        if old not in text:
+            raise SystemExit(f"{name} anchor not found in {path}")
+        text = text.replace(old, new, 1)
     path.write_text(text)
 
 
@@ -85,11 +135,16 @@ def patch_dropdown_wrapper(path):
     path.write_text(text)
 
 
-source_root = Path(sys.argv[1] if len(sys.argv) > 1 else ".")
-dropdown_path = source_root / DROPDOWN_PATH
-patch_layout_scroll_listener(dropdown_path)
-patch_dropdown_wrapper(dropdown_path)
-text = dropdown_path.read_text()
-if "void heliumSetAlignToBottom(boolean alignToBottom)" not in text:
-    raise SystemExit(f"Omnibox dropdown wrapper missing after patch: {dropdown_path}")
-print(f"Applied Omnibox dropdown alignment patch to {dropdown_path}")
+def main():
+    source_root = Path(sys.argv[1] if len(sys.argv) > 1 else ".")
+    dropdown_path = source_root / DROPDOWN_PATH
+    patch_layout_scroll_listener(dropdown_path)
+    patch_dropdown_wrapper(dropdown_path)
+    text = dropdown_path.read_text()
+    if "void heliumSetAlignToBottom(boolean alignToBottom)" not in text:
+        raise SystemExit(f"Omnibox dropdown wrapper missing after patch: {dropdown_path}")
+    print(f"Applied Omnibox dropdown alignment patch to {dropdown_path}")
+
+
+if __name__ == "__main__":
+    main()

@@ -2093,7 +2093,14 @@ perl -0pi -e 's|current_toolchain == default_toolchain,|current_toolchain == def
 sed -i 's|assert treeId.equals(documentId);|&\n if ("com.android.externalstorage.documents".equals(mAuthority)) { String fastId = mRelativePath.isEmpty() ? treeId : (treeId.endsWith(":") ? treeId + mRelativePath : treeId + "/" + mRelativePath); Uri fast = DocumentsContract.buildDocumentUriUsingTree(tree, fastId); return contentUriExists(fast) ? fast : null; }|' base/android/java/src/org/chromium/base/VirtualDocumentPath.java
 
 # crbug.com/40831291: bottom address bar
-sed -i 's@(idealFitsBelow && spaceBelowAnchor >= spaceAboveAnchor) || !idealFitsAbove;@(idealFitsBelow == idealFitsAbove) ? (spaceBelowAnchor >= spaceAboveAnchor) : idealFitsBelow;@' ui/android/java/src/org/chromium/ui/widget/PopupSpecCalculator.java
+POPUP_SPEC_CALCULATOR=ui/android/java/src/org/chromium/ui/widget/PopupSpecCalculator.java
+if grep -q '(idealFitsBelow && spaceBelowAnchor >= spaceAboveAnchor) || !idealFitsAbove;' "$POPUP_SPEC_CALCULATOR"; then
+    sed -i 's@(idealFitsBelow && spaceBelowAnchor >= spaceAboveAnchor) || !idealFitsAbove;@(idealFitsBelow == idealFitsAbove) ? (spaceBelowAnchor >= spaceAboveAnchor) : idealFitsBelow;@' "$POPUP_SPEC_CALCULATOR"
+elif ! grep -q '(idealFitsBelow == idealFitsAbove) ? (spaceBelowAnchor >= spaceAboveAnchor) : idealFitsBelow;' "$POPUP_SPEC_CALCULATOR" \
+    && ! grep -q '(idealFitsBelow != idealFitsAbove) ? idealFitsBelow : belowHasMoreSpace;' "$POPUP_SPEC_CALCULATOR"; then
+    echo "Bottom address-bar popup anchor not found: $POPUP_SPEC_CALCULATOR" >&2
+    exit 1
+fi
 
 # On the NTP and while editing, follow the user's toolbar preference. Chromium's
 # dropdown embedder places history and suggestions above a bottom toolbar.
@@ -3904,6 +3911,8 @@ fi
 
 # Restore Titanium's native store flow in previously patched source trees.
 python3 "$SCRIPT_DIR/patch_titanium_store.py" .
+# Do not default-pin locally installed extensions on Android.
+python3 "$SCRIPT_DIR/patch_toolbar_actions_model.py" .
 # 严格分支隔离判定：
 # 标准分支（main, lemur）绝对禁止任何 API 28 / 低版本修改，仅允许作用于 old-version / old-android 分支
 is_old_version_branch() {

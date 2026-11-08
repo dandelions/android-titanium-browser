@@ -18,6 +18,7 @@ WEBSTORE_PRIVATE_PATHS = (
     Path("chrome/browser/extensions/api/webstore_private/webstore_private_api.cc"),
 )
 MANIFEST_V2_HANDLER = Path("extensions/browser/manifest_v2_handler.cc")
+API_FEATURES = Path("extensions/common/api/_api_features.json")
 
 TITANIUM_ALLOWLIST = '''
   if (const auto& o = item.GetRequestInitiator(); o && o->scheme() == "chrome-extension") return true;
@@ -226,8 +227,38 @@ def patch_desktop_site_utils(path: Path) -> bool:
     return False
 
 
+def patch_webstore_api_features(path: Path) -> bool:
+    if not path.is_file():
+        return False
+    text = path.read_text(encoding="utf-8")
+    original = text
+    for api_name in ('"webstorePrivate":', '"management":'):
+        start = text.find(api_name)
+        if start < 0:
+            raise RuntimeError(f"{api_name} feature block not found in {path}")
+        block_match = re.search(r"\n[ \t]*\}\],?", text[start:])
+        if block_match is None:
+            raise RuntimeError(f"{api_name} feature block end not found in {path}")
+        block_end = start + block_match.start()
+        block = text[start:block_end]
+        old = '"matches": ["https://chromewebstore.google.com/*"]'
+        new = (
+            '"matches": ["https://chromewebstore.google.com/*",\n'
+            '                  "https://chrome.google.com/webstore/*"]'
+        )
+        if new not in block:
+            if old not in block:
+                raise RuntimeError(f"{api_name} store match anchor not found in {path}")
+            block = block.replace(old, new, 1)
+            text = text[:start] + block + text[block_end:]
+    if text != original:
+        path.write_text(text, encoding="utf-8")
+        return True
+    return False
+
+
 def patch_webstore_private_api(source_root: Path) -> bool:
-    changed = False
+    changed = patch_webstore_api_features(source_root / API_FEATURES)
     for rel_path in WEBSTORE_PRIVATE_PATHS:
         path = source_root / rel_path
         if not path.is_file():

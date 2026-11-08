@@ -648,6 +648,14 @@ grep -q 'extension_path_.IsVirtualDocumentPath()' "$UNPACKED_INSTALLER" || \
 grep -q 'String fastId = mRelativePath' "$VIRTUAL_DOCUMENT_PATH" || \
     sed -i 's|assert treeId.equals(documentId);|&\n if ("com.android.externalstorage.documents".equals(mAuthority)) { String fastId = mRelativePath.isEmpty() ? treeId : (treeId.endsWith(":") ? treeId + mRelativePath : treeId + "/" + mRelativePath); Uri fast = DocumentsContract.buildDocumentUriUsingTree(tree, fastId); return contentUriExists(fast) ? fast : null; }|' "$VIRTUAL_DOCUMENT_PATH"
 
+POPUP_SPEC_CALCULATOR="$SRC_DIR/ui/android/java/src/org/chromium/ui/widget/PopupSpecCalculator.java"
+if grep -q '(idealFitsBelow && spaceBelowAnchor >= spaceAboveAnchor) || !idealFitsAbove;' "$POPUP_SPEC_CALCULATOR"; then
+    sed -i 's@(idealFitsBelow && spaceBelowAnchor >= spaceAboveAnchor) || !idealFitsAbove;@(idealFitsBelow == idealFitsAbove) ? (spaceBelowAnchor >= spaceAboveAnchor) : idealFitsBelow;@' "$POPUP_SPEC_CALCULATOR"
+elif ! grep -q '(idealFitsBelow == idealFitsAbove) ? (spaceBelowAnchor >= spaceAboveAnchor) : idealFitsBelow;' "$POPUP_SPEC_CALCULATOR" && ! grep -q '(idealFitsBelow != idealFitsAbove) ? idealFitsBelow : belowHasMoreSpace;' "$POPUP_SPEC_CALCULATOR"; then
+    echo "Bottom address-bar popup anchor not found: $POPUP_SPEC_CALCULATOR" >&2
+    exit 1
+fi
+
 # On the NTP and while editing, follow the user's toolbar preference. Chromium's
 # dropdown embedder places history and suggestions above a bottom toolbar.
 if ! grep -q 'Helium: follow the toolbar preference on the NTP and while editing' "$TOOLBAR_POSITION_CONTROLLER"; then
@@ -4107,6 +4115,8 @@ fi
 
 # Restore Titanium's native store flow in previously patched source trees.
 python3 "$SCRIPT_DIR/patch_titanium_store.py" "$SRC_DIR"
+# Do not default-pin locally installed extensions on Android.
+python3 "$SCRIPT_DIR/patch_toolbar_actions_model.py" "$SRC_DIR"
 
 CURRENT_BRANCH="$(git -C "$SCRIPT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
 
