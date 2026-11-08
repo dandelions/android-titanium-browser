@@ -173,48 +173,62 @@ elif [ "${RELEASE_ALL:-0}" = "1" ]; then
         [ -f "$file" ] || continue
         add_release_file "$file"
     done
-# 4. Outputs recorded by build.sh for the latest build (if present)
-elif [ -f "$RELEASE_DIR/.last_build_outputs" ] && [ -s "$RELEASE_DIR/.last_build_outputs" ]; then
-    while IFS= read -r line || [ -n "$line" ]; do
-        line_trimmed=$(printf '%s' "$line" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
-        [ -n "$line_trimmed" ] || continue
-        target_f=""
-        if [ -f "$RELEASE_DIR/$line_trimmed" ]; then
-            target_f="$RELEASE_DIR/$line_trimmed"
-        elif [ -f "$line_trimmed" ]; then
-            target_f="$line_trimmed"
-        fi
-        if [ -n "$target_f" ]; then
-            add_release_file "$target_f"
-        fi
-    done < "$RELEASE_DIR/.last_build_outputs"
-fi
-
-# 5. Fallback: match by current branch (or RELEASE_BRANCHES) and target ABIs
-if [ "$found" -eq 0 ]; then
-    if [ -n "${RELEASE_BRANCHES:-}" ]; then
-        target_branches="$RELEASE_BRANCHES"
-    elif [ -n "${OUTPUT_BRANCH_TAG:-}" ]; then
-        target_branches="$OUTPUT_BRANCH_TAG"
-    else
-        target_branches="$(git_repo rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+else
+    # 4. Outputs recorded by build.sh for built branches in this session (if present)
+    if [ -f "$RELEASE_DIR/.last_build_outputs" ] && [ -s "$RELEASE_DIR/.last_build_outputs" ]; then
+        while IFS= read -r line || [ -n "$line" ]; do
+            line_trimmed=$(printf '%s' "$line" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+            [ -n "$line_trimmed" ] || continue
+            target_f=""
+            if [ -f "$RELEASE_DIR/$line_trimmed" ]; then
+                target_f="$RELEASE_DIR/$line_trimmed"
+            elif [ -f "$line_trimmed" ]; then
+                target_f="$line_trimmed"
+            fi
+            if [ -n "$target_f" ]; then
+                add_release_file "$target_f"
+            fi
+        done < "$RELEASE_DIR/.last_build_outputs"
     fi
-    [ -n "$target_branches" ] || target_branches="main"
 
-    for file in "$RELEASE_DIR/$VERSION"-*.apk "$RELEASE_DIR/$VERSION"-*.aab; do
-        [ -f "$file" ] || continue
-        is_abi_match "$file" || continue
-        matched=0
+    # 5. If RELEASE_BRANCHES is specified, ensure all target branches and their types are included
+    if [ -n "${RELEASE_BRANCHES:-}" ]; then
+        target_branches=$(printf '%s\n' "$RELEASE_BRANCHES" | tr ',' ' ')
         for br in $target_branches; do
-            if is_branch_match "$file" "$br"; then
-                matched=1
-                break
+            br_trimmed=$(printf '%s' "$br" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+            [ -n "$br_trimmed" ] || continue
+            for file in "$RELEASE_DIR/$VERSION"-*.apk "$RELEASE_DIR/$VERSION"-*.aab; do
+                [ -f "$file" ] || continue
+                is_abi_match "$file" || continue
+                if is_branch_match "$file" "$br_trimmed"; then
+                    add_release_file "$file"
+                fi
+            done
+        done
+    # 6. Fallback if no files recorded and no RELEASE_BRANCHES given: match current git branch
+    elif [ "$found" -eq 0 ]; then
+        if [ -n "${OUTPUT_BRANCH_TAG:-}" ]; then
+            target_branches="$OUTPUT_BRANCH_TAG"
+        else
+            target_branches="$(git_repo rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+        fi
+        [ -n "$target_branches" ] || target_branches="main"
+
+        for file in "$RELEASE_DIR/$VERSION"-*.apk "$RELEASE_DIR/$VERSION"-*.aab; do
+            [ -f "$file" ] || continue
+            is_abi_match "$file" || continue
+            matched=0
+            for br in $target_branches; do
+                if is_branch_match "$file" "$br"; then
+                    matched=1
+                    break
+                fi
+            done
+            if [ "$matched" -eq 1 ]; then
+                add_release_file "$file"
             fi
         done
-        if [ "$matched" -eq 1 ]; then
-            add_release_file "$file"
-        fi
-    done
+    fi
 fi
 
 if [ "$found" -ne 1 ]; then
@@ -320,3 +334,4 @@ while IFS= read -r file; do
 done < "$files_list"
 
 echo "Published release $TAG to $repo"
+rm -f "$RELEASE_DIR/.last_build_outputs" 2>/dev/null || true

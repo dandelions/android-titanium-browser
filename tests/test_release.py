@@ -113,6 +113,45 @@ exit 0
         self.assertNotIn("157.0.8103.38-arm64-v8a.apk", res.stdout)
         self.assertNotIn("157.0.8103.38-lemur-style-app-menu-armeabi-v7a.apk", res.stdout)
 
+    def test_multi_branch_release_via_last_build_outputs(self):
+        # When multiple branches were built, .last_build_outputs contains all of them
+        marker = self.release_dir / ".last_build_outputs"
+        marker.write_text("""157.0.8103.38-arm64-v8a.apk
+157.0.8103.38-armeabi-v7a.apk
+157.0.8103.38-lemur-style-app-menu-arm64-v8a.apk
+""")
+        # Extra artifact from an unbuilt branch
+        old_android = self.release_dir / "157.0.8103.38-old-android-arm64-v8a.apk"
+        old_android.write_text("old android content")
+
+        res = self.run_release()
+        self.assertEqual(res.returncode, 0, f"release.sh failed: {res.stderr}\n{res.stdout}")
+        self.assertIn("157.0.8103.38-arm64-v8a.apk", res.stdout)
+        self.assertIn("157.0.8103.38-armeabi-v7a.apk", res.stdout)
+        self.assertIn("157.0.8103.38-lemur-style-app-menu-arm64-v8a.apk", res.stdout)
+        self.assertNotIn("157.0.8103.38-old-android-arm64-v8a.apk", res.stdout)
+        self.assertNotIn("157.0.8103.38-lemur-style-app-menu-armeabi-v7a.apk", res.stdout)
+
+        # Verify .last_build_outputs was cleaned up after successful release
+        self.assertFalse(marker.exists())
+
+    def test_multi_branch_release_via_release_branches_env(self):
+        # Without .last_build_outputs, specify RELEASE_BRANCHES for multi-branch release
+        old_android = self.release_dir / "157.0.8103.38-old-android-arm64-v8a.apk"
+        old_android.write_text("old android content")
+
+        res = self.run_release(env={
+            "RELEASE_BRANCHES": "main, lemur-style-app-menu",
+            "BUILD_ARM": "1",
+            "BUILD_ARM64": "1",
+        })
+        self.assertEqual(res.returncode, 0, f"release.sh failed: {res.stderr}\n{res.stdout}")
+        self.assertIn("157.0.8103.38-arm64-v8a.apk", res.stdout)
+        self.assertIn("157.0.8103.38-armeabi-v7a.apk", res.stdout)
+        self.assertIn("157.0.8103.38-lemur-style-app-menu-arm64-v8a.apk", res.stdout)
+        self.assertIn("157.0.8103.38-lemur-style-app-menu-armeabi-v7a.apk", res.stdout)
+        self.assertNotIn("157.0.8103.38-old-android-arm64-v8a.apk", res.stdout)
+
     def test_sha256_merging_preserves_untouched_branch_files(self):
         sha_file = self.release_dir / "157.0.8103.38-SHA256SUMS.txt"
         sha_file.write_text("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  157.0.8103.38-arm64-v8a.apk\n")

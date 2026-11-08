@@ -727,13 +727,37 @@ ls -lh $release_outputs
 
 if [ -n "$release_outputs" ]; then
     mkdir -p out/release
-    if [ "${APPEND_BUILD_OUTPUTS:-0}" != "1" ]; then
-        : > out/release/.last_build_outputs
+    marker="out/release/.last_build_outputs"
+    tmp_marker=$(mktemp)
+    if [ "${RESET_BUILD_OUTPUTS:-0}" != "1" ] && [ -f "$marker" ]; then
+        while IFS= read -r line || [ -n "$line" ]; do
+            bname=$(basename "$line")
+            [ -n "$bname" ] || continue
+            [ -f "out/release/$bname" ] || continue
+            case "$bname" in
+                "$VERSION"*) ;;
+                *) continue ;;
+            esac
+            # Remove previous outputs of the branch currently being built so they are replaced by the new outputs
+            if [ "$OUTPUT_VERSION_PREFIX" = "$VERSION" ]; then
+                case "$bname" in
+                    "$VERSION"-arm64-v8a.*|"$VERSION"-armeabi-v7a.*|"$VERSION"-x86_64.*|"$VERSION"-x86.*)
+                        continue ;;
+                esac
+            else
+                case "$bname" in
+                    "${OUTPUT_VERSION_PREFIX}"-*)
+                        continue ;;
+                esac
+            fi
+            printf '%s\n' "$bname" >> "$tmp_marker"
+        done < "$marker"
     fi
+
     for ro in $release_outputs; do
         bname=$(basename "$ro")
-        if ! grep -Fqx "$bname" out/release/.last_build_outputs 2>/dev/null; then
-            printf '%s\n' "$bname" >> out/release/.last_build_outputs
-        fi
+        printf '%s\n' "$bname" >> "$tmp_marker"
     done
+    sort -u "$tmp_marker" > "$marker"
+    rm -f "$tmp_marker"
 fi
