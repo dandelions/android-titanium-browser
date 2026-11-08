@@ -2341,11 +2341,9 @@ replace_if_missing(
                     .setVisibility(showFakeSearchBox ? View.VISIBLE : View.GONE);
         }
         int toolbarTopPadding =
-                showFakeSearchBox
-                        ? mActivity
-                                .getResources()
-                                .getDimensionPixelSize(R.dimen.toolbar_height_no_shadow)
-                        : 0;
+                mActivity
+                        .getResources()
+                        .getDimensionPixelSize(R.dimen.toolbar_height_no_shadow);
         mModel.set(NewTabPageLayoutProperties.TOP_INSET_PX, toolbarTopPadding + mTopInset);
     }
 
@@ -2353,6 +2351,21 @@ replace_if_missing(
      * @return The fake search box view.
      */
     """,
+)
+replace_if_present(
+    coordinator,
+    """        int toolbarTopPadding =
+                showFakeSearchBox
+                        ? mActivity
+                                .getResources()
+                                .getDimensionPixelSize(R.dimen.toolbar_height_no_shadow)
+                        : 0;
+        mModel.set(NewTabPageLayoutProperties.TOP_INSET_PX, toolbarTopPadding + mTopInset);""",
+    """        int toolbarTopPadding =
+                mActivity
+                        .getResources()
+                        .getDimensionPixelSize(R.dimen.toolbar_height_no_shadow);
+        mModel.set(NewTabPageLayoutProperties.TOP_INSET_PX, toolbarTopPadding + mTopInset);""",
 )
 coordinator_text = coordinator.read_text()
 measure_marker = (
