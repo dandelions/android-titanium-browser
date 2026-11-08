@@ -698,6 +698,9 @@ if ! grep -q 'Helium: follow the toolbar preference on the NTP and while editing
     echo "NTP and omnibox toolbar position patch did not apply: $SRC_DIR/$TOOLBAR_POSITION_CONTROLLER" >&2
     exit 1
 fi
+if ! grep -q 'mControlContainer.getView().requestLayout();' "$TOOLBAR_POSITION_CONTROLLER"; then
+    sed -i 's|mBottomControlsStacker.updateLayerVisibilitiesAndSizes();|&\n        mControlContainer.getView().requestLayout();|' "$TOOLBAR_POSITION_CONTROLLER"
+fi
 
 # In bottom-toolbar mode, use the real omnibox on the NTP instead of leaving a
 # second fake search box at the top. Keep short suggestion lists adjacent to it.
