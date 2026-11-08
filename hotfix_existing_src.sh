@@ -157,6 +157,48 @@ if [ -z "$TARGET_VERSION" ] || [ "$CHROMIUM_VERSION" != "$TARGET_VERSION" ]; the
 fi
 echo "Applying local hotfixes to Chromium $CHROMIUM_VERSION in $SRC_DIR"
 
+CURRENT_BRANCH="$(git -C "$SCRIPT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+
+is_lemur_branch() {
+    if [ "$CURRENT_BRANCH" = "lemur-style-app-menu" ] || [ "$CURRENT_BRANCH" = "lemur" ] || [ "$CURRENT_BRANCH" = "old-android" ] || [ "$CURRENT_BRANCH" = "old-version" ] || [[ "$CURRENT_BRANCH" == *"old-"* ]] || [ "${LEMUR_APP_MENU:-0}" = "1" ]; then
+        return 0
+    fi
+    return 1
+}
+
+restore_non_lemur_menu_baseline() {
+    local target_dir="$1"
+    [ -d "$target_dir" ] || return 0
+
+    if [ -d "$target_dir/.git" ]; then
+        local dirty_files
+        dirty_files="$(git -C "$target_dir" diff --name-only 2>/dev/null || true)"
+        if [ -n "$dirty_files" ]; then
+            for f in \
+                chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/menu_button/MenuButton.java \
+                chrome/browser/ui/android/appmenu/java/src/org/chromium/chrome/browser/ui/appmenu/AppMenuPropertiesDelegate.java \
+                chrome/browser/ui/android/appmenu/internal/java/src/org/chromium/chrome/browser/ui/appmenu/AppMenuHandlerImpl.java \
+                chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsToolbarCoordinator.java \
+                chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsToolbarCoordinatorImpl.java \
+                chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsMenuCoordinator.java \
+                chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsMenuMediator.java \
+                chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java; do
+                if echo "$dirty_files" | grep -qx "$f"; then
+                    if grep -Eq 'Lemur|registerLemurExtensionsMenuOpener|hideCustomAppMenu|createHeliumFourSquaresDrawable|createHeliumThreeLinesDrawable|CUSTOM_EXTENSIONS_MENU_OPENERS|mForceNativeMenuOnce|showCustomAppMenu' "$target_dir/$f" 2>/dev/null; then
+                        git -C "$target_dir" checkout -- "$f" 2>/dev/null || true
+                    fi
+                fi
+            done
+        fi
+    fi
+
+    python3 "$SCRIPT_DIR/patch_lemur_app_menu.py" "$target_dir"
+}
+
+if ! is_lemur_branch; then
+    restore_non_lemur_menu_baseline "$SRC_DIR"
+fi
+
 # Proportionally scale extension popups to the space outside the toolbar.
 python3 "$SCRIPT_DIR/patch_extension_popup_width.py" \
     "$EXTENSION_ACTION_POPUP" \
@@ -438,19 +480,24 @@ method = """    private ListItem buildAppearanceThemeItem(int id, int theme) {
     }
 
 """
-start = text.find("    private ListItem buildAppearanceThemeItem(")
-if start == -1:
-    start = text.find("    private ListItem buildAppearanceItem() {")
-anchor = "    private ListItem buildSettingsItem() {\n"
-if start != -1:
-    end = text.find(anchor, start)
-    if end == -1:
-        raise SystemExit("appearance menu end anchor not found")
-    text = text[:start] + method + text[end:]
-elif anchor in text:
-    text = text.replace(anchor, method + anchor, 1)
-else:
-    raise SystemExit("appearance menu method anchor not found")
+if method.strip() not in text:
+    start = text.find("    private ListItem buildAppearanceThemeItem(")
+    if start == -1:
+        start = text.find("    private ListItem buildAppearanceItem() {")
+    anchor = "    private ListItem buildSettingsItem() {\n"
+    lemur_marker = "    // Helium: Lemur Browser-style rounded bottom popup menu panel.\n"
+    if start != -1:
+        end = text.find(anchor, start)
+        if end == -1:
+            raise SystemExit("appearance menu end anchor not found")
+        lemur_pos = text.find(lemur_marker, start)
+        if lemur_pos != -1 and lemur_pos < end:
+            end = lemur_pos
+        text = text[:start] + method + text[end:]
+    elif anchor in text:
+        text = text.replace(anchor, method + anchor, 1)
+    else:
+        raise SystemExit("appearance menu method anchor not found")
 if "modelList.add(buildAppearanceItem());" not in text:
     text = text.replace(
             "        modelList.add(buildSettingsItem());",
@@ -4235,8 +4282,10 @@ restore_modern_android_sdk_baseline() {
     done
 }
 
-if [ "$CURRENT_BRANCH" = "lemur-style-app-menu" ] || [ "$CURRENT_BRANCH" = "lemur" ] || [ "$CURRENT_BRANCH" = "old-android" ] || [ "$CURRENT_BRANCH" = "old-version" ] || [[ "$CURRENT_BRANCH" == *"old-"* ]] || [ "${LEMUR_APP_MENU:-0}" = "1" ]; then
+if is_lemur_branch; then
     python3 "$SCRIPT_DIR/patch_lemur_app_menu.py" "$SRC_DIR"
+else
+    restore_non_lemur_menu_baseline "$SRC_DIR"
 fi
 
 if is_old_version_branch; then

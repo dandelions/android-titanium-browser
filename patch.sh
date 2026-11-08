@@ -749,19 +749,24 @@ method = """    private ListItem buildAppearanceThemeItem(int id, int theme) {
     }
 
 """
-start = text.find("    private ListItem buildAppearanceThemeItem(")
-if start == -1:
-    start = text.find("    private ListItem buildAppearanceItem() {")
-anchor = "    private ListItem buildSettingsItem() {\n"
-if start != -1:
-    end = text.find(anchor, start)
-    if end == -1:
-        raise SystemExit("appearance menu end anchor not found")
-    text = text[:start] + method + text[end:]
-elif anchor in text:
-    text = text.replace(anchor, method + anchor, 1)
-else:
-    raise SystemExit("appearance menu method anchor not found")
+if method.strip() not in text:
+    start = text.find("    private ListItem buildAppearanceThemeItem(")
+    if start == -1:
+        start = text.find("    private ListItem buildAppearanceItem() {")
+    anchor = "    private ListItem buildSettingsItem() {\n"
+    lemur_marker = "    // Helium: Lemur Browser-style rounded bottom popup menu panel.\n"
+    if start != -1:
+        end = text.find(anchor, start)
+        if end == -1:
+            raise SystemExit("appearance menu end anchor not found")
+        lemur_pos = text.find(lemur_marker, start)
+        if lemur_pos != -1 and lemur_pos < end:
+            end = lemur_pos
+        text = text[:start] + method + text[end:]
+    elif anchor in text:
+        text = text.replace(anchor, method + anchor, 1)
+    else:
+        raise SystemExit("appearance menu method anchor not found")
 if "modelList.add(buildAppearanceItem());" not in text:
     text = text.replace(
             "        modelList.add(buildSettingsItem());",
@@ -4028,9 +4033,7 @@ restore_modern_android_sdk_baseline() {
     done
 }
 
-if [ "$CURRENT_BRANCH" = "lemur-style-app-menu" ] || [ "$CURRENT_BRANCH" = "lemur" ] || [ "$CURRENT_BRANCH" = "old-android" ] || [ "$CURRENT_BRANCH" = "old-version" ] || [[ "$CURRENT_BRANCH" == *"old-"* ]] || [ "${LEMUR_APP_MENU:-0}" = "1" ]; then
-    python3 "$SCRIPT_DIR/patch_lemur_app_menu.py" .
-fi
+python3 "$SCRIPT_DIR/patch_lemur_app_menu.py" .
 
 if is_old_version_branch; then
     if [ -f "$SCRIPT_DIR/patch_android_min_sdk.py" ]; then

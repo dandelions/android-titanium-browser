@@ -2476,6 +2476,398 @@ def patch_tabbed_app_menu_delegate(src_dir: Path) -> None:
     path.write_text(text, encoding="utf-8")
 
 
+def unpatch_menu_button(src_dir: Path) -> None:
+    path = src_dir / MENU_BUTTON_REL
+    if not path.exists():
+        return
+
+    text = path.read_text(encoding="utf-8")
+    original = text
+
+    text = text.replace(
+        "setImageResource(R.drawable.ic_menu_white_24dp);",
+        "setImageResource(R.drawable.ic_more_vert_24dp);",
+    )
+    text = text.replace(
+        "setImageResource(org.chromium.chrome.R.drawable.ic_menu_white_24dp);",
+        "setImageResource(org.chromium.chrome.R.drawable.ic_more_vert_24dp);",
+    )
+    text = text.replace(
+        "setImageDrawable(createHeliumThreeLinesDrawable());",
+        "setImageResource(R.drawable.ic_more_vert_24dp);",
+    )
+
+    helper_marker = "    // Helium: Lemur-style 3-horizontal-lines menu icon drawable.\n"
+    helper_anchor = "    public void setOriginalBackgroundForTesting(Drawable originalBackground) {\n"
+    if helper_marker in text:
+        start_idx = text.find(helper_marker)
+        end_idx = text.find(helper_anchor, start_idx)
+        if end_idx != -1:
+            text = text[:start_idx] + text[end_idx:]
+
+    if text != original:
+        path.write_text(text, encoding="utf-8")
+
+
+def unpatch_extensions_toolbar_coordinator(src_dir: Path) -> None:
+    path = src_dir / EXT_TOOLBAR_COORD_REL
+    if not path.exists():
+        return
+
+    text = path.read_text(encoding="utf-8")
+    original = text
+
+    marker = "    /** Per-Activity opener for the Lemur-style extensions & common tools bottom sheet. */\n"
+    if marker in text:
+        start_idx = text.find(marker)
+        last_brace = text.rfind("}")
+        if last_brace != -1 and last_brace > start_idx:
+            text = text[:start_idx].rstrip(" \t\r\n") + "\n}\n"
+
+    if text != original:
+        path.write_text(text, encoding="utf-8")
+
+
+def unpatch_extensions_toolbar_coordinator_impl(src_dir: Path) -> None:
+    path = src_dir / EXT_TOOLBAR_COORD_IMPL_REL
+    if not path.exists():
+        return
+
+    text = path.read_text(encoding="utf-8")
+    original = text
+
+    # Revert shouldShowMenuIcon
+    old_should_show = """    private boolean shouldShowMenuIcon() {
+        return mExtensionsMenuCoordinator.isExtensionsMenuOpen()
+                || mShowExtensionsMenuPending
+                || (mCanShowMenuIcon && isMenuButtonPinned());
+    }"""
+    new_should_show = """    private boolean shouldShowMenuIcon() {
+        return !mIsWebApp && mCanShowMenuIcon;
+    }"""
+    if new_should_show in text:
+        text = text.replace(new_should_show, old_should_show, 1)
+
+    # Revert showExtensionsMenu
+    old_show_ext_menu = """    @Override
+    public void showExtensionsMenu() {
+        mShowExtensionsMenuPending = true;
+        updateMenuIconVisibility();
+
+        ListMenuButton extensionsMenuButton = mContainer.findViewById(R.id.extensions_menu_button);
+        assert extensionsMenuButton != null;
+
+        // Post to click after the layout pass.
+        extensionsMenuButton.post(
+                () -> {
+                    extensionsMenuButton.performClick();
+                });
+    }"""
+    new_show_ext_menu = """    @Override
+    public void showExtensionsMenu() {
+        Activity activity = mWindowAndroid.getActivity().get();
+        org.chromium.base.Callback<@Nullable View> customOpener =
+                activity != null ? CUSTOM_EXTENSIONS_MENU_OPENERS.get(activity) : null;
+        if (customOpener != null) {
+            View btn = mContainer != null ? mContainer.findViewById(R.id.extensions_menu_button) : null;
+            customOpener.onResult(btn);
+            return;
+        }
+        mShowExtensionsMenuPending = true;
+        updateMenuIconVisibility();
+
+        ListMenuButton extensionsMenuButton = mContainer.findViewById(R.id.extensions_menu_button);
+        assert extensionsMenuButton != null;
+
+        // Post to click after the layout pass.
+        extensionsMenuButton.post(
+                () -> {
+                    extensionsMenuButton.performClick();
+                });
+    }"""
+    if new_show_ext_menu in text:
+        text = text.replace(new_show_ext_menu, old_show_ext_menu, 1)
+
+    # Remove getAllExtensionActionIds and other added methods
+    marker = "    @Override\n    public String[] getAllExtensionActionIds() {"
+    end_anchor = "    private class PoppedOutActionWidthConsumer implements ToolbarWidthConsumer {"
+    if marker in text:
+        start_idx = text.find(marker)
+        end_idx = text.find(end_anchor, start_idx)
+        if end_idx != -1:
+            text = text[:start_idx] + text[end_idx:]
+
+    if text != original:
+        path.write_text(text, encoding="utf-8")
+
+
+def unpatch_extensions_menu_coordinator(src_dir: Path) -> None:
+    path = src_dir / EXT_MENU_COORD_REL
+    if not path.exists():
+        return
+
+    text = path.read_text(encoding="utf-8")
+    original = text
+
+    text = text.replace("    private boolean mSuppressNextMenuShow;\n", "")
+    text = text.replace("    private @Nullable ListMenuButton mAppMenuContextMenuButton;\n", "")
+
+    # Revert onReady
+    old_on_ready = """                        /* onReady= */ () -> {
+                            mExtensionsMenuButton.showMenu();
+                        });"""
+    new_on_ready = """                        /* onReady= */ () -> {
+                            if (mSuppressNextMenuShow) {
+                                mSuppressNextMenuShow = false;
+                                return;
+                            }
+                            mExtensionsMenuButton.showMenu();
+                        });"""
+    if new_on_ready in text:
+        text = text.replace(new_on_ready, old_on_ready, 1)
+
+    # Revert click listener block
+    custom_opener_marker = "ExtensionsToolbarCoordinator.CUSTOM_EXTENSIONS_MENU_OPENERS"
+    if custom_opener_marker in text:
+        click_anchor = "mExtensionsMenuButton.setOnClickListener(\n                (view) -> {"
+        click_start = text.find(click_anchor)
+        if click_start != -1:
+            img_drawable_str = "mExtensionsMenuButton.setImageDrawable(createHeliumFourSquaresDrawable());\n        "
+            img_pos = text.rfind(img_drawable_str, 0, click_start)
+            if img_pos != -1 and click_start - img_pos == len(img_drawable_str):
+                click_start = img_pos
+
+            dest_str = "destroyMediator();"
+            dest_pos = text.find(dest_str, click_start)
+            if dest_pos != -1:
+                was_open_str = "if (wasOpen) {\n                            return;\n                        }"
+                was_open_pos = text.find(was_open_str, dest_pos)
+                if was_open_pos != -1:
+                    end_idx = was_open_pos + len(was_open_str) + 21
+                else:
+                    end_idx = text.find("}", dest_pos) + 1
+
+                standard_click = """mExtensionsMenuButton.setOnClickListener(
+                (view) -> {
+                    if (mMediator != null) {
+                        mExtensionsMenuButton.dismiss();
+                        destroyMediator();
+                        return;
+                    }"""
+                text = text[:click_start] + standard_click + text[end_idx:]
+
+    four_squares_call = "mExtensionsMenuButton.setImageDrawable(createHeliumFourSquaresDrawable());"
+    old_update_icon = """        if (state.getIcon() != null) {
+            mExtensionsMenuButton.setImageBitmap(state.getIcon());
+        } else {
+            // Fallback just in case.
+            int iconResId = R.drawable.chrome_extension;
+            mExtensionsMenuButton.setImageResource(iconResId);
+        }"""
+    if four_squares_call in text:
+        text = text.replace("        " + four_squares_call, old_update_icon)
+
+    helper_marker = "    public void executeActionFromAppMenu("
+    helper_anchor = "    @VisibleForTesting\n    View getContentView() {"
+    if helper_marker in text:
+        start_idx = text.find(helper_marker)
+        end_idx = text.find(helper_anchor, start_idx)
+        if end_idx != -1:
+            text = text[:start_idx] + text[end_idx:]
+
+    if text != original:
+        path.write_text(text, encoding="utf-8")
+
+
+def unpatch_extensions_menu_mediator(src_dir: Path) -> None:
+    path = src_dir / EXT_MENU_MEDIATOR_REL
+    if not path.exists():
+        return
+
+    text = path.read_text(encoding="utf-8")
+    original = text
+
+    text = text.replace("    private @Nullable ListMenuButton mPendingFallbackContextMenuButton;\n", "")
+
+    new_ctx_click = """    private void onContextMenuButtonClicked(ListMenuButton buttonView, String actionId) {
+        WebContents webContents = getCurrentWebContents();
+        if (webContents == null) {
+            Tab currentTab = mCurrentTabSupplier.get();
+            webContents = currentTab != null ? currentTab.getWebContents() : null;
+        }
+        if (webContents == null) {
+            return;
+        }"""
+    old_ctx_click = """    private void onContextMenuButtonClicked(ListMenuButton buttonView, String actionId) {
+        Tab currentTab = mCurrentTabSupplier.get();
+        if (currentTab == null) {
+            return;
+        }
+
+        WebContents webContents = currentTab.getWebContents();
+        if (webContents == null) {
+            return;
+        }"""
+    if new_ctx_click in text:
+        text = text.replace(new_ctx_click, old_ctx_click, 1)
+
+    new_find_ctx = """    private @Nullable ListMenuButton findContextMenuButtonForPendingAction() {
+        View current = mPendingActionAnchorView;
+        while (current != null) {
+            if (current instanceof ListMenuButton) {
+                return (ListMenuButton) current;
+            }
+            View button = current.findViewById(R.id.extensions_menu_item_context_menu);
+            if (button instanceof ListMenuButton) {
+                return (ListMenuButton) button;
+            }
+            if (!(current.getParent() instanceof View)) {
+                return null;
+            }
+            current = (View) current.getParent();
+        }
+        return null;
+    }"""
+    old_find_ctx = """    private @Nullable ListMenuButton findContextMenuButtonForPendingAction() {
+        View current = mPendingActionAnchorView;
+        while (current != null) {
+            View button = current.findViewById(R.id.extensions_menu_item_context_menu);
+            if (button instanceof ListMenuButton) {
+                return (ListMenuButton) button;
+            }
+            if (!(current.getParent() instanceof View)) {
+                return null;
+            }
+            current = (View) current.getParent();
+        }
+        return null;
+    }"""
+    if new_find_ctx in text:
+        text = text.replace(new_find_ctx, old_find_ctx, 1)
+
+    if text != original:
+        path.write_text(text, encoding="utf-8")
+
+
+def unpatch_app_menu_properties_delegate(src_dir: Path) -> None:
+    path = src_dir / DELEGATE_INTERFACE_REL
+    if not path.exists():
+        return
+
+    text = path.read_text(encoding="utf-8")
+    original = text
+
+    start_marker = "\n    /**\n     * Attempts to show a custom Lemur-style bottom popup app menu"
+    alt_marker = "\n    default boolean showCustomAppMenu("
+    start_idx = text.find(start_marker)
+    if start_idx == -1:
+        start_idx = text.find(alt_marker)
+    if start_idx == -1:
+        start_marker = "    /**\n     * Attempts to show a custom Lemur-style bottom popup app menu"
+        alt_marker = "    default boolean showCustomAppMenu("
+        start_idx = text.find(start_marker)
+        if start_idx == -1:
+            start_idx = text.find(alt_marker)
+
+    if start_idx != -1:
+        end_marker = "    default void hideCustomAppMenu() {}\n"
+        end_idx = text.find(end_marker, start_idx)
+        if end_idx != -1:
+            text = text[:start_idx] + text[end_idx + len(end_marker):]
+        else:
+            last_brace = text.rfind("}")
+            if last_brace != -1:
+                text = text[:start_idx].rstrip(" \t\r\n") + "\n}\n"
+
+    if text != original:
+        path.write_text(text, encoding="utf-8")
+
+
+def unpatch_app_menu_handler_impl(src_dir: Path) -> None:
+    path = src_dir / HANDLER_IMPL_REL
+    if not path.exists():
+        return
+
+    text = path.read_text(encoding="utf-8")
+    original = text
+
+    text = text.replace("    private boolean mForceNativeMenuOnce;\n", "")
+    text = text.replace("        final View customMenuAnchorView = anchorView;\n", "")
+    text = text.replace("        if (mDelegate.isCustomAppMenuShowing()) return null;\n", "")
+    text = text.replace(" || mDelegate.isCustomAppMenuShowing()", "")
+    text = text.replace("\n        mDelegate.hideCustomAppMenu();", "")
+
+    show_custom_marker = "if (!mForceNativeMenuOnce"
+    if show_custom_marker in text:
+        start_idx = text.find(show_custom_marker)
+        target_str = "return true;\n        }"
+        end_idx = text.find(target_str, start_idx)
+        if end_idx != -1:
+            end_idx += len(target_str)
+            prev_nl = text.rfind("\n", 0, start_idx)
+            if prev_nl != -1 and text[prev_nl:start_idx].strip() == "":
+                start_idx = prev_nl + 1
+            next_nl = text.find("\n", end_idx)
+            if next_nl != -1:
+                end_idx = next_nl + 1
+            text = text[:start_idx] + text[end_idx:]
+
+    if text != original:
+        path.write_text(text, encoding="utf-8")
+
+
+def unpatch_tabbed_app_menu_delegate(src_dir: Path) -> None:
+    path = src_dir / TABBED_DELEGATE_REL
+    if not path.exists():
+        return
+
+    text = path.read_text(encoding="utf-8")
+    original = text
+
+    # Remove constructor hook
+    text = re.sub(r"[ \t]*registerLemurExtensionsMenuOpener\(\);\r?\n", "", text)
+
+    # Remove destroy hook
+    text = re.sub(r"[ \t]*hideCustomAppMenu\(\);\r?\n", "", text)
+
+    # Remove Lemur methods
+    start_marker = "    // Helium: Lemur Browser-style rounded bottom popup menu panel.\n"
+    if start_marker in text:
+        start_idx = text.find(start_marker)
+        method_anchor = "    private ListItem buildSettingsItem() {\n"
+        end_idx = text.find(method_anchor, start_idx)
+        if end_idx != -1:
+            text = text[:start_idx] + text[end_idx:]
+        else:
+            last_brace = text.rfind("}")
+            if last_brace != -1:
+                text = text[:start_idx] + "\n}\n"
+
+    # Remove Lemur imports (keep NightModeUtils and ThemeType if Appearance menu is present)
+    has_appearance = "buildAppearanceItem" in text
+    for imp in TABBED_IMPORTS:
+        if "DeviceFormFactor" in imp:
+            continue
+        if has_appearance and ("NightModeUtils" in imp or "ThemeType" in imp):
+            continue
+        text = text.replace(imp, "")
+
+    if text != original:
+        path.write_text(text, encoding="utf-8")
+
+
+def unpatch_lemur_app_menu(src_dir: Path) -> None:
+    """Removes all Lemur menu modifications to restore non-Lemur (main branch) baseline."""
+    unpatch_menu_button(src_dir)
+    unpatch_extensions_toolbar_coordinator(src_dir)
+    unpatch_extensions_toolbar_coordinator_impl(src_dir)
+    unpatch_extensions_menu_coordinator(src_dir)
+    unpatch_extensions_menu_mediator(src_dir)
+    unpatch_app_menu_properties_delegate(src_dir)
+    unpatch_app_menu_handler_impl(src_dir)
+    unpatch_tabbed_app_menu_delegate(src_dir)
+
+
 def is_lemur_branch(src_dir: Path) -> bool:
     if os.environ.get("LEMUR_APP_MENU") == "1":
         return True
@@ -2483,10 +2875,17 @@ def is_lemur_branch(src_dir: Path) -> bool:
         return False
     try:
         import subprocess
-        for cwd in [str(src_dir), os.path.dirname(os.path.abspath(__file__)), "."]:
+        candidates = [
+            os.path.dirname(os.path.abspath(__file__)),
+            ".",
+            str(src_dir),
+        ]
+        for cwd in candidates:
             try:
                 res = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True, text=True, cwd=cwd)
                 branch = res.stdout.strip()
+                if branch in ("", "HEAD"):
+                    continue
                 if branch in ("lemur-style-app-menu", "lemur", "old-android", "old-version") or "old-" in branch:
                     return True
                 if branch in ("main",):
@@ -2504,7 +2903,8 @@ def main() -> None:
 
     src_dir = Path(sys.argv[1]).resolve()
     if not is_lemur_branch(src_dir):
-        print(f"Not lemur-style-app-menu branch and LEMUR_APP_MENU is not enabled. Skipping Lemur menu patch.")
+        print(f"Not lemur-style-app-menu branch and LEMUR_APP_MENU is not enabled. Restoring non-Lemur menu baseline.")
+        unpatch_lemur_app_menu(src_dir)
         return
 
     patch_menu_button(src_dir)
