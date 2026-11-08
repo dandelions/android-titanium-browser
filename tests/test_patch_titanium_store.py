@@ -218,6 +218,44 @@ bool IsExtensionDownload(const download::DownloadItem& download_item) {
         self.assertFalse(PATCH.patch_source_tree(self.root))
         self.assertEqual(patched, api_path.read_text(encoding="utf-8"))
 
+    def test_normalizes_android_version_info_and_webstore_version(self):
+        version_info_path = self.root / PATCH.VERSION_INFO
+        version_info_path.parent.mkdir(parents=True, exist_ok=True)
+        version_info_path.write_text(
+            'namespace version_info {\n'
+            '#if BUILDFLAG(IS_ANDROID)\n'
+            'std::string_view GetVersionNumber() {\n'
+            '  return base::android::apk_info::package_version_name();\n'
+            '}\n'
+            '#endif\n'
+            '}\n',
+            encoding="utf-8",
+        )
+        ws_path = self.root / PATCH.WEBSTORE_PRIVATE_PATHS[0]
+        ws_path.parent.mkdir(parents=True, exist_ok=True)
+        ws_path.write_text(
+            'WebstorePrivateGetFullChromeVersionFunction::Run() {\n'
+            '  std::string_view version = version_info::GetVersionNumber();\n'
+            '  GetFullChromeVersion::Results::Info info;\n'
+            '  info.version_number = std::string(version);\n'
+            '  return RespondNow(ArgumentList(GetFullChromeVersion::Results::Create(info)));\n'
+            '}\n',
+            encoding="utf-8",
+        )
+
+        self.assertTrue(PATCH.patch_source_tree(self.root))
+        patched_vi = version_info_path.read_text(encoding="utf-8")
+        self.assertIn("dot_count == 4", patched_vi)
+        self.assertIn("base::NoDestructor<std::string>", patched_vi)
+
+        patched_ws = ws_path.read_text(encoding="utf-8")
+        self.assertIn("trim_pos", patched_ws)
+        self.assertIn("dot_count == 4", patched_ws)
+
+        self.assertFalse(PATCH.patch_source_tree(self.root))
+        self.assertEqual(patched_vi, version_info_path.read_text(encoding="utf-8"))
+        self.assertEqual(patched_ws, ws_path.read_text(encoding="utf-8"))
+
 
 if __name__ == "__main__":
     unittest.main()
