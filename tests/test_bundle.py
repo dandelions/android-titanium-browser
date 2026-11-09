@@ -1,3 +1,4 @@
+import http.server
 import io
 import json
 import pathlib
@@ -5,6 +6,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 import zipfile
 
@@ -101,6 +103,50 @@ class BundleAliasTest(unittest.TestCase):
             build = (output_dir / "BUILD.gn").read_text()
             self.assertEqual(build.count('"titanium.crx",'), 1)
             self.assertEqual(build.count('"extensions/titanium.crx",'), 1)
+
+    def test_reuses_valid_cached_crx_on_http_504_failure(self):
+        class TimeoutHandler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(504)
+                self.end_headers()
+                self.wfile.write(b"Gateway Time-out")
+
+            def log_message(self, format, *args):
+                pass
+
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), TimeoutHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(server.shutdown)
+        self.addCleanup(server.server_close)
+
+        url = f"http://127.0.0.1:{server.server_port}/titanium.crx"
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            output_dir = root / "dist"
+            source_crx = root / "source.crx"
+            key_bytes = bytes(range(16))
+            make_crx(source_crx, key_bytes, "0.0.1")
+
+            self.run_bundle(output_dir, "titanium", source_crx)
+            cached_bytes = (output_dir / "titanium.crx").read_bytes()
+
+            result = subprocess.run(
+                [sys.executable, str(BUNDLE_SCRIPT), str(output_dir), "titanium", url],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            self.assertIn("reusing cached valid titanium.crx", result.stderr)
+            self.assertEqual((output_dir / "titanium.crx").read_bytes(), cached_bytes)
+
+            missing_dir = root / "missing_dist"
+            failed = subprocess.run(
+                [sys.executable, str(BUNDLE_SCRIPT), str(missing_dir), "titanium", url],
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(failed.returncode, 0)
 
 
 if __name__ == "__main__":
