@@ -1287,14 +1287,23 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
                 accentColor,
                 rippleColor,
                 v -> {
-                    int targetTheme = isDarkThemeActive ? ThemeType.LIGHT : ThemeType.DARK;
-                    int menuId =
-                            isDarkThemeActive
-                                    ? R.id.appearance_light_menu_id
-                                    : R.id.appearance_dark_menu_id;
-                    ChromeSharedPreferences.getInstance()
-                            .writeInt(ChromePreferenceKeys.UI_THEME_SETTING, targetTheme);
-                    triggerMenuAction(dialog, menuId);
+                    final int targetTheme = isDarkThemeActive ? ThemeType.LIGHT : ThemeType.DARK;
+                    if (dialog.isShowing()) {
+                        dialog.dismiss();
+                    }
+                    new android.os.Handler(android.os.Looper.getMainLooper())
+                            .post(
+                                    () -> {
+                                        Activity currentAct = ContextUtils.activityFromContext(mContext);
+                                        if (currentAct == null && mContext instanceof Activity) {
+                                            currentAct = (Activity) mContext;
+                                        }
+                                        if (currentAct != null && (currentAct.isFinishing() || currentAct.isDestroyed())) {
+                                            return;
+                                        }
+                                        ChromeSharedPreferences.getInstance()
+                                                .writeInt(ChromePreferenceKeys.UI_THEME_SETTING, targetTheme);
+                                    });
                 });
 
         addLemurMainMenuTile(
@@ -1438,11 +1447,19 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
 
         final @Nullable View popupAnchorView = anchorView != null ? anchorView : mDecorView;
         final boolean isIncognito = isIncognitoShowing();
+        final int extSavedTheme =
+                ChromeSharedPreferences.getInstance()
+                        .readInt(
+                                ChromePreferenceKeys.UI_THEME_SETTING,
+                                ThemeType.SYSTEM_DEFAULT);
+        final boolean extIsSystemNight =
+                (mContext.getResources().getConfiguration().uiMode
+                                & Configuration.UI_MODE_NIGHT_MASK)
+                        == Configuration.UI_MODE_NIGHT_YES;
         final boolean isNight =
                 isIncognito
-                        || ((mContext.getResources().getConfiguration().uiMode
-                                        & Configuration.UI_MODE_NIGHT_MASK)
-                                == Configuration.UI_MODE_NIGHT_YES);
+                        || extSavedTheme == ThemeType.DARK
+                        || (extSavedTheme == ThemeType.SYSTEM_DEFAULT && extIsSystemNight);
 
         final int sheetBgColor = isNight ? 0xFF25262B : 0xFFF4F6FA;
         final int tileSurfaceColor = isNight ? 0xFF3A3B40 : 0xFFFFFFFF;

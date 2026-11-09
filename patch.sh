@@ -812,8 +812,12 @@ handler = """        if (id == R.id.appearance_system_default_menu_id
             } else if (id == R.id.appearance_dark_menu_id) {
                 theme = ThemeType.DARK;
             }
-            ChromeSharedPreferences.getInstance()
-                    .writeInt(ChromePreferenceKeys.UI_THEME_SETTING, theme);
+            final int selectedTheme = theme;
+            mHandler.post(() -> {
+                if (isActivityFinishingOrDestroyed()) return;
+                ChromeSharedPreferences.getInstance()
+                        .writeInt(ChromePreferenceKeys.UI_THEME_SETTING, selectedTheme);
+            });
             RecordUserAction.record("MobileMenuAppearanceTheme");
             return true;
         }
@@ -2070,6 +2074,40 @@ sed -i 's|if (isTabNtp \&\& !currentTab.isNativePage()) {|if (isTabNtp \&\& !cur
 else
 sed -i 's|if (isTabNtp \&\& !currentTab.isNativePage() \&\& !isTabWebUiNtp) {|if (isTabNtp \&\& !currentTab.isNativePage() \&\& !isTabWebUiNtp \&\& !UrlOverrideUtils.isNtpOverrideEnabled()) {|' chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
 fi
+python3 - "chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java" <<'PYCODE'
+from pathlib import Path
+import sys
+
+cta = Path(sys.argv[1])
+text = cta.read_text(encoding="utf-8")
+old_block = """                if (isFromRecreating()) {
+                    getCompositorViewHolderSupplier()
+                            .addSyncObserverAndCallIfNonNull(
+                                    cvh ->
+                                            cvh.addDidSwapBuffersCallback(
+                                                    mAppLaunchDrawBlocker
+                                                            ::onActiveTabAvailableForRecreation));
+                } else {
+                    mAppLaunchDrawBlocker.onActiveTabAvailableForRecreation();
+                }"""
+new_block = """                if (isFromRecreating()) {
+                    getCompositorViewHolderSupplier()
+                            .addSyncObserverAndCallIfNonNull(
+                                    cvh -> {
+                                        cvh.addDidSwapBuffersCallback(
+                                                mAppLaunchDrawBlocker
+                                                        ::onActiveTabAvailableForRecreation);
+                                        cvh.requestRender();
+                                    });
+                    mHandler.postDelayed(
+                            mAppLaunchDrawBlocker::onActiveTabAvailableForRecreation, 350);
+                } else {
+                    mAppLaunchDrawBlocker.onActiveTabAvailableForRecreation();
+                }"""
+if old_block in text:
+    text = text.replace(old_block, new_block, 1)
+    cta.write_text(text, encoding="utf-8")
+PYCODE
 
 # ext: app
 sed -i 's|^  "app": {$|&\n    "platforms": ["chromeos", "linux", "mac", "win"],|' chrome/common/extensions/api/_api_features.json

@@ -40,6 +40,23 @@ class OldAndroidFeatureConfigurationTest(unittest.TestCase):
                     text,
                 )
 
+    def test_appearance_theme_switch_is_posted_asynchronously(self):
+        for name in ("patch.sh", "hotfix_existing_src.sh"):
+            with self.subTest(script=name):
+                text = (ROOT / name).read_text()
+                self.assertIn("mHandler.post(() -> {", text)
+                self.assertIn("ChromePreferenceKeys.UI_THEME_SETTING, selectedTheme", text)
+
+    def test_recreation_draw_blocker_has_render_request_and_safety_fallback(self):
+        for name in ("patch.sh", "hotfix_existing_src.sh"):
+            with self.subTest(script=name):
+                text = (ROOT / name).read_text()
+                self.assertIn("cvh.requestRender();", text)
+                self.assertIn(
+                    "mHandler.postDelayed(\n                            mAppLaunchDrawBlocker::onActiveTabAvailableForRecreation, 350);",
+                    text,
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -543,8 +543,12 @@ handler = """        if (id == R.id.appearance_system_default_menu_id
             } else if (id == R.id.appearance_dark_menu_id) {
                 theme = ThemeType.DARK;
             }
-            ChromeSharedPreferences.getInstance()
-                    .writeInt(ChromePreferenceKeys.UI_THEME_SETTING, theme);
+            final int selectedTheme = theme;
+            mHandler.post(() -> {
+                if (isActivityFinishingOrDestroyed()) return;
+                ChromeSharedPreferences.getInstance()
+                        .writeInt(ChromePreferenceKeys.UI_THEME_SETTING, selectedTheme);
+            });
             RecordUserAction.record("MobileMenuAppearanceTheme");
             return true;
         }
@@ -3347,6 +3351,40 @@ perl -0pi -e 's|  info\.in_developer_mode = true;|  info.in_developer_mode = !in
 
 # Startup stability: do not purge renderer caches automatically on every start.
 sed -i '/clearVolatileRendererCaches();/d' "$CTA"
+python3 - "$CTA" <<'PYCODE'
+from pathlib import Path
+import sys
+
+cta = Path(sys.argv[1])
+text = cta.read_text(encoding="utf-8")
+old_block = """                if (isFromRecreating()) {
+                    getCompositorViewHolderSupplier()
+                            .addSyncObserverAndCallIfNonNull(
+                                    cvh ->
+                                            cvh.addDidSwapBuffersCallback(
+                                                    mAppLaunchDrawBlocker
+                                                            ::onActiveTabAvailableForRecreation));
+                } else {
+                    mAppLaunchDrawBlocker.onActiveTabAvailableForRecreation();
+                }"""
+new_block = """                if (isFromRecreating()) {
+                    getCompositorViewHolderSupplier()
+                            .addSyncObserverAndCallIfNonNull(
+                                    cvh -> {
+                                        cvh.addDidSwapBuffersCallback(
+                                                mAppLaunchDrawBlocker
+                                                        ::onActiveTabAvailableForRecreation);
+                                        cvh.requestRender();
+                                    });
+                    mHandler.postDelayed(
+                            mAppLaunchDrawBlocker::onActiveTabAvailableForRecreation, 350);
+                } else {
+                    mAppLaunchDrawBlocker.onActiveTabAvailableForRecreation();
+                }"""
+if old_block in text:
+    text = text.replace(old_block, new_block, 1)
+    cta.write_text(text, encoding="utf-8")
+PYCODE
 
 # Startup recovery: a previously restored chrome-extension:// tab can point to
 # a local extension path that no longer exists. Restore those top-level entries
