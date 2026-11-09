@@ -503,6 +503,25 @@ def clean_ui_mode_from_standard_branches(src_dir: Path) -> None:
     dff_path = src_dir / DEVICE_FORM_FACTOR_REL
     if dff_path.exists():
         text = dff_path.read_text(encoding="utf-8")
+        required_decls = (
+            "public static final int MINIMUM_TABLET_WIDTH_DP",
+            "SCREEN_BUCKET_TABLET = 2",
+            "SCREEN_BUCKET_LARGE_TABLET = 3",
+            "sIsTabletForTesting;",
+        )
+        if (
+            any(decl not in text for decl in required_decls)
+            or text.count("markUiModeStartupSuccess()") > 1
+            or text.count("UI_MODE_AUTO = 0;") > 1
+            or "editor.commit();" in text
+        ) and (src_dir / ".git").exists():
+            import subprocess
+            subprocess.run(
+                ["git", "checkout", "--", DEVICE_FORM_FACTOR_REL],
+                cwd=src_dir,
+                check=True,
+            )
+            text = dff_path.read_text(encoding="utf-8")
         removed_block = False
         begin_marker = "    // BEGIN HELIUM UI MODE\n"
         end_marker = "    // END HELIUM UI MODE\n"
