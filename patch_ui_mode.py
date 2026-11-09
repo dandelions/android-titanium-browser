@@ -330,19 +330,15 @@ def patch_chrome_activity(src_dir: Path) -> None:
     text = text.replace(startup_success_statement, "")
     if "DeviceFormFactor.markUiModeStartupSuccess();" not in text:
         native_start = text.find("    public void finishNativeInitialization() {")
-        completion_anchor = """    }
-
-    /**
-     * @return Whether native initialization has been completed for this activity.
-     */
-    public boolean didFinishNativeInitialization()"""
+        completion_anchor = "        super.finishNativeInitialization();\n"
         completion_pos = text.find(completion_anchor, native_start)
         if native_start < 0 or completion_pos < 0:
             raise SystemExit(f"finishNativeInitialization completion anchor not found in {path}")
         text = (
-            text[:completion_pos]
+            text[: completion_pos + len(completion_anchor)]
+            + "\n"
             + startup_success_statement
-            + text[completion_pos:]
+            + text[completion_pos + len(completion_anchor) :]
         )
 
     path.write_text(text, encoding="utf-8")
