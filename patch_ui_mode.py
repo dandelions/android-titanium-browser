@@ -65,7 +65,17 @@ def patch_device_form_factor(src_dir: Path) -> None:
         return
 
     text = path.read_text(encoding="utf-8")
-    if "MINIMUM_TABLET_WIDTH_DP" not in text and (src_dir / ".git").exists():
+    required_decls = (
+        "public static final int MINIMUM_TABLET_WIDTH_DP",
+        "SCREEN_BUCKET_TABLET = 2",
+        "SCREEN_BUCKET_LARGE_TABLET = 3",
+        "sIsTabletForTesting;",
+    )
+    if (
+        any(decl not in text for decl in required_decls)
+        or text.count("markUiModeStartupSuccess()") > 1
+        or text.count("UI_MODE_AUTO = 0;") > 1
+    ) and (src_dir / ".git").exists():
         import subprocess
         subprocess.run(
             ["git", "checkout", "--", DEVICE_FORM_FACTOR_REL],
@@ -181,8 +191,12 @@ def patch_device_form_factor(src_dir: Path) -> None:
     else:
         mode_start = text.find("    public static final int UI_MODE_AUTO = 0;")
         if mode_start >= 0:
+            static_start = text.find("    static {\n", mode_start)
             static_end_marker = "        } catch (Throwable ignored) {}\n    }\n"
-            static_end = text.find(static_end_marker, mode_start)
+            static_end = text.find(
+                static_end_marker,
+                static_start if static_start >= 0 else mode_start,
+            )
             if static_end < 0:
                 raise SystemExit(f"DeviceFormFactor UI mode block end not found in {path}")
             block_end = static_end + len(static_end_marker)
@@ -502,8 +516,12 @@ def clean_ui_mode_from_standard_branches(src_dir: Path) -> None:
         else:
             mode_start = text.find("    public static final int UI_MODE_AUTO = 0;")
             if mode_start >= 0:
+                static_start = text.find("    static {\n", mode_start)
                 static_end_marker = "        } catch (Throwable ignored) {}\n    }\n"
-                static_end = text.find(static_end_marker, mode_start)
+                static_end = text.find(
+                    static_end_marker,
+                    static_start if static_start >= 0 else mode_start,
+                )
                 if static_end < 0:
                     raise SystemExit(f"DeviceFormFactor UI mode block end not found in {dff_path}")
                 block_end = static_end + len(static_end_marker)

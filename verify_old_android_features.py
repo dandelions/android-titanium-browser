@@ -75,15 +75,19 @@ def verify(root):
     if dff_path.is_file():
         dff = dff_path.read_text(encoding="utf-8")
         for required_symbol in (
-            "MINIMUM_TABLET_WIDTH_DP",
-            "SCREEN_BUCKET_TABLET",
-            "SCREEN_BUCKET_LARGE_TABLET",
-            "sIsTabletForTesting",
+            "public static final int MINIMUM_TABLET_WIDTH_DP",
+            "SCREEN_BUCKET_TABLET = 2",
+            "SCREEN_BUCKET_LARGE_TABLET = 3",
+            "sIsTabletForTesting;",
         ):
             if required_symbol not in dff:
                 raise SystemExit(
                     f"DeviceFormFactor is missing Chromium symbol {required_symbol}: {dff_path}"
                 )
+        if dff.count("markUiModeStartupSuccess()") > 1:
+            raise SystemExit(
+                f"DeviceFormFactor contains duplicate UI mode methods: {dff_path}"
+            )
 
     print("Verified old-android extension management and bottom address bar patches")
 

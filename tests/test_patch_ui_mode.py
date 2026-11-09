@@ -60,17 +60,29 @@ class PatchUiModeTest(unittest.TestCase):
             second = dff.read_text(encoding="utf-8")
 
             self.assertEqual(first, second)
+            self.assertEqual(second.count("markUiModeStartupSuccess()"), 1)
             for symbol in (
                 "UI_MODE_AUTO",
                 "markUiModeStartupSuccess",
                 'public static final String DESKTOP = "Desktop";',
-                "MINIMUM_TABLET_WIDTH_DP",
-                "SCREEN_BUCKET_TABLET",
-                "SCREEN_BUCKET_LARGE_TABLET",
-                "sIsTabletForTesting",
+                "public static final int MINIMUM_TABLET_WIDTH_DP",
+                "SCREEN_BUCKET_TABLET = 2",
+                "SCREEN_BUCKET_LARGE_TABLET = 3",
+                "sIsTabletForTesting;",
                 "@CalledByNative",
             ):
                 self.assertIn(symbol, second)
+
+            # Simulate legacy unmarked block and verify upgrade does not duplicate methods or drop constants.
+            unmarked = (
+                second.replace("    // BEGIN HELIUM UI MODE\n", "")
+                .replace("    // END HELIUM UI MODE\n", "")
+            )
+            dff.write_text(unmarked, encoding="utf-8")
+            patch_device_form_factor(root)
+            upgraded = dff.read_text(encoding="utf-8")
+            self.assertEqual(upgraded, second)
+            self.assertEqual(upgraded.count("markUiModeStartupSuccess()"), 1)
 
             clean_ui_mode_from_standard_branches(root)
             cleaned = dff.read_text(encoding="utf-8")

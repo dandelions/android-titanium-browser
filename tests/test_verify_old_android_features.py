@@ -94,7 +94,13 @@ class VerifyOldAndroidFeaturesTest(unittest.TestCase):
             "chrome/android/java/src/org/chromium/chrome/browser/ntp/NewTabPageCoordinator.java": "AddressBarPreference.isToolbarConfiguredToShowOnTop()",
             "chrome/browser/ui/android/toolbar/java/res/layout/toolbar_phone.xml": '<ViewStub android:id="@+id/extensions_toolbar_container_stub"/>',
             "chrome/android/java/src/org/chromium/chrome/browser/toolbar/ToolbarManager.java": "mToolbarLayout,",
-            "ui/android/java/src/org/chromium/ui/base/DeviceFormFactor.java": "public class DeviceFormFactor { public static boolean isTablet() { return false; } }",
+            "ui/android/java/src/org/chromium/ui/base/DeviceFormFactor.java": (
+                "public class DeviceFormFactor {\n"
+                "  public static int getMinimumTabletWidthPx(DisplayAndroid d) {\n"
+                "    return DisplayUtil.dpToPx(d, DeviceFormFactor.MINIMUM_TABLET_WIDTH_DP);\n"
+                "  }\n"
+                "}"
+            ),
         }
         with tempfile.TemporaryDirectory() as temp:
             root = pathlib.Path(temp)
