@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 cd "$SCRIPT_DIR"
 
-DEFAULT_PROXY="${BUILD_PROXY:-${https_proxy:-${http_proxy:-${HTTPS_PROXY:-${HTTP_PROXY:-${ALL_PROXY:-${all_proxy:-http://192.168.2.1:37896}}}}}}}"
+DEFAULT_PROXY="${BUILD_PROXY:-${https_proxy:-${http_proxy:-${HTTPS_PROXY:-${HTTP_PROXY:-http://192.168.2.1:37896}}}}}"
 CAR_COMPAT="${CAR_COMPAT:-0}"
 BUILD_OLD_ANDROID="${BUILD_OLD_ANDROID:-1}"
 BUILD_ARM="${BUILD_ARM:-1}"
@@ -19,7 +19,6 @@ SKIP_IF_EXISTS="${SKIP_IF_EXISTS:-1}"
 FORCE_REBUILD="${FORCE_REBUILD:-0}"
 STRICT_COMMIT_MATCH="${STRICT_COMMIT_MATCH:-0}"
 ENABLE_V2_SIGNING="${ENABLE_V2_SIGNING:-1}"
-REUSE_BASE_APK="${REUSE_BASE_APK:-0}"
 
 # 导出代理环境变量，供后续 git / gh / curl 等工具使用
 export HTTP_PROXY="$DEFAULT_PROXY"
@@ -98,16 +97,6 @@ can_use_fast_local_build() {
         return 1
     fi
 
-    # 如果存在残留的 rebase/am 状态，必须进行完整源码重置，不能启用增量快速编译
-    if [ -d "$chromium_src_dir/.git/rebase-apply" ] || [ -d "$chromium_src_dir/.git/rebase-merge" ]; then
-        return 1
-    fi
-
-    # 必须确保基础 Vanadium 扩展文件存在，否则说明补丁未打完，不能启用增量快速编译
-    if [ ! -f "$chromium_src_dir/helium/chromium_src/chrome/browser/language/android/java/src/org/chromium/chrome/browser/language/settings/LanguageSettingsExt.java" ]; then
-        return 1
-    fi
-
     if [ ! -f "$version_file" ]; then
         return 1
     fi
@@ -144,43 +133,14 @@ get_effective_fast_local_build() {
     fi
 }
 
-get_branch_version() {
-    local branch="$1"
-    local v_commit=""
-    if [ "$branch" = "old-android" ] || [ "$branch" = "origin/old-android" ]; then
-        # old-android 车机兼容分支跟随 main 分支的最新 Vanadium 基线版本
-        v_commit="$(git ls-tree origin/main vanadium 2>/dev/null | awk '{print $3}' || true)"
-        if [ -z "$v_commit" ]; then
-            v_commit="$(git ls-tree main vanadium 2>/dev/null | awk '{print $3}' || true)"
-        fi
-    fi
-    if [ -z "$v_commit" ]; then
-        v_commit="$(git ls-tree "$branch" vanadium 2>/dev/null | awk '{print $3}' || true)"
-    fi
-    if [ -z "$v_commit" ]; then
-        v_commit="$(git ls-tree "origin/$branch" vanadium 2>/dev/null | awk '{print $3}' || true)"
-    fi
-    if [ -n "$v_commit" ] && [ -d "$SCRIPT_DIR/vanadium" ]; then
-        local ver
-        ver="$(git -C "$SCRIPT_DIR/vanadium" show "${v_commit}:args.gn" 2>/dev/null | grep -m1 -o '[0-9]\+\(\.[0-9]\+\)\{3\}' || true)"
-        if [ -n "$ver" ]; then
-            echo "$ver"
-            return 0
-        fi
-    fi
-    grep -m1 -o '[0-9]\+\(\.[0-9]\+\)\{3\}' "$SCRIPT_DIR/vanadium/args.gn" 2>/dev/null || echo "$VERSION"
-}
-
 get_branch_prefix() {
     local branch="$1"
-    local branch_ver
-    branch_ver="$(get_branch_version "$branch")"
     if [ "$branch" = "main" ]; then
-        echo "$branch_ver"
+        echo "$VERSION"
     else
         local branch_tag
         branch_tag="$(printf '%s' "$branch" | tr -c 'A-Za-z0-9._-' '-' | sed 's/^-*//; s/-*$//')"
-        echo "${branch_ver}-${branch_tag}"
+        echo "${VERSION}-${branch_tag}"
     fi
 }
 
@@ -205,36 +165,24 @@ check_branch_artifacts() {
         return 1
     fi
 
-    # 仅针对 old-android 分支检查既有产物是否确实具备 V2 签名与正确 SDK 版本（minSdk=24, targetSdk=34）
+    # 仅针对 old-android 分支检查既有产物是否确实具备 V2 签名；若缺失则强制触发重新构建签名
     if [ "$branch" = "old-android" ]; then
         local apksigner_bin
         apksigner_bin=$(find "$SCRIPT_DIR/chromium/src/third_party/android_sdk" -name apksigner 2>/dev/null | sort | tail -n 1 || true)
-        local aapt_bin
-        aapt_bin=$(find "$SCRIPT_DIR/chromium/src/third_party/android_sdk" -name aapt -o -name aapt2 2>/dev/null | sort | tail -n 1 || true)
-        for apk_check in "$release_dir/${prefix}-arm64-v8a.apk" "$release_dir/${prefix}-armeabi-v7a.apk"; do
-            if [ -s "$apk_check" ]; then
-                if [ -n "$apksigner_bin" ] && [ -x "$apksigner_bin" ]; then
-                    if ! "$apksigner_bin" verify --verbose "$apk_check" 2>&1 | grep -q "Verified using v2 scheme (APK Signature Scheme v2): true"; then
-                        echo "Notice: Existing $(basename "$apk_check") is missing V2 signature. Invalidating cache to trigger signing."
-                        return 1
-                    fi
-                fi
-                if [ -n "$aapt_bin" ] && [ -x "$aapt_bin" ]; then
-                    local dump_info
-                    dump_info="$("$aapt_bin" dump badging "$apk_check" 2>/dev/null || true)"
-                    if [ -n "$dump_info" ]; then
-                        if echo "$dump_info" | grep -qE "minSdkVersion:'[0-9]+'" && ! echo "$dump_info" | grep -qE "minSdkVersion:'(24|28)'"; then
-                            echo "Notice: Existing $(basename "$apk_check") minSdkVersion is not 24 or 28. Invalidating cache to trigger signing."
-                            return 1
-                        fi
-                        if echo "$dump_info" | grep -qE "targetSdkVersion:'[0-9]+'" && ! echo "$dump_info" | grep -q "targetSdkVersion:'34'"; then
-                            echo "Notice: Existing $(basename "$apk_check") targetSdkVersion is not 34. Invalidating cache to trigger signing."
-                            return 1
-                        fi
-                    fi
+        if [ -n "$apksigner_bin" ] && [ -x "$apksigner_bin" ]; then
+            if [ "$BUILD_ARM64" = "1" ] && [ -s "$release_dir/${prefix}-arm64-v8a.apk" ]; then
+                if ! "$apksigner_bin" verify --verbose "$release_dir/${prefix}-arm64-v8a.apk" 2>&1 | grep -q "Verified using v2 scheme (APK Signature Scheme v2): true"; then
+                    echo "Notice: Existing ${prefix}-arm64-v8a.apk is missing V2 signature. Invalidating cache to trigger signing."
+                    return 1
                 fi
             fi
-        done
+            if [ "$BUILD_ARM" = "1" ] && [ -s "$release_dir/${prefix}-armeabi-v7a.apk" ]; then
+                if ! "$apksigner_bin" verify --verbose "$release_dir/${prefix}-armeabi-v7a.apk" 2>&1 | grep -q "Verified using v2 scheme (APK Signature Scheme v2): true"; then
+                    echo "Notice: Existing ${prefix}-armeabi-v7a.apk is missing V2 signature. Invalidating cache to trigger signing."
+                    return 1
+                fi
+            fi
+        fi
     fi
 
     return 0
@@ -308,18 +256,6 @@ switch_branch() {
         fi
         local expected_v_commit actual_v_commit
         expected_v_commit="$(git ls-tree HEAD vanadium 2>/dev/null | awk '{print $3}' || true)"
-        # 若构建 old-android 分支，且 main 分支的 vanadium commit 更新，自动对齐到 main 的最新 vanadium 版本
-        if [ "$target_branch" = "old-android" ]; then
-            local main_v_commit
-            main_v_commit="$(git ls-tree origin/main vanadium 2>/dev/null | awk '{print $3}' || true)"
-            if [ -z "$main_v_commit" ]; then
-                main_v_commit="$(git ls-tree main vanadium 2>/dev/null | awk '{print $3}' || true)"
-            fi
-            if [ -n "$main_v_commit" ] && [ -n "$expected_v_commit" ] && [ "$main_v_commit" != "$expected_v_commit" ]; then
-                echo "Notice: Aligning old-android vanadium submodule to latest commit from main ($main_v_commit)..."
-                expected_v_commit="$main_v_commit"
-            fi
-        fi
         actual_v_commit="$(git -C "$SCRIPT_DIR/vanadium" rev-parse HEAD 2>/dev/null || true)"
         if [ -n "$expected_v_commit" ] && [ "$actual_v_commit" != "$expected_v_commit" ]; then
             echo "Aligning vanadium submodule to commit required by '$target_branch' ($expected_v_commit)..."
@@ -374,14 +310,12 @@ sync_git_from_remote() {
             git -C "$SCRIPT_DIR/vanadium" clean -fd >/dev/null 2>&1 || true
         fi
     fi
-
     # 同步完成后切回第一个目标分支（通常为 main），确保后续构建从预期分支开始
     if [ "${#BRANCHES[@]}" -gt 0 ]; then
         switch_branch "${BRANCHES[0]}"
     fi
     echo "Syncing git submodules..."
     git -c "http.proxy=$DEFAULT_PROXY" -c "https.proxy=$DEFAULT_PROXY" submodule update --init --recursive
-    VERSION="$(grep -m1 -o '[0-9]\+\(\.[0-9]\+\)\{3\}' "$SCRIPT_DIR/vanadium/args.gn" 2>/dev/null || echo "$VERSION")"
 
     # 若拉取更新了当前脚本自身，重新加载并执行最新版本
     local hash_after=""
@@ -396,50 +330,6 @@ sync_git_from_remote() {
         echo "=========================================================="
         AUTO_PULL=0 exec "$self_script" "$@"
     fi
-}
-
-verify_branch_signature() {
-    local branch="$1"
-    local prefix
-    prefix="$(get_branch_prefix "$branch")"
-    local local_apksigner
-    local_apksigner=$(find "$SCRIPT_DIR/chromium/src/third_party/android_sdk" -name apksigner 2>/dev/null | sort | tail -n 1 || true)
-    if [ -n "$local_apksigner" ] && [ -x "$local_apksigner" ]; then
-        echo ""
-        echo "=========================================================="
-        echo " Signature Scheme Verification for '$branch':"
-        echo "=========================================================="
-        for apk_file in "$SCRIPT_DIR/chromium/src/out/release/${prefix}"*.apk; do
-            if [ -f "$apk_file" ]; then
-                echo "--- $(basename "$apk_file") ---"
-                "$local_apksigner" verify --verbose "$apk_file" 2>&1 | grep -E "Verifies|Verified using" || true
-            fi
-        done
-    fi
-}
-
-release_branch() {
-    local branch="$1"
-    local branch_ver
-    branch_ver="$(get_branch_version "$branch")"
-    if [ -z "$branch_ver" ]; then
-        branch_ver="$(grep -m1 -o '[0-9]\+\(\.[0-9]\+\)\{3\}' "$SCRIPT_DIR/vanadium/args.gn" 2>/dev/null || echo "$VERSION")"
-    fi
-
-    echo ""
-    echo "=========================================================="
-    echo " [Auto Release] Publishing artifacts for '$branch' ($branch_ver)..."
-    echo "=========================================================="
-    PROXY_URL="$DEFAULT_PROXY" \
-    BUILD_PROXY="$DEFAULT_PROXY" \
-    http_proxy="$DEFAULT_PROXY" \
-    https_proxy="$DEFAULT_PROXY" \
-    HTTP_PROXY="$DEFAULT_PROXY" \
-    HTTPS_PROXY="$DEFAULT_PROXY" \
-    MOVE=1 \
-    VERSION="$branch_ver" \
-    RELEASE_BRANCHES="$branch" \
-    "$SCRIPT_DIR/release.sh"
 }
 
 build_branch() {
@@ -457,10 +347,6 @@ build_branch() {
         echo "Artifacts for '$branch' already exist and branch is up to date:"
         ls -lh "$SCRIPT_DIR/chromium/src/out/release/${prefix}"* 2>/dev/null || true
         echo "Skipping build for '$branch'."
-        verify_branch_signature "$branch"
-        if [ "$AUTO_RELEASE" = "1" ]; then
-            release_branch "$branch"
-        fi
         return 0
     fi
 
@@ -474,7 +360,6 @@ build_branch() {
     rm -f "$release_dir/${prefix}"* 2>/dev/null || true
 
     switch_branch "$branch"
-    VERSION="$(grep -m1 -o '[0-9]\+\(\.[0-9]\+\)\{3\}' "$SCRIPT_DIR/vanadium/args.gn" 2>/dev/null || echo "$VERSION")"
 
     local effective_fast_local
     effective_fast_local="$(get_effective_fast_local_build)"
@@ -505,12 +390,16 @@ build_branch() {
         branch_car_compat="1"
         branch_disable_v3="1"
         branch_arm="$BUILD_OLD_ANDROID_ARM"
+        branch_out_dir="old-android"
+    elif [ "${ISOLATE_ALL_BRANCHES:-0}" = "1" ]; then
+        branch_out_dir="$branch"
     fi
 
     CAR_COMPAT="$branch_car_compat" \
     DISABLE_V3_SIGNING="$branch_disable_v3" \
+    OUT_DIR_NAME="$branch_out_dir" \
+    ISOLATE_ALL_BRANCHES="${ISOLATE_ALL_BRANCHES:-0}" \
     FAST_LOCAL_BUILD="$effective_fast_local" \
-    REUSE_BASE_APK="${REUSE_BASE_APK:-0}" \
     BUILD_PROXY="$DEFAULT_PROXY" \
     http_proxy="$DEFAULT_PROXY" \
     https_proxy="$DEFAULT_PROXY" \
@@ -519,6 +408,7 @@ build_branch() {
     BUILD_ARM="$branch_arm" \
     BUILD_ARM64="$BUILD_ARM64" \
     BUILD_AAB="$BUILD_AAB" \
+    APPEND_BUILD_OUTPUTS=1 \
     NINJA_JOBS="$NINJA_JOBS" \
     "$SCRIPT_DIR/build.sh"
 
@@ -526,11 +416,6 @@ build_branch() {
     current_head="$(git rev-parse HEAD)"
     mkdir -p "$SCRIPT_DIR/chromium/src/out/release"
     printf '%s\n' "$current_head" > "$SCRIPT_DIR/chromium/src/out/release/.built_commit_${branch}"
-
-    verify_branch_signature "$branch"
-    if [ "$AUTO_RELEASE" = "1" ]; then
-        release_branch "$branch"
-    fi
 }
 
 echo "=== Build Configuration ==="
@@ -545,7 +430,7 @@ echo "SKIP_IF_EXISTS    : $SKIP_IF_EXISTS"
 echo "FORCE_REBUILD     : $FORCE_REBUILD"
 echo "STRICT_COMMIT_MATCH : $STRICT_COMMIT_MATCH"
 echo "ENABLE_V2_SIGNING : $ENABLE_V2_SIGNING"
-echo "REUSE_BASE_APK    : $REUSE_BASE_APK"
+echo "ISOLATE_ALL_BRANCHES : ${ISOLATE_ALL_BRANCHES:-0}"
 echo "BRANCHES          : ${BRANCHES[*]}"
 echo "AUTO_RELEASE      : $AUTO_RELEASE"
 echo "==========================="
@@ -555,6 +440,9 @@ if [ "$AUTO_PULL" = "1" ]; then
     sync_git_from_remote
     echo ""
 fi
+
+mkdir -p "$SCRIPT_DIR/chromium/src/out/release"
+: > "$SCRIPT_DIR/chromium/src/out/release/.last_build_outputs" 2>/dev/null || true
 
 total_branches="${#BRANCHES[@]}"
 for i in "${!BRANCHES[@]}"; do
@@ -568,8 +456,41 @@ done
 
 echo ""
 echo "=========================================================="
-echo " SUCCESS: All requested branches built and processed!"
+echo " SUCCESS: Build process finished!"
 echo " Branches: ${BRANCHES[*]}"
 echo " Output files in chromium/src/out/release/:"
 echo "=========================================================="
 ls -lh "$SCRIPT_DIR/chromium/src/out/release"/*.apk 2>/dev/null || true
+
+local_apksigner=$(find "$SCRIPT_DIR/chromium/src/third_party/android_sdk" -name apksigner 2>/dev/null | sort | tail -n 1 || true)
+if [ -n "$local_apksigner" ] && [ -x "$local_apksigner" ]; then
+    echo ""
+    echo "=========================================================="
+    echo " Signature Scheme Verification:"
+    echo "=========================================================="
+    for apk_file in "$SCRIPT_DIR/chromium/src/out/release"/*.apk; do
+        if [ -f "$apk_file" ]; then
+            echo "--- $(basename "$apk_file") ---"
+            "$local_apksigner" verify --verbose "$apk_file" 2>&1 | grep -E "Verifies|Verified using" || true
+        fi
+    done
+fi
+
+if [ "$AUTO_RELEASE" = "1" ]; then
+    echo ""
+    echo "=========================================================="
+    echo " [Auto Release] Publishing artifacts with MOVE=1 release.sh..."
+    echo "=========================================================="
+    PROXY_URL="$DEFAULT_PROXY" \
+    BUILD_PROXY="$DEFAULT_PROXY" \
+    http_proxy="$DEFAULT_PROXY" \
+    https_proxy="$DEFAULT_PROXY" \
+    HTTP_PROXY="$DEFAULT_PROXY" \
+    HTTPS_PROXY="$DEFAULT_PROXY" \
+    MOVE=1 \
+    RELEASE_BRANCHES="${BRANCHES[*]}" \
+    BUILD_ARM="$BUILD_ARM" \
+    BUILD_ARM64="$BUILD_ARM64" \
+    BUILD_AAB="$BUILD_AAB" \
+    "$SCRIPT_DIR/release.sh"
+fi

@@ -17,22 +17,41 @@ sed -i 's|<data android:mimeType="message/rfc822"/>|<data android:mimeType="mess
 sed -i '/com.google.ar.core.min_apk_version/d' third_party/arcore-android-sdk-client/AndroidManifest_basesplit.xml
 # sed -i 's|Google LLC|jqssun, Google LLC|' chrome/browser/ui/android/strings/android_chrome_strings.grd
 
-cp -r $SCRIPT_DIR/extensions/dist helium/
-cp $SCRIPT_DIR/extensions/stage_bundled_extensions.inc helium/dist/
-sed -i 's|"//components/privacy_sandbox/privacy_sandbox_attestations/preload:privacy_sandbox_attestations_assets",|&"//helium/dist:extension_assets",|' chrome/android/BUILD.gn
+if [ ! -f "$SCRIPT_DIR/extensions/dist/bundled.json" ] || [ ! -f "$SCRIPT_DIR/extensions/dist/titanium.crx" ]; then
+    echo "Titanium bundle missing; run build.sh to prepare extensions/dist first." >&2
+    exit 1
+fi
+mkdir -p helium
+cp -r "$SCRIPT_DIR/extensions/dist" helium/ || exit 1
+if [ -f "$SCRIPT_DIR/extensions/stage_bundled_extensions.inc" ]; then
+    mkdir -p helium/dist
+    cp $SCRIPT_DIR/extensions/stage_bundled_extensions.inc helium/dist/
+fi
+grep -q '//helium/dist:extension_assets' chrome/android/BUILD.gn || sed -i 's|"//components/privacy_sandbox/privacy_sandbox_attestations/preload:privacy_sandbox_attestations_assets",|&"//helium/dist:extension_assets",|' chrome/android/BUILD.gn
 sed -i 's|if (!base::PathService::Get(base::DIR_MODULE, \&cur)) {|if (!base::PathService::Get(chrome::DIR_USER_DATA, \&cur)) {|' chrome/common/chrome_paths.cc
-sed -i 's|#include "extensions/buildflags/buildflags.h"|&\n#include "helium/dist/stage_bundled_extensions.inc"|' chrome/browser/extensions/external_pref_loader.cc
-sed -i 's|ReadStandaloneExtensionPrefFiles(prefs);|&StageBundledExtensions(base_path_id_, base_path_, prefs);|' chrome/browser/extensions/external_pref_loader.cc
-sed -i 's|if (extension.location() == mojom::ManifestLocation::kCommandLine) {|if (extension.location() == mojom::ManifestLocation::kExternalPref) return false;\n&|' chrome/browser/extensions/extension_safety_check_utils.cc
+grep -q 'helium/dist/stage_bundled_extensions.inc' chrome/browser/extensions/external_pref_loader.cc || sed -i 's|#include "extensions/buildflags/buildflags.h"|&\n#include "helium/dist/stage_bundled_extensions.inc"|' chrome/browser/extensions/external_pref_loader.cc
+grep -q 'StageBundledExtensions' chrome/browser/extensions/external_pref_loader.cc || sed -i 's|ReadStandaloneExtensionPrefFiles(prefs);|&StageBundledExtensions(base_path_id_, base_path_, prefs);|' chrome/browser/extensions/external_pref_loader.cc
+grep -q 'location() == mojom::ManifestLocation::kExternalPref' chrome/browser/extensions/extension_safety_check_utils.cc || sed -i 's|if (extension.location() == mojom::ManifestLocation::kCommandLine) {|if (extension.location() == mojom::ManifestLocation::kExternalPref) return false;\n&|' chrome/browser/extensions/extension_safety_check_utils.cc
 
-sed -i 's|if (!_omit_dex) {|if (_is_base_module \&\& !_omit_dex) {|' build/config/android/rules.gni
-[ -f helium/chromium_src/chrome/browser/language/android/java/src/org/chromium/chrome/browser/language/settings/LanguageSettingsExt.java ] && sed -i '/safelyRemovePreference(prefFragment/d' helium/chromium_src/chrome/browser/language/android/java/src/org/chromium/chrome/browser/language/settings/LanguageSettingsExt.java # language
-[ -f helium/chromium_src/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettingsExt.java ] && sed -i '/safelyRemovePreference($/{N;/PREF_JAVASCRIPT_OPTIMIZER/d}' helium/chromium_src/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettingsExt.java # optimizer
-[ -f helium/chromium_src/chrome/android/java/src/org/chromium/chrome/browser/LaunchIntentDispatcherHooks.java ] && sed -i 's|if (!Intent\.ACTION_VIEW\.equals(intent\.getAction())) {|if (!Intent.ACTION_VIEW.equals(intent.getAction()) \|\| !android.webkit.URLUtil.isNetworkUrl(IntentHandler.getUrlFromIntent(intent))) {|' helium/chromium_src/chrome/android/java/src/org/chromium/chrome/browser/LaunchIntentDispatcherHooks.java # scheme guard
-[ -f helium/chromium_src/chrome/android/java/src/org/chromium/chrome/browser/LaunchIntentDispatcherHooks.java ] && sed -i 's|if (urlFromIntent == null) {|if (!android.webkit.URLUtil.isNetworkUrl(urlFromIntent)) {|' helium/chromium_src/chrome/android/java/src/org/chromium/chrome/browser/LaunchIntentDispatcherHooks.java # scheme guard
-[ -f helium/chromium_src/chrome/android/java/src/org/chromium/chrome/browser/LaunchIntentDispatcherHooks.java ] && sed -i 's|static Intent maybeModifyCustomTabIntents(Context context, Intent intent) {|static Intent maybeModifyCustomTabIntents(Context context, Intent intent) { if (!android.webkit.URLUtil.isNetworkUrl(IntentHandler.getUrlFromIntent(intent))) { return intent; }|' helium/chromium_src/chrome/android/java/src/org/chromium/chrome/browser/LaunchIntentDispatcherHooks.java # scheme guard
+# Protect bundled external extensions from uninstallation (policy level & WebUI hide)
+grep -q 'build/build_config.h' chrome/browser/extensions/standard_management_policy_provider.cc || sed -i '1i#include "build/build_config.h"' chrome/browser/extensions/standard_management_policy_provider.cc
+grep -q 'ManifestLocation::kExternalPref' chrome/browser/extensions/standard_management_policy_provider.cc || perl -0pi -e 's~(bool StandardManagementPolicyProvider::MustRemainInstalled\(\s*const Extension\* extension,\s*std::u16string\* error\) const \{\n)~$1#if BUILDFLAG(IS_ANDROID)\n  if (extension->location() == mojom::ManifestLocation::kExternalPref) {\n    if (error) {\n      *error = l10n_util::GetStringFUTF16(\n          IDS_EXTENSION_CANT_UNINSTALL_POLICY_REQUIRED,\n          base::UTF8ToUTF16(extension->name()));\n    }\n    return true;\n  }\n#endif\n~' chrome/browser/extensions/standard_management_policy_provider.cc
+
+# Auto-revive historically uninstalled bundled extensions on startup
+grep -q 'ClearExternalUninstallBit(info.extension_id)' chrome/browser/extensions/extension_service.cc || perl -0pi -e 's~(bool ExtensionService::OnExternalExtensionFileFound\(\s*const ExternalInstallInfoFile& info\) \{\s*DCHECK_CURRENTLY_ON\(BrowserThread::UI\);\s*CHECK\(crx_file::id_util::IdIsValid\(info\.extension_id\)\);\n)~$1#if BUILDFLAG(IS_ANDROID)\n  if (info.crx_location == mojom::ManifestLocation::kExternalPref)\n    extension_prefs_->ClearExternalUninstallBit(info.extension_id);\n#endif\n~' chrome/browser/extensions/extension_service.cc
+
+# Disallow uninstalling bundled extensions in ExtensionService::UninstallExtension
+grep -q 'reason != UNINSTALL_REASON_REINSTALL' chrome/browser/extensions/extension_service.cc || perl -0pi -e 's~(\n  bool external_uninstall =[\s\S]*?\(reason == UNINSTALL_REASON_ORPHANED_SHARED_MODULE\);\n)~$1#if BUILDFLAG(IS_ANDROID)\n  if (extension->location() == mojom::ManifestLocation::kExternalPref &&\n      reason != UNINSTALL_REASON_REINSTALL) {\n    ExtensionRegistry::Get(profile_)->TriggerOnUninstallationDenied(\n        extension.get());\n    return false;\n  }\n#endif\n~' chrome/browser/extensions/extension_service.cc
+
+sed -i '/android_apk_or_module_srcjar_deps_common/{n;s|if (!_omit_dex) {|if (_is_base_module \&\& !_omit_dex) {|}' build/config/android/rules.gni
+sed -i '/safelyRemovePreference(prefFragment/d' helium/chromium_src/chrome/browser/language/android/java/src/org/chromium/chrome/browser/language/settings/LanguageSettingsExt.java # language
+sed -i '/safelyRemovePreference($/{N;/PREF_JAVASCRIPT_OPTIMIZER/d}' helium/chromium_src/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettingsExt.java # optimizer
+sed -i 's|if (!Intent\.ACTION_VIEW\.equals(intent\.getAction())) {|if (!Intent.ACTION_VIEW.equals(intent.getAction()) \|\| !android.webkit.URLUtil.isNetworkUrl(IntentHandler.getUrlFromIntent(intent))) {|' helium/chromium_src/chrome/android/java/src/org/chromium/chrome/browser/LaunchIntentDispatcherHooks.java # scheme guard
+sed -i 's|if (urlFromIntent == null) {|if (!android.webkit.URLUtil.isNetworkUrl(urlFromIntent)) {|' helium/chromium_src/chrome/android/java/src/org/chromium/chrome/browser/LaunchIntentDispatcherHooks.java # scheme guard
+sed -i 's|static Intent maybeModifyCustomTabIntents(Context context, Intent intent) {|static Intent maybeModifyCustomTabIntents(Context context, Intent intent) { if (!android.webkit.URLUtil.isNetworkUrl(IntentHandler.getUrlFromIntent(intent))) { return intent; }|' helium/chromium_src/chrome/android/java/src/org/chromium/chrome/browser/LaunchIntentDispatcherHooks.java # scheme guard
+sed -i 's|static void maybeModifyCustomTabIntents(Intent intent) {|& if (!android.webkit.URLUtil.isNetworkUrl(IntentHandler.getUrlFromIntent(intent))) { return; }|' helium/chromium_src/chrome/android/java/src/org/chromium/chrome/browser/LaunchIntentDispatcherHooks.java # scheme guard
 sed -i 's|readBoolean(getSettingsPreferenceKey(moduleType), true)|readBoolean(getSettingsPreferenceKey(moduleType), !HomeModulesUtils.belongsToEducationalTipModule(moduleType))|' chrome/browser/magic_stack/android/java/src/org/chromium/chrome/browser/magic_stack/HomeModulesConfigManager.java # ntp
-[ -f helium/android_config/parser/java/src/app/helium/config/HeliumConfParser.java ] && sed -i 's|private static boolean verifyPackage(Context ctx, String pkgName, byte\[\] sha256CertDigestBytes) {|& if (true) return false; |' helium/android_config/parser/java/src/app/helium/config/HeliumConfParser.java # config parser
+sed -i 's|private static boolean verifyPackage(Context ctx, String pkgName, byte\[\] sha256CertDigestBytes) {|& if (true) return false; |' helium/android_config/parser/java/src/app/helium/config/HeliumConfParser.java # config parser
 
 # sed -i 's|int ExpirationMilestoneForFlag(const char\* flag) {|int ExpirationMilestoneForFlag(const char* flag) { if ((true)) return -1;|' chrome/browser/unexpire_flags.cc
 for flag in "align-wakeups" "android-bottom-bar" "cct-open-in-browser-button-if-allowed-by-embedder" "darken-websites-checkbox-in-themes-setting" "enable-accessibility-sequential-focus" "enforce-incognito-isolation" "inline-pdf-v2" "jump-start-omnibox" "lock-controls-on-tablets-v2" "offline-auto-fetch" "use-fullscreen-insets-api"; do
@@ -49,12 +68,11 @@ feature_overrides.EnableFeature(kAndroidMediaPicker);\
 feature_overrides.EnableFeature(features::kUserMediaScreenCapturing);\
 feature_overrides.EnableFeature(media::kAndroidEnableBackgroundMediaCapturing);\
 feature_overrides.EnableFeature(media::kAutoPictureInPictureAndroid);\
-feature_overrides.EnableFeature(media::kContextMenuPictureInPictureAndroid);\
 feature_overrides.EnableFeature(chrome::android::kLoadAllTabsAtStartup);\
 feature_overrides.EnableFeature(chrome::android::kChromeNativeUrlOverriding);\
+feature_overrides.EnableFeature(download::features::kEnableDownloadSaveAsContextMenu);\
 #if 0
 d}' chrome/browser/chrome_browser_field_trials.cc
-# Only modify GLES3 fallback on desktop virtualization branches, never on old-android / car builds (aligned with Kiwi)
 if [ "${DISABLE_V3_SIGNING:-0}" != "1" ] && [ "${CAR_COMPAT:-0}" != "1" ] && [ "$(git -C "$SCRIPT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || true)" != "old-android" ]; then
     sed -i '/^bool ShouldFallbackToSWIfGLES3NotSupported() {$/,/^}$/ s|^  return true;$|  return false;|' ui/gl/gl_features.cc # virt
 fi
@@ -733,19 +751,24 @@ method = """    private ListItem buildAppearanceThemeItem(int id, int theme) {
     }
 
 """
-start = text.find("    private ListItem buildAppearanceThemeItem(")
-if start == -1:
-    start = text.find("    private ListItem buildAppearanceItem() {")
-anchor = "    private ListItem buildSettingsItem() {\n"
-if start != -1:
-    end = text.find(anchor, start)
-    if end == -1:
-        raise SystemExit("appearance menu end anchor not found")
-    text = text[:start] + method + text[end:]
-elif anchor in text:
-    text = text.replace(anchor, method + anchor, 1)
-else:
-    raise SystemExit("appearance menu method anchor not found")
+if method.strip() not in text:
+    start = text.find("    private ListItem buildAppearanceThemeItem(")
+    if start == -1:
+        start = text.find("    private ListItem buildAppearanceItem() {")
+    anchor = "    private ListItem buildSettingsItem() {\n"
+    lemur_marker = "    // Helium: Lemur Browser-style rounded bottom popup menu panel.\n"
+    if start != -1:
+        end = text.find(anchor, start)
+        if end == -1:
+            raise SystemExit("appearance menu end anchor not found")
+        lemur_pos = text.find(lemur_marker, start)
+        if lemur_pos != -1 and lemur_pos < end:
+            end = lemur_pos
+        text = text[:start] + method + text[end:]
+    elif anchor in text:
+        text = text.replace(anchor, method + anchor, 1)
+    else:
+        raise SystemExit("appearance menu method anchor not found")
 if "modelList.add(buildAppearanceItem());" not in text:
     text = text.replace(
             "        modelList.add(buildSettingsItem());",
@@ -1423,7 +1446,7 @@ text = text.replace(
     "                updateActionPropertiesForAll(webContents);\n",
 )
 anchor = re.search(
-    r"(?m)^    (?:private )?void updateActionPropertiesForAll\(WebContents webContents\) \{$",
+    r"(?m)^    (?:private )?void updateActionPropertiesForAll\((?:@Nullable )?WebContents webContents\) \{$",
     text,
 )
 if anchor is None:
@@ -1431,7 +1454,7 @@ if anchor is None:
 text = text[:anchor.start()] + helper + text[anchor.start():]
 if "mExtensionsToolbarBridge.setActiveWebContents(webContents);" not in text:
     text = re.sub(
-        r"(?m)^(    (?:private )?void updateActionPropertiesForAll\(WebContents webContents\) \{\n)",
+        r"(?m)^(    (?:private )?void updateActionPropertiesForAll\((?:@Nullable )?WebContents webContents\) \{\n)",
         r"\1        mExtensionsToolbarBridge.setActiveWebContents(webContents);\n",
         text,
         count=1,
@@ -2077,7 +2100,14 @@ perl -0pi -e 's|current_toolchain == default_toolchain,|current_toolchain == def
 sed -i 's|assert treeId.equals(documentId);|&\n if ("com.android.externalstorage.documents".equals(mAuthority)) { String fastId = mRelativePath.isEmpty() ? treeId : (treeId.endsWith(":") ? treeId + mRelativePath : treeId + "/" + mRelativePath); Uri fast = DocumentsContract.buildDocumentUriUsingTree(tree, fastId); return contentUriExists(fast) ? fast : null; }|' base/android/java/src/org/chromium/base/VirtualDocumentPath.java
 
 # crbug.com/40831291: bottom address bar
-sed -i 's@(idealFitsBelow && spaceBelowAnchor >= spaceAboveAnchor) || !idealFitsAbove;@(idealFitsBelow == idealFitsAbove) ? (spaceBelowAnchor >= spaceAboveAnchor) : idealFitsBelow;@' ui/android/java/src/org/chromium/ui/widget/PopupSpecCalculator.java
+POPUP_SPEC_CALCULATOR=ui/android/java/src/org/chromium/ui/widget/PopupSpecCalculator.java
+if grep -q '(idealFitsBelow && spaceBelowAnchor >= spaceAboveAnchor) || !idealFitsAbove;' "$POPUP_SPEC_CALCULATOR"; then
+    sed -i 's@(idealFitsBelow && spaceBelowAnchor >= spaceAboveAnchor) || !idealFitsAbove;@(idealFitsBelow == idealFitsAbove) ? (spaceBelowAnchor >= spaceAboveAnchor) : idealFitsBelow;@' "$POPUP_SPEC_CALCULATOR"
+elif ! grep -q '(idealFitsBelow == idealFitsAbove) ? (spaceBelowAnchor >= spaceAboveAnchor) : idealFitsBelow;' "$POPUP_SPEC_CALCULATOR" \
+    && ! grep -q '(idealFitsBelow != idealFitsAbove) ? idealFitsBelow : belowHasMoreSpace;' "$POPUP_SPEC_CALCULATOR"; then
+    echo "Bottom address-bar popup anchor not found: $POPUP_SPEC_CALCULATOR" >&2
+    exit 1
+fi
 
 # On the NTP and while editing, follow the user's toolbar preference. Chromium's
 # dropdown embedder places history and suggestions above a bottom toolbar.
@@ -2121,6 +2151,9 @@ fi
 if ! grep -q 'Helium: follow the toolbar preference on the NTP and while editing' "$TOOLBAR_POSITION_CONTROLLER"; then
 echo "NTP and omnibox toolbar position patch did not apply: $TOOLBAR_POSITION_CONTROLLER" >&2
 exit 1
+fi
+if ! grep -q 'mControlContainer.getView().requestLayout();' "$TOOLBAR_POSITION_CONTROLLER"; then
+    sed -i 's|mBottomControlsStacker.updateLayerVisibilitiesAndSizes();|&\n        mControlContainer.getView().requestLayout();|' "$TOOLBAR_POSITION_CONTROLLER"
 fi
 
 # In bottom-toolbar mode, use the real omnibox on the NTP instead of leaving a
@@ -2199,6 +2232,32 @@ def patch_suggestion_layout_scroll_listener(path):
         if doc_pos < 0:
             raise SystemExit(f"resetScrollState documentation anchor not found in {path}")
         text = text[:doc_pos] + setter + text[doc_pos:]
+    path.write_text(text)
+
+
+def patch_dropdown_alignment_wrapper(path):
+    text = path.read_text()
+    wrapper_pattern = re.compile(
+        r"(?m)^[ \t]*(?:(?:public|protected|private)\s+)?"
+        r"void heliumSetAlignToBottom\(boolean alignToBottom\) \{\n"
+        r"[ \t]*mLayoutScrollListener\.setAlignToBottom\(alignToBottom\);\n"
+        r"[ \t]*\}"
+    )
+    text = wrapper_pattern.sub("", text)
+
+    class_pattern = re.compile(
+        r"\bclass\s+OmniboxSuggestionsDropdown\b[^{}]*\{"
+    )
+    class_match = class_pattern.search(text)
+    if class_match is None:
+        raise SystemExit(f"OmniboxSuggestionsDropdown class not found in {path}")
+
+    wrapper = """    void heliumSetAlignToBottom(boolean alignToBottom) {
+        mLayoutScrollListener.setAlignToBottom(alignToBottom);
+    }
+"""
+    suffix = text[class_match.end():].lstrip("\r\n")
+    text = text[:class_match.end()] + "\n" + wrapper + suffix
     path.write_text(text)
 
 
@@ -2289,11 +2348,9 @@ replace_if_missing(
                     .setVisibility(showFakeSearchBox ? View.VISIBLE : View.GONE);
         }
         int toolbarTopPadding =
-                showFakeSearchBox
-                        ? mActivity
-                                .getResources()
-                                .getDimensionPixelSize(R.dimen.toolbar_height_no_shadow)
-                        : 0;
+                mActivity
+                        .getResources()
+                        .getDimensionPixelSize(R.dimen.toolbar_height_no_shadow);
         mModel.set(NewTabPageLayoutProperties.TOP_INSET_PX, toolbarTopPadding + mTopInset);
     }
 
@@ -2301,6 +2358,21 @@ replace_if_missing(
      * @return The fake search box view.
      */
     """,
+)
+replace_if_present(
+    coordinator,
+    """        int toolbarTopPadding =
+                showFakeSearchBox
+                        ? mActivity
+                                .getResources()
+                                .getDimensionPixelSize(R.dimen.toolbar_height_no_shadow)
+                        : 0;
+        mModel.set(NewTabPageLayoutProperties.TOP_INSET_PX, toolbarTopPadding + mTopInset);""",
+    """        int toolbarTopPadding =
+                mActivity
+                        .getResources()
+                        .getDimensionPixelSize(R.dimen.toolbar_height_no_shadow);
+        mModel.set(NewTabPageLayoutProperties.TOP_INSET_PX, toolbarTopPadding + mTopInset);""",
 )
 coordinator_text = coordinator.read_text()
 measure_marker = (
@@ -2517,29 +2589,8 @@ replace_if_missing(
          * Reset the internal scroll tracker. This needs to be called either when the
 """,
 )
-replace_if_missing(
-    dropdown,
-    "void heliumSetAlignToBottom(boolean alignToBottom)",
-    """    public void resetSelection() {
-""",
-    """    void heliumSetAlignToBottom(boolean alignToBottom) {
-        mLayoutScrollListener.setAlignToBottom(alignToBottom);
-    }
-
-    public void resetSelection() {
-""",
-)
-dropdown_text = dropdown.read_text()
-wrapper_pattern = re.compile(
-    r"    void heliumSetAlignToBottom\(boolean alignToBottom\) \{\n[\s\S]*?\n    \}"
-)
-wrapper = """    void heliumSetAlignToBottom(boolean alignToBottom) {
-        mLayoutScrollListener.setAlignToBottom(alignToBottom);
-    }"""
-if wrapper_pattern.search(dropdown_text):
-    dropdown.write_text(wrapper_pattern.sub(wrapper, dropdown_text, count=1))
-else:
-    raise SystemExit(f"heliumSetAlignToBottom wrapper was not added to {dropdown}")
+patch_suggestion_layout_scroll_listener(dropdown)
+patch_dropdown_alignment_wrapper(dropdown)
 container_text = container.read_text()
 container_text = re.sub(
     r"([A-Za-z_$][A-Za-z0-9_$]*)\.getLayoutScrollListener\(\)\.(?:setAlignToBottom|heliumSetAlignToBottom)\([^;]+\);",
@@ -2562,6 +2613,12 @@ replace_if_missing(
         mDropdown.setPaddingRelative(
 """,
 )
+container_text = container.read_text()
+if re.search(
+    r"\.getLayoutScrollListener\(\)\.(?:setAlignToBottom|heliumSetAlignToBottom)\(",
+    container_text,
+):
+    raise SystemExit(f"Container still calls a layout-listener method directly: {container}")
 replace_if_present(
     embedder,
     ".getInsets(WindowInsetsCompat.Type.statusBars())",
@@ -2699,15 +2756,8 @@ replace_if_present(
             requestLayout();
 """,
 )
-patch_suggestion_layout_scroll_listener(dropdown)
 if "setStackFromEnd(alignToBottom);" not in dropdown.read_text():
     raise SystemExit(f"Bottom suggestion stack-from-end patch did not apply: {dropdown}")
-container_text = container.read_text()
-if re.search(
-    r"\.getLayoutScrollListener\(\)\.(?:setAlignToBottom|heliumSetAlignToBottom)\(",
-    container_text,
-):
-    raise SystemExit(f"Container still calls a layout-listener method directly: {container}")
 
 replace_if_missing(
     embedder_interface,
@@ -2765,6 +2815,11 @@ replace_if_missing(
     "                    && other.isBottomToolbar == this.isBottomToolbar\n",
 )
 
+replace_if_present(
+    container,
+    "setAlignToBottom(omniboxAlignment.top == 0);",
+    "setAlignToBottom(omniboxAlignment.isBottomToolbar);",
+)
 replace_if_missing(
     embedder,
     "// Helium: reserve the status-bar region in the dropdown geometry.",
@@ -3254,6 +3309,9 @@ old = """#if BUILDFLAG(IS_ANDROID)
 
   Profile* profile = Profile::FromBrowserContext(browser_context());
 """
+tabs_ns = "tabs_util" if "tabs_util::GetTabById" in text else "tabs_internal"
+if tabs_ns != "tabs_internal":
+    text = text.replace("tabs_internal::GetTabById(", f"{tabs_ns}::GetTabById(")
 new = """#if BUILDFLAG(IS_ANDROID)
   const bool helium_android_current_tab_query =
       query_info_.active && *query_info_.active &&
@@ -3313,6 +3371,8 @@ new = """#if BUILDFLAG(IS_ANDROID)
 
   Profile* profile = Profile::FromBrowserContext(browser_context());
 """
+if tabs_ns != "tabs_internal":
+    new = new.replace("tabs_internal::", f"{tabs_ns}::")
 if old in text:
     text = text.replace(old, new, 1)
 elif "helium_android_current_tab_query" not in text:
@@ -3415,6 +3475,9 @@ otr_first = """    for (BrowserWindowInterface* browser : GetAllBrowserWindowInt
       }
     }
 """
+if tabs_ns != "tabs_internal":
+    action_first = action_first.replace("tabs_internal::", f"{tabs_ns}::")
+    otr_first = otr_first.replace("tabs_internal::", f"{tabs_ns}::")
 text = text.replace(action_first, otr_first, 1)
 text = text.replace(
     "if (!contents || !contents->GetBrowserContext()->IsOffTheRecord()) {",
@@ -3623,6 +3686,8 @@ robust_if = """  if (helium_android_current_tab_query) {
     }
     return RespondNow(WithArguments(std::move(direct_result)));
   }"""
+if tabs_ns != "tabs_internal":
+    robust_if = robust_if.replace("tabs_internal::", f"{tabs_ns}::")
 while True:
     unfiltered_match = re.search(
         r"(?m)^[ \t]*const bool helium_android_unfiltered_tab_query =\n", text)
@@ -3671,102 +3736,108 @@ if start >= 0:
     text = text[:start] + robust_if + text[end:]
 
 if "HeliumAndroidBuildTabListIncognitoModels" not in text:
-    old_build = """    TabListInterface* tab_list = TabListInterface::From(browser);
-    if (!tab_list) { continue; }
-    for (int i = 0; i < tab_list->GetTabCount(); ++i) {
-      if (tab_index > -1 && i != tab_index) {
+    has_tabs_internal = "tabs_internal::CreateTabObjectHelper" in text
+    helper_name = (
+        "tabs_internal::CreateTabObjectHelper"
+        if has_tabs_internal
+        else "CreateTabObjectHelper"
+    )
+    old_build = f"""    TabListInterface* tab_list = TabListInterface::From(browser);
+    if (!tab_list) {{ continue; }}
+    for (int i = 0; i < tab_list->GetTabCount(); ++i) {{
+      if (tab_index > -1 && i != tab_index) {{
         continue;
-      }
+      }}
 
       ::tabs::TabInterface* tab = tab_list->GetTab(i);
       CHECK(tab);
 
-      if (!MatchesTab(tab, url_patterns)) {
+      if (!MatchesTab(tab, url_patterns)) {{
         continue;
-      }
+      }}
 
-      result.Append(tabs_internal::CreateTabObjectHelper(
+      result.Append({helper_name}(
                         tab->GetContents(), extension(), source_context_type(),
                         browser, i)
                         .ToValue());
-    }
-  }
+    }}
+  }}
   return result;"""
     old_build_noindent = old_build.replace(
         "    if (!tab_list) { continue; }\n",
         "if (!tab_list) { continue; }\n",
     )
     old_build_alt = old_build.replace("    if (!tab_list) { continue; }\n", "")
-    new_build = """    TabListInterface* tab_list = TabListInterface::From(browser);
-    if (!tab_list) { continue; }
+    new_build = f"""    TabListInterface* tab_list = TabListInterface::From(browser);
+    if (!tab_list) {{ continue; }}
 #if BUILDFLAG(IS_ANDROID)
     bool has_active_otr_model = false;
-    for (TabModel* model : TabModelList::models()) {
-      if (model && model->IsOffTheRecord() && model->IsActiveModel()) {
+    for (TabModel* model : TabModelList::models()) {{
+      if (model && model->IsOffTheRecord() && model->IsActiveModel()) {{
         has_active_otr_model = true;
         break;
-      }
-    }
+      }}
+    }}
 #endif
-    for (int i = 0; i < tab_list->GetTabCount(); ++i) {
-      if (tab_index > -1 && i != tab_index) {
+    for (int i = 0; i < tab_list->GetTabCount(); ++i) {{
+      if (tab_index > -1 && i != tab_index) {{
         continue;
-      }
+      }}
 
       ::tabs::TabInterface* tab = tab_list->GetTab(i);
       CHECK(tab);
 
 #if BUILDFLAG(IS_ANDROID)
-      if (has_active_otr_model && query_info_.active && *query_info_.active) {
+      if (has_active_otr_model && query_info_.active && *query_info_.active) {{
         continue;
-      }
+      }}
 #endif
-      if (!MatchesTab(tab, url_patterns)) {
+      if (!MatchesTab(tab, url_patterns)) {{
         continue;
-      }
+      }}
 
-      result.Append(tabs_internal::CreateTabObjectHelper(
+      result.Append({helper_name}(
                         tab->GetContents(), extension(), source_context_type(),
                         browser, i)
                         .ToValue());
-    }
-  }
+    }}
+  }}
 #if BUILDFLAG(IS_ANDROID)
   // HeliumAndroidBuildTabListIncognitoModels: include OTR TabModels when
   // querying tabs on Android.
   Profile* calling_profile = Profile::FromBrowserContext(browser_context());
-  for (TabModel* model : TabModelList::models()) {
-    if (!model || !model->IsOffTheRecord() || !model->GetProfile()) {
+  for (TabModel* model : TabModelList::models()) {{
+    if (!model || !model->IsOffTheRecord() || !model->GetProfile()) {{
       continue;
-    }
-    if (!calling_profile->IsSameOrParent(model->GetProfile())) {
+    }}
+    if (!calling_profile->IsSameOrParent(model->GetProfile())) {{
       continue;
-    }
+    }}
     if (!include_incognito_information() &&
-        calling_profile != model->GetProfile()) {
+        calling_profile != model->GetProfile()) {{
       continue;
-    }
-    for (int i = 0; i < model->GetTabCount(); ++i) {
-      if (tab_index > -1 && i != tab_index) {
+    }}
+    for (int i = 0; i < model->GetTabCount(); ++i) {{
+      if (tab_index > -1 && i != tab_index) {{
         continue;
-      }
+      }}
       ::tabs::TabInterface* tab = model->GetTab(i);
-      if (!tab || !tab->GetContents()) {
+      if (!tab || !tab->GetContents()) {{
         continue;
-      }
+      }}
       bool is_active_in_window =
           model->IsActiveModel() && i == model->GetActiveIndex();
       if (query_info_.active.has_value() &&
-          *query_info_.active != is_active_in_window) {
+          *query_info_.active != is_active_in_window) {{
         continue;
-      }
+      }}
       std::optional<bool> saved_active = query_info_.active;
       query_info_.active.reset();
       bool matched = MatchesTab(tab, url_patterns);
       query_info_.active = saved_active;
-      if (!matched) {
+      if (!matched) {{
         continue;
-      }
+      }}
       ExtensionTabUtil::ScrubTabBehavior scrub_tab_behavior =
           ExtensionTabUtil::GetScrubTabBehavior(
               extension(), source_context_type(), tab->GetContents());
@@ -3778,13 +3849,13 @@ if "HeliumAndroidBuildTabListIncognitoModels" not in text:
       tab_val.Set(tabs_constants::kActiveKey, is_active_in_window);
       tab_val.Set(tabs_constants::kSelectedKey, is_active_in_window);
       result.Append(std::move(tab_val));
-    }
-  }
+    }}
+  }}
 #endif
   return result;"""
     build_pattern = re.compile(
-        r"([ \t]*TabListInterface\* tab_list = TabListInterface::From\(browser\);\n"
-        r"(?:[ \t]*if \(!tab_list\) \{ continue; \}\n)*"
+        r"[ \t]*TabListInterface\* tab_list = TabListInterface::From\(browser\);\n"
+        r"(?:[ \t]*if \(!tab_list\) \{ continue; \}\n)?"
         r"[ \t]*for \(int i = 0; i < tab_list->GetTabCount\(\); \+\+i\) \{\n"
         r"[ \t]*if \(tab_index > -1 && i != tab_index\) \{\n"
         r"[ \t]*continue;\n"
@@ -3794,13 +3865,10 @@ if "HeliumAndroidBuildTabListIncognitoModels" not in text:
         r"[ \t]*if \(!MatchesTab\(tab, url_patterns\)\) \{\n"
         r"[ \t]*continue;\n"
         r"[ \t]*\}\n\n"
-        r"[ \t]*result\.Append\(tabs_internal::CreateTabObjectHelper\(\n"
-        r"[ \t]*tab->GetContents\(\), extension\(\), source_context_type\(\),\n"
-        r"[ \t]*browser, i\)\n"
-        r"[ \t]*\.ToValue\(\)\);\n"
+        r"[ \t]*result\.Append\((?:tabs_internal::)?CreateTabObjectHelper\([\s\S]*?\.ToValue\(\)\);\n"
         r"[ \t]*\}\n"
         r"[ \t]*\}\n"
-        r"[ \t]*return result;)"
+        r"[ \t]*return result;"
     )
     if old_build in text:
         text = text.replace(old_build, new_build, 1)
@@ -3834,6 +3902,8 @@ if outer_match:
     text = text[:outer_match.start()] + outer_block + text[inner_start:]
 if outer_pattern.search(text):
     raise SystemExit(f"action contents shadow migration failed in {path}")
+if tabs_ns != "tabs_internal":
+    text = text.replace("tabs_internal::GetTabById(", f"{tabs_ns}::GetTabById(")
 path.write_text(text)
 PYCODE
     if ! grep -qE 'content::WebContents\*[[:space:]]+last_action_contents' "$TABS_API_CC"; then
@@ -3845,21 +3915,27 @@ fi
 # Apply Android full media/image permissions & Downloads directory visibility patch
 python3 "$SCRIPT_DIR/patch_android_media_permissions.py" .
 
-# Clean up historical improper injections in ChromeActivity.java
-if [ -f chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActivity.java ]; then
-    perl -0pi -e "s|        injectStoreInlineInstallSupport\(tab\);\n                mRootUiCoordinator\.getStatusBarColorController\(\)\.updateStatusBarColor\(\);|        mRootUiCoordinator.getStatusBarColorController().updateStatusBarColor();|g" chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActivity.java
-fi
-
-# Apply store inline installation mechanism (Chrome Web Store & Edge Addons)
-python3 "$SCRIPT_DIR/patch_store_inline_install.py" .
-
-# Apply UI mode only on old-version / old-android; clean stale injections elsewhere.
-python3 "$SCRIPT_DIR/patch_ui_mode.py" .
-sed -i 's/  CHECK(tab);/  if (!tab) return;/' chrome/browser/ui/android/tab_model/tab_model_observer_jni_bridge.cc 2>/dev/null || true
-sed -i 's/        assert tab.isInitialized();/        if (tab == null || !tab.isInitialized()) return;/' chrome/android/java/src/org/chromium/chrome/browser/tabmodel/TabModelObserverJniBridge.java 2>/dev/null || true
+# Apply bounded logcat capture at the earliest Helium application hook.
+python3 "$SCRIPT_DIR/patch_startup_logcat.py" .
 
 CURRENT_BRANCH="$(git -C "$SCRIPT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+if [[ "$CURRENT_BRANCH" == old-* ]] || [ "${OLD_VERSION:-0}" = "1" ] || [ "${OLD_ANDROID:-0}" = "1" ] || [ "${CAR_COMPAT:-0}" = "1" ]; then
+    # Apply UI mode (Desktop / Mobile form factor) switch patch & TabModel safety only to old compatibility builds.
+    python3 "$SCRIPT_DIR/patch_ui_mode.py" .
+    sed -i 's/  CHECK(tab);/  if (!tab) return;/' chrome/browser/ui/android/tab_model/tab_model_observer_jni_bridge.cc 2>/dev/null || true
+    sed -i 's/        assert tab.isInitialized();/        if (tab == null || !tab.isInitialized()) return;/' chrome/android/java/src/org/chromium/chrome/browser/tabmodel/TabModelObserverJniBridge.java 2>/dev/null || true
+else
+    # Remove stale old-android crash guards while keeping standard extension visibility.
+    python3 "$SCRIPT_DIR/patch_ui_mode.py" --remove-ui-mode .
+    python3 "$SCRIPT_DIR/patch_ui_mode.py" --extensions-only .
+    sed -i 's/  if (!tab) return;/  CHECK(tab);/' chrome/browser/ui/android/tab_model/tab_model_observer_jni_bridge.cc 2>/dev/null || true
+    sed -i 's/        if (tab == null || !tab.isInitialized()) return;/        assert tab.isInitialized();/' chrome/android/java/src/org/chromium/chrome/browser/tabmodel/TabModelObserverJniBridge.java 2>/dev/null || true
+fi
 
+# Restore Titanium's native store flow in previously patched source trees.
+python3 "$SCRIPT_DIR/patch_titanium_store.py" .
+# Do not default-pin locally installed extensions on Android.
+python3 "$SCRIPT_DIR/patch_toolbar_actions_model.py" .
 # 严格分支隔离判定：
 # 标准分支（main, lemur）绝对禁止任何 API 28 / 低版本修改，仅允许作用于 old-version / old-android 分支
 is_old_version_branch() {
@@ -3959,9 +4035,8 @@ restore_modern_android_sdk_baseline() {
     done
 }
 
-if [ "$CURRENT_BRANCH" = "lemur-style-app-menu" ] || [ "$CURRENT_BRANCH" = "lemur" ] || [ "$CURRENT_BRANCH" = "old-android" ] || [ "$CURRENT_BRANCH" = "old-version" ] || [[ "$CURRENT_BRANCH" == *"old-"* ]] || [ "${LEMUR_APP_MENU:-0}" = "1" ]; then
-    python3 "$SCRIPT_DIR/patch_lemur_app_menu.py" .
-fi
+python3 "$SCRIPT_DIR/patch_lemur_app_menu.py" .
+
 if is_old_version_branch; then
     if [ -f "$SCRIPT_DIR/patch_android_min_sdk.py" ]; then
         python3 "$SCRIPT_DIR/patch_android_min_sdk.py" .
@@ -3969,3 +4044,8 @@ if is_old_version_branch; then
 else
     restore_modern_android_sdk_baseline .
 fi
+
+python3 "$SCRIPT_DIR/patch_omnibox_dropdown.py" .
+python3 "$SCRIPT_DIR/patch_toolbar_phone.py" . || exit 1
+python3 "$SCRIPT_DIR/patch_titanium_visibility.py" . || exit 1
+python3 "$SCRIPT_DIR/extensions/patch_android_asset_group.py" chrome/android/BUILD.gn || exit 1

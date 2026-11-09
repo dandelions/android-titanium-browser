@@ -565,7 +565,18 @@ def patch_tab_model_observer_bridge(src_dir: Path) -> None:
 
 
 def main() -> None:
-    src_dir = Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
+    remove_only = len(sys.argv) > 1 and sys.argv[1] == "--remove-ui-mode"
+    extensions_only = len(sys.argv) > 1 and sys.argv[1] == "--extensions-only"
+    argument_index = 2 if (remove_only or extensions_only) else 1
+    src_dir = Path(sys.argv[argument_index] if len(sys.argv) > argument_index else ".").resolve()
+    if remove_only:
+        clean_ui_mode_from_standard_branches(src_dir)
+        print(f"[patch_ui_mode] Removed UI mode patches from {src_dir}")
+        return
+    if extensions_only:
+        patch_extensions_visibility(src_dir)
+        print(f"[patch_ui_mode] Applied extension visibility only to {src_dir}")
+        return
 
     # Core stability & extensions visibility patches apply to all branches
     patch_extensions_visibility(src_dir)

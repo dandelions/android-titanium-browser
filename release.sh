@@ -3,7 +3,7 @@ set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 VERSION_ARGS="$SCRIPT_DIR/vanadium/args.gn"
-VERSION="${VERSION:-$(grep -m1 -o '[0-9]\+\(\.[0-9]\+\)\{3\}' "$VERSION_ARGS" || true)}"
+VERSION=$(grep -m1 -o '[0-9]\+\(\.[0-9]\+\)\{3\}' "$VERSION_ARGS" || true)
 
 if [ -z "$VERSION" ]; then
     echo "Unable to read Vanadium version from $VERSION_ARGS" >&2
@@ -70,136 +70,258 @@ add_release_file() {
     fi
 }
 
-# 收集需要发布的安装包产物
-# 支持通过环境变量 RELEASE_BRANCHES 指定当前构建发布的分支，
-# 若未指定则自动检测当前 git 分支，确保“同一个分支覆盖/上传，不同分支不跨界操作”。
-CURRENT_GIT_BRANCH="$(git_repo rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
-TARGET_RELEASE_BRANCHES="${RELEASE_BRANCHES:-${CURRENT_GIT_BRANCH:-all}}"
+is_branch_match() {
+    file="$1"
+    branch="$2"
+    base=$(basename "$file")
+    case "$branch" in
+        main|HEAD)
+            case "$base" in
+                "$VERSION"-arm64-v8a.apk|"$VERSION"-armeabi-v7a.apk|"$VERSION"-x86_64.apk|"$VERSION"-x86.apk|"$VERSION"-arm64-v8a.aab|"$VERSION"-armeabi-v7a.aab)
+                    return 0
+                    ;;
+                *)
+                    return 1
+                    ;;
+            esac
+            ;;
+        lemur-style-app-menu|lemur)
+            case "$base" in
+                "$VERSION"-*lemur*.apk|"$VERSION"-*lemur*.aab|"$VERSION"-*lemon*.apk|"$VERSION"-*lemon*.aab)
+                    return 0
+                    ;;
+                *)
+                    return 1
+                    ;;
+            esac
+            ;;
+        old-android|old-version|old_android|old_version)
+            case "$base" in
+                "$VERSION"-*old-android*.apk|"$VERSION"-*old-android*.aab|"$VERSION"-*old-version*.apk|"$VERSION"-*old-version*.aab)
+                    return 0
+                    ;;
+                *)
+                    return 1
+                    ;;
+            esac
+            ;;
+        *)
+            tag="$(printf '%s' "$branch" | tr -c 'A-Za-z0-9._-' '-' | sed 's/^-*//; s/-*$//')"
+            case "$base" in
+                "$VERSION-$tag"-*.apk|"$VERSION-$tag"-*.aab)
+                    return 0
+                    ;;
+                *)
+                    return 1
+                    ;;
+            esac
+            ;;
+    esac
+}
 
-if [ -n "$TARGET_RELEASE_BRANCHES" ] && [ "$TARGET_RELEASE_BRANCHES" != "all" ]; then
-    echo "Filtering release artifacts for branch(es): $TARGET_RELEASE_BRANCHES"
-    for br in $TARGET_RELEASE_BRANCHES; do
-        if [ "$br" = "main" ]; then
-            for abi in arm64-v8a armeabi-v7a x86_64 x86; do
-                add_release_file "$RELEASE_DIR/$VERSION-$abi.apk"
-                add_release_file "$RELEASE_DIR/$VERSION-$abi.aab"
-            done
+is_abi_match() {
+    file="$1"
+    base=$(basename "$file")
+    case "$base" in
+        *.aab)
+            [ "${BUILD_AAB:-0}" = "1" ] || return 1
+            ;;
+    esac
+    case "$base" in
+        *-armeabi-v7a.apk|*-armeabi-v7a.aab|*-arm.apk|*-arm.aab)
+            if [ "${BUILD_ARM:-}" = "0" ]; then
+                return 1
+            fi
+            if [ -z "${BUILD_ARM:-}" ] && [ "${BUILD_ARM64:-}" = "1" ]; then
+                return 1
+            fi
+            ;;
+        *-arm64-v8a.apk|*-arm64-v8a.aab|*-arm64.apk|*-arm64.aab)
+            if [ "${BUILD_ARM64:-}" = "0" ]; then
+                return 1
+            fi
+            ;;
+    esac
+    return 0
+}
+
+# 1. Positional file arguments take precedence
+if [ "$#" -gt 0 ]; then
+    for arg in "$@"; do
+        if [ -f "$arg" ]; then
+            add_release_file "$arg"
+        elif [ -f "$RELEASE_DIR/$arg" ]; then
+            add_release_file "$RELEASE_DIR/$arg"
         else
-            branch_tag="$(printf '%s' "$br" | tr -c 'A-Za-z0-9._-' '-' | sed 's/^-*//; s/-*$//')"
-            for file in \
-                "$RELEASE_DIR/$VERSION-$branch_tag"-*.apk \
-                "$RELEASE_DIR/$VERSION-$branch_tag"-*.aab; do
-                add_release_file "$file"
-            done
+            echo "Warning: specified release file not found: $arg" >&2
         fi
     done
-else
-    # 1. Main branch builds for the current $VERSION
-    for abi in arm64-v8a armeabi-v7a x86_64 x86; do
-        add_release_file "$RELEASE_DIR/$VERSION-$abi.apk"
-        add_release_file "$RELEASE_DIR/$VERSION-$abi.aab"
+# 2. RELEASE_FILES environment variable
+elif [ -n "${RELEASE_FILES:-}" ]; then
+    for rf in $RELEASE_FILES; do
+        if [ -f "$rf" ]; then
+            add_release_file "$rf"
+        elif [ -f "$RELEASE_DIR/$rf" ]; then
+            add_release_file "$RELEASE_DIR/$rf"
+        else
+            echo "Warning: specified release file not found: $rf" >&2
+        fi
     done
-
-    # 2. Current $VERSION branch builds and current $VERSION lemur/lemon builds only
-    for file in \
-        "$RELEASE_DIR/$VERSION"-*.apk \
-        "$RELEASE_DIR/$VERSION"-*.aab \
-        "$RELEASE_DIR"/*"$VERSION"*.apk \
-        "$RELEASE_DIR"/*"$VERSION"*.aab; do
+# 3. Explicit opt-in to release all version artifacts
+elif [ "${RELEASE_ALL:-0}" = "1" ]; then
+    for file in "$RELEASE_DIR/$VERSION"-*.apk "$RELEASE_DIR/$VERSION"-*.aab; do
         [ -f "$file" ] || continue
-        base_lower=$(basename "$file" | tr '[:upper:]' '[:lower:]')
-        case "$base_lower" in
-            "$VERSION"-arm64-v8a.apk|"$VERSION"-armeabi-v7a.apk|"$VERSION"-x86_64.apk|"$VERSION"-x86.apk|"$VERSION"-arm64-v8a.aab|"$VERSION"-armeabi-v7a.aab)
-                add_release_file "$file"
-                ;;
-            "$VERSION"-*lemur*.*|"$VERSION"-*lemon*.*|*"$VERSION"*lemur*.*|*"$VERSION"*lemon*.*)
-                add_release_file "$file"
-                ;;
-            "$VERSION"-*.apk|"$VERSION"-*.aab)
-                add_release_file "$file"
-                ;;
-        esac
+        add_release_file "$file"
     done
+else
+    # 4. Outputs recorded by build.sh for built branches in this session (if present)
+    if [ -f "$RELEASE_DIR/.last_build_outputs" ] && [ -s "$RELEASE_DIR/.last_build_outputs" ]; then
+        while IFS= read -r line || [ -n "$line" ]; do
+            line_trimmed=$(printf '%s' "$line" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+            [ -n "$line_trimmed" ] || continue
+            target_f=""
+            if [ -f "$RELEASE_DIR/$line_trimmed" ]; then
+                target_f="$RELEASE_DIR/$line_trimmed"
+            elif [ -f "$line_trimmed" ]; then
+                target_f="$line_trimmed"
+            fi
+            if [ -n "$target_f" ]; then
+                add_release_file "$target_f"
+            fi
+        done < "$RELEASE_DIR/.last_build_outputs"
+    fi
+
+    # 5. If RELEASE_BRANCHES is specified, ensure all target branches and their types are included
+    if [ -n "${RELEASE_BRANCHES:-}" ]; then
+        target_branches=$(printf '%s\n' "$RELEASE_BRANCHES" | tr ',' ' ')
+        for br in $target_branches; do
+            br_trimmed=$(printf '%s' "$br" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+            [ -n "$br_trimmed" ] || continue
+            for file in "$RELEASE_DIR/$VERSION"-*.apk "$RELEASE_DIR/$VERSION"-*.aab; do
+                [ -f "$file" ] || continue
+                is_abi_match "$file" || continue
+                if is_branch_match "$file" "$br_trimmed"; then
+                    add_release_file "$file"
+                fi
+            done
+        done
+    # 6. Fallback if no files recorded and no RELEASE_BRANCHES given: match current git branch
+    elif [ "$found" -eq 0 ]; then
+        if [ -n "${OUTPUT_BRANCH_TAG:-}" ]; then
+            target_branches="$OUTPUT_BRANCH_TAG"
+        else
+            target_branches="$(git_repo rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+        fi
+        [ -n "$target_branches" ] || target_branches="main"
+
+        for file in "$RELEASE_DIR/$VERSION"-*.apk "$RELEASE_DIR/$VERSION"-*.aab; do
+            [ -f "$file" ] || continue
+            is_abi_match "$file" || continue
+            matched=0
+            for br in $target_branches; do
+                if is_branch_match "$file" "$br"; then
+                    matched=1
+                    break
+                fi
+            done
+            if [ "$matched" -eq 1 ]; then
+                add_release_file "$file"
+            fi
+        done
+    fi
 fi
 
 if [ "$found" -ne 1 ]; then
-    echo "No APK/AAB files found for branch(es) '$TARGET_RELEASE_BRANCHES' (version $VERSION) in $RELEASE_DIR" >&2
+    echo "No APK/AAB files found to release for version $VERSION in $RELEASE_DIR" >&2
+    echo "Specify target files directly or ensure build outputs match current branch/ABIs." >&2
     exit 1
 fi
+
+echo "Selected files to release:"
+while IFS= read -r f; do
+    echo "  - $(basename "$f")"
+done < "$files_list"
 
 remote_url=$(git_repo remote get-url origin)
 repo=$(printf '%s' "$remote_url" | sed -E 's#^https://([^@]+@)?github.com/##; s#^git@github.com:##; s#\.git$##')
 head_commit=$(git_repo rev-parse HEAD)
 
 sha_file="$RELEASE_DIR/$VERSION-SHA256SUMS.txt"
+sha_name="$(basename "$sha_file")"
+
+# Download existing checksum file from GitHub release if not present locally
+if [ ! -f "$sha_file" ] && command -v gh >/dev/null 2>&1; then
+    gh release download "$TAG" --repo "$repo" --pattern "$sha_name" --dir "$RELEASE_DIR" >/dev/null 2>&1 || true
+fi
+
+# Calculate checksums for files being released in this run
+tmp_new_sha=$(mktemp)
 (
     cd "$RELEASE_DIR"
-    temp_sha="$(mktemp)"
-    # 保留已有 SHA256SUMS.txt 中其他分支/文件的校验和，仅覆盖当前发布文件的记录
-    if [ ! -f "$sha_file" ]; then
-        gh release download "$TAG" --repo "$repo" --pattern "$(basename "$sha_file")" --dir "$RELEASE_DIR" >/dev/null 2>&1 || true
-    fi
-    if [ -f "$sha_file" ]; then
-        current_basenames="$(while IFS= read -r f; do basename "$f"; done < "$files_list")"
-        while IFS= read -r line; do
-            entry_file=$(printf '%s' "$line" | awk '{print $2}' | sed 's/^\*//')
-            if ! printf '%s\n' "$current_basenames" | grep -Fqx "$entry_file" 2>/dev/null; then
-                printf '%s\n' "$line" >> "$temp_sha"
-            fi
-        done < "$sha_file"
-    fi
-    while IFS= read -r file; do
-        sha256sum "$(basename "$file")" >> "$temp_sha"
+    while IFS= read -r f; do
+        bname="$(basename "$f")"
+        [ "$bname" != "$sha_name" ] || continue
+        sha256sum "$bname" >> "$tmp_new_sha"
     done < "$files_list"
-    sort -k2 -u "$temp_sha" > "$sha_file"
-    rm -f "$temp_sha"
 )
+
+# Merge: keep existing checksums of untouched files, update/add current release files
+if [ -f "$sha_file" ] && [ -s "$sha_file" ]; then
+    tmp_merged=$(mktemp)
+    while IFS= read -r line || [ -n "$line" ]; do
+        fname=$(printf '%s\n' "$line" | awk '{print $2}')
+        [ -n "$fname" ] || continue
+        if grep -Fq "  $fname" "$tmp_new_sha" 2>/dev/null; then
+            continue
+        fi
+        printf '%s\n' "$line" >> "$tmp_merged"
+    done < "$sha_file"
+    cat "$tmp_new_sha" >> "$tmp_merged"
+    sort -k 2 -u "$tmp_merged" > "$sha_file"
+    rm -f "$tmp_merged"
+else
+    sort -k 2 -u "$tmp_new_sha" > "$sha_file"
+fi
+rm -f "$tmp_new_sha"
+
 printf '%s\n' "$sha_file" >> "$files_list"
 
 git_repo fetch origin "refs/tags/$TAG:refs/tags/$TAG" >/dev/null 2>&1 || true
 if git_repo rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
     tag_commit=$(git_repo rev-list -n 1 "$TAG")
     if [ "$tag_commit" != "$head_commit" ]; then
-        # 仅当现有 tag 属于当前分支（或是当前 HEAD 的祖先）时才允许移动/覆盖 tag；
-        # 若现有 tag 指向其他分支（例如 tag 在 main 上，而当前在 old-android），严禁跨分支覆盖 tag
-        tag_is_same_branch=0
-        if git_repo merge-base --is-ancestor "$tag_commit" "$head_commit" 2>/dev/null; then
-            tag_is_same_branch=1
-        elif [ -n "$CURRENT_GIT_BRANCH" ] && [ "$CURRENT_GIT_BRANCH" != "HEAD" ]; then
-            if git_repo branch --contains "$tag_commit" 2>/dev/null | grep -qE "(^|[[:space:]])\*?${CURRENT_GIT_BRANCH}$"; then
-                tag_is_same_branch=1
-            fi
-        fi
-
-        if [ "$tag_is_same_branch" = "1" ]; then
-            if [ "$MOVE_TAG" = "1" ]; then
-                git_repo tag -f "$TAG" "$head_commit"
-                git_repo push --force origin "refs/tags/$TAG"
-            else
-                echo "Tag $TAG already exists at $tag_commit on this branch. Set MOVE_TAG=1 to move it to $head_commit." >&2
-                exit 1
-            fi
+        if [ "$MOVE_TAG" = "1" ]; then
+            git_repo tag -f "$TAG" "$head_commit"
         else
-            echo "Notice: Tag $TAG ($tag_commit) points to another branch. Preserving existing tag to avoid cross-branch modifications."
+            echo "Tag $TAG already exists at $tag_commit. Set MOVE_TAG=1 to move it to $head_commit." >&2
+            exit 1
         fi
     fi
 else
     git_repo tag "$TAG" "$head_commit"
-    git_repo push origin "refs/tags/$TAG"
+fi
+
+if [ "${SKIP_GIT_PUSH:-0}" != "1" ]; then
+    if [ "$MOVE_TAG" = "1" ]; then
+        git_repo push --force origin "refs/tags/$TAG"
+    else
+        git_repo push origin "refs/tags/$TAG"
+    fi
 fi
 
 if gh release view "$TAG" --repo "$repo" >/dev/null 2>&1; then
     gh release edit "$TAG" --repo "$repo" --title "Helium Android $VERSION"
-    # Remove any accidentally uploaded assets that do not belong to the current $VERSION
-    for existing_asset in $(gh release view "$TAG" --repo "$repo" --json assets --jq '.assets[].name' 2>/dev/null || true); do
-        case "$existing_asset" in
-            *"$VERSION"*)
-                ;;
-            *)
-                gh release delete-asset "$TAG" "$existing_asset" --repo "$repo" --yes >/dev/null 2>&1 || true
-                ;;
-        esac
-    done
+    if [ "${CLEAN_STALE_ASSETS:-0}" = "1" ]; then
+        for existing_asset in $(gh release view "$TAG" --repo "$repo" --json assets --jq '.assets[].name' 2>/dev/null || true); do
+            case "$existing_asset" in
+                *"$VERSION"*)
+                    ;;
+                *)
+                    gh release delete-asset "$TAG" "$existing_asset" --repo "$repo" --yes >/dev/null 2>&1 || true
+                    ;;
+            esac
+        done
+    fi
 else
     gh release create "$TAG" \
         --repo "$repo" \
@@ -212,3 +334,4 @@ while IFS= read -r file; do
 done < "$files_list"
 
 echo "Published release $TAG to $repo"
+rm -f "$RELEASE_DIR/.last_build_outputs" 2>/dev/null || true

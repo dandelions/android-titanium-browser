@@ -116,7 +116,11 @@ if [ "$FAST_LOCAL_BUILD" = "1" ]; then
     SKIP_SOURCE_PREPARE=1
     SKIP_SYSTEM_DEPS=1
     if [ -z "$BUILD_VERSION_INCREMENT" ]; then
-        if [ -f "$SCRIPT_DIR/chromium/src/out/arm/args.gn" ]; then
+        if [ -f "$SCRIPT_DIR/chromium/src/$OUT_DIR_ARM/args.gn" ]; then
+            BUILD_VERSION_INCREMENT="$(grep -m1 '^ext_version_increment[[:space:]]*=' "$SCRIPT_DIR/chromium/src/$OUT_DIR_ARM/args.gn" 2>/dev/null | sed -E 's/.*"([^"]+)".*/\1/' || true)"
+        elif [ -f "$SCRIPT_DIR/chromium/src/$OUT_DIR_ARM64/args.gn" ]; then
+            BUILD_VERSION_INCREMENT="$(grep -m1 '^ext_version_increment[[:space:]]*=' "$SCRIPT_DIR/chromium/src/$OUT_DIR_ARM64/args.gn" 2>/dev/null | sed -E 's/.*"([^"]+)".*/\1/' || true)"
+        elif [ -f "$SCRIPT_DIR/chromium/src/out/arm/args.gn" ]; then
             BUILD_VERSION_INCREMENT="$(grep -m1 '^ext_version_increment[[:space:]]*=' "$SCRIPT_DIR/chromium/src/out/arm/args.gn" 2>/dev/null | sed -E 's/.*"([^"]+)".*/\1/' || true)"
         elif [ -f "$SCRIPT_DIR/chromium/src/out/arm64/args.gn" ]; then
             BUILD_VERSION_INCREMENT="$(grep -m1 '^ext_version_increment[[:space:]]*=' "$SCRIPT_DIR/chromium/src/out/arm64/args.gn" 2>/dev/null | sed -E 's/.*"([^"]+)".*/\1/' || true)"
@@ -251,7 +255,7 @@ restore_build_state() {
     if [ -n "$BUILD_STATE_ARCHIVE" ] && [ -f "$BUILD_STATE_ARCHIVE" ]; then
         echo "Restoring Chromium build state from $BUILD_STATE_ARCHIVE"
         tar -xf "$BUILD_STATE_ARCHIVE" -C .
-        du -sh out/arm out/arm64 out/tmp 2>/dev/null || true
+        du -sh "$OUT_DIR_ARM" "$OUT_DIR_ARM64" out/arm out/arm64 out/tmp 2>/dev/null || true
         export BUILD_STATE_RESTORED=1
     fi
 }
@@ -674,37 +678,29 @@ if [ "$SKIP_SYSTEM_DEPS" != "1" ]; then
     sudo apt-get update
     sudo apt-get install -y libgcc-s1:i386
 fi
-mkdir -p out/tmp out/release
-echo "Build options: BUILD_ARM=$BUILD_ARM BUILD_ARM64=$BUILD_ARM64 BUILD_AAB=$BUILD_AAB BUILD_VERSION_INCREMENT=$BUILD_VERSION_INCREMENT NINJA_JOBS=${NINJA_JOBS:-auto} OUTPUT_PREFIX=$OUTPUT_VERSION_PREFIX"
-
-is_old_android_build() {
-    local branch="$(git -C "$SCRIPT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
-    if [ "${DISABLE_V3_SIGNING:-0}" = "1" ] || [ "${CAR_COMPAT:-0}" = "1" ] || [ "$branch" = "old-android" ] || [[ "${OUTPUT_BRANCH_TAG:-}" == *"old-android"* ]]; then
-        return 0
-    fi
-    return 1
-}
+mkdir -p "$OUT_DIR_ARM" "$OUT_DIR_ARM64" out/tmp out/release
+echo "Build options: BUILD_ARM=$BUILD_ARM BUILD_ARM64=$BUILD_ARM64 BUILD_AAB=$BUILD_AAB BUILD_VERSION_INCREMENT=$BUILD_VERSION_INCREMENT NINJA_JOBS=${NINJA_JOBS:-auto} OUTPUT_PREFIX=$OUTPUT_VERSION_PREFIX OUT_DIR_ARM=$OUT_DIR_ARM OUT_DIR_ARM64=$OUT_DIR_ARM64"
 
 if [ "$BUILD_ARM" = "1" ]; then
     if [ "${SKIP_ARM32:-0}" = "1" ]; then
         echo "SKIP_ARM32=1: Skipping arm32 compilation as requested."
     else
-        configure_out_dir out/arm arm
-        run_autoninja out/arm chrome_public_apk
-        copy_first_output out/arm/apks 'Chrome*.apk' "out/tmp/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk"
+        configure_out_dir "$OUT_DIR_ARM" arm
+        run_autoninja "$OUT_DIR_ARM" chrome_public_apk
+        copy_first_output "$OUT_DIR_ARM/apks" 'Chrome*.apk' "out/tmp/${OUTPUT_VERSION_PREFIX}-armeabi-v7a.apk"
     fi
 fi
 
 if [ "$BUILD_ARM64" = "1" ]; then
-    configure_out_dir out/arm64 arm64
+    configure_out_dir "$OUT_DIR_ARM64" arm64
     arm64_targets="chrome_public_apk"
     if [ "$BUILD_AAB" = "1" ]; then
         arm64_targets="$arm64_targets chrome_public_bundle"
     fi
-    run_autoninja out/arm64 $arm64_targets
-    copy_first_output out/arm64/apks 'Chrome*.apk' "out/tmp/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk"
+    run_autoninja "$OUT_DIR_ARM64" $arm64_targets
+    copy_first_output "$OUT_DIR_ARM64/apks" 'Chrome*.apk' "out/tmp/${OUTPUT_VERSION_PREFIX}-arm64-v8a.apk"
     if [ "$BUILD_AAB" = "1" ]; then
-        copy_first_output out/arm64/apks 'Chrome*.aab' "out/tmp/${OUTPUT_VERSION_PREFIX}-arm64-v8a.aab"
+        copy_first_output "$OUT_DIR_ARM64/apks" 'Chrome*.aab' "out/tmp/${OUTPUT_VERSION_PREFIX}-arm64-v8a.aab"
     fi
 fi
 
@@ -783,3 +779,40 @@ if [ "$BUILD_ARM64" = "1" ]; then
 fi
 echo "Build outputs:"
 ls -lh $release_outputs
+
+if [ -n "$release_outputs" ]; then
+    mkdir -p out/release
+    marker="out/release/.last_build_outputs"
+    tmp_marker=$(mktemp)
+    if [ "${RESET_BUILD_OUTPUTS:-0}" != "1" ] && [ -f "$marker" ]; then
+        while IFS= read -r line || [ -n "$line" ]; do
+            bname=$(basename "$line")
+            [ -n "$bname" ] || continue
+            [ -f "out/release/$bname" ] || continue
+            case "$bname" in
+                "$VERSION"*) ;;
+                *) continue ;;
+            esac
+            # Remove previous outputs of the branch currently being built so they are replaced by the new outputs
+            if [ "$OUTPUT_VERSION_PREFIX" = "$VERSION" ]; then
+                case "$bname" in
+                    "$VERSION"-arm64-v8a.*|"$VERSION"-armeabi-v7a.*|"$VERSION"-x86_64.*|"$VERSION"-x86.*)
+                        continue ;;
+                esac
+            else
+                case "$bname" in
+                    "${OUTPUT_VERSION_PREFIX}"-*)
+                        continue ;;
+                esac
+            fi
+            printf '%s\n' "$bname" >> "$tmp_marker"
+        done < "$marker"
+    fi
+
+    for ro in $release_outputs; do
+        bname=$(basename "$ro")
+        printf '%s\n' "$bname" >> "$tmp_marker"
+    done
+    sort -u "$tmp_marker" > "$marker"
+    rm -f "$tmp_marker"
+fi
