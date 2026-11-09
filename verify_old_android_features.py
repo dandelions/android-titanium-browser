@@ -65,7 +65,7 @@ def verify(root):
         raise SystemExit(f"extension toolbar layout patch is missing: {layout_path}")
 
     manager_path, manager = read(root, TOOLBAR_MANAGER)
-    if "(ToolbarTablet) mToolbarLayout" in manager:
+    if re.search(r"\([ \t]*ToolbarTablet[ \t]*\)[ \t]*mToolbarLayout,", manager):
         raise SystemExit(f"toolbar layout cast patch is missing: {manager_path}")
 
     print("Verified old-android extension management and bottom address bar patches")
