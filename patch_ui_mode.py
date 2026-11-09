@@ -65,8 +65,17 @@ def patch_device_form_factor(src_dir: Path) -> None:
         return
 
     text = path.read_text(encoding="utf-8")
+    if "MINIMUM_TABLET_WIDTH_DP" not in text and (src_dir / ".git").exists():
+        import subprocess
+        subprocess.run(
+            ["git", "checkout", "--", DEVICE_FORM_FACTOR_REL],
+            cwd=src_dir,
+            check=True,
+        )
+        text = path.read_text(encoding="utf-8")
 
-    constants = """    public static final int UI_MODE_AUTO = 0;
+    constants = """    // BEGIN HELIUM UI MODE
+    public static final int UI_MODE_AUTO = 0;
     public static final int UI_MODE_MOBILE = 1;
     public static final int UI_MODE_DESKTOP = 2;
     public static final String PREF_UI_MODE = "helium_browser_ui_mode";
@@ -160,19 +169,29 @@ def patch_device_form_factor(src_dir: Path) -> None:
             });
         } catch (Throwable ignored) {}
     }
+    // END HELIUM UI MODE
 """
 
-    mode_start = text.find("    public static final int UI_MODE_AUTO = 0;")
-    if mode_start >= 0:
-        tablet_start = text.find("    public static boolean isTablet() {", mode_start)
-        if tablet_start < 0:
-            raise SystemExit(f"DeviceFormFactor UI mode block end not found in {path}")
-        text = text[:mode_start] + constants + "\n\n" + text[tablet_start:]
+    begin_marker = "    // BEGIN HELIUM UI MODE\n"
+    end_marker = "    // END HELIUM UI MODE\n"
+    if begin_marker in text and end_marker in text:
+        begin_idx = text.find(begin_marker)
+        end_idx = text.find(end_marker, begin_idx) + len(end_marker)
+        text = text[:begin_idx] + constants + text[end_idx:]
     else:
-        class_anchor = "public class DeviceFormFactor {\n"
-        if class_anchor not in text:
-            raise SystemExit(f"DeviceFormFactor class anchor not found in {path}")
-        text = text.replace(class_anchor, class_anchor + constants + "\n", 1)
+        mode_start = text.find("    public static final int UI_MODE_AUTO = 0;")
+        if mode_start >= 0:
+            static_end_marker = "        } catch (Throwable ignored) {}\n    }\n"
+            static_end = text.find(static_end_marker, mode_start)
+            if static_end < 0:
+                raise SystemExit(f"DeviceFormFactor UI mode block end not found in {path}")
+            block_end = static_end + len(static_end_marker)
+            text = text[:mode_start] + constants + text[block_end:]
+        else:
+            class_anchor = "public class DeviceFormFactor {\n"
+            if class_anchor not in text:
+                raise SystemExit(f"DeviceFormFactor class anchor not found in {path}")
+            text = text.replace(class_anchor, class_anchor + constants + "\n", 1)
 
     old_is_tablet = """    public static boolean isTablet() {
         if (sIsTabletForTesting != null) {
@@ -470,12 +489,29 @@ def clean_ui_mode_from_standard_branches(src_dir: Path) -> None:
     dff_path = src_dir / DEVICE_FORM_FACTOR_REL
     if dff_path.exists():
         text = dff_path.read_text(encoding="utf-8")
-        mode_start = text.find("    public static final int UI_MODE_AUTO = 0;")
-        if mode_start >= 0:
-            tablet_start = text.find("    public static boolean isTablet() {", mode_start)
-            if tablet_start < 0:
-                raise SystemExit(f"DeviceFormFactor UI mode block end not found in {dff_path}")
-            text = text[:mode_start] + text[tablet_start:]
+        removed_block = False
+        begin_marker = "    // BEGIN HELIUM UI MODE\n"
+        end_marker = "    // END HELIUM UI MODE\n"
+        if begin_marker in text and end_marker in text:
+            begin_idx = text.find(begin_marker)
+            end_idx = text.find(end_marker, begin_idx) + len(end_marker)
+            if text[end_idx : end_idx + 1] == "\n":
+                end_idx += 1
+            text = text[:begin_idx] + text[end_idx:]
+            removed_block = True
+        else:
+            mode_start = text.find("    public static final int UI_MODE_AUTO = 0;")
+            if mode_start >= 0:
+                static_end_marker = "        } catch (Throwable ignored) {}\n    }\n"
+                static_end = text.find(static_end_marker, mode_start)
+                if static_end < 0:
+                    raise SystemExit(f"DeviceFormFactor UI mode block end not found in {dff_path}")
+                block_end = static_end + len(static_end_marker)
+                if text[block_end : block_end + 1] == "\n":
+                    block_end += 1
+                text = text[:mode_start] + text[block_end:]
+                removed_block = True
+        if removed_block:
             text = re.sub(r"    public static boolean isTablet\(\) \{\n[\s\S]*?\n    \}",
                           """    public static boolean isTablet() {
         if (sIsTabletForTesting != null) {

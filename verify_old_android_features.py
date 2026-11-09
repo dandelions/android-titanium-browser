@@ -25,6 +25,9 @@ TOOLBAR_PHONE_LAYOUT = Path(
 TOOLBAR_MANAGER = Path(
     "chrome/android/java/src/org/chromium/chrome/browser/toolbar/ToolbarManager.java"
 )
+DEVICE_FORM_FACTOR = Path(
+    "ui/android/java/src/org/chromium/ui/base/DeviceFormFactor.java"
+)
 
 
 def read(root, relative):
@@ -67,6 +70,20 @@ def verify(root):
     manager_path, manager = read(root, TOOLBAR_MANAGER)
     if re.search(r"\([ \t]*ToolbarTablet[ \t]*\)[ \t]*mToolbarLayout,", manager):
         raise SystemExit(f"toolbar layout cast patch is missing: {manager_path}")
+
+    dff_path = root / DEVICE_FORM_FACTOR
+    if dff_path.is_file():
+        dff = dff_path.read_text(encoding="utf-8")
+        for required_symbol in (
+            "MINIMUM_TABLET_WIDTH_DP",
+            "SCREEN_BUCKET_TABLET",
+            "SCREEN_BUCKET_LARGE_TABLET",
+            "sIsTabletForTesting",
+        ):
+            if required_symbol not in dff:
+                raise SystemExit(
+                    f"DeviceFormFactor is missing Chromium symbol {required_symbol}: {dff_path}"
+                )
 
     print("Verified old-android extension management and bottom address bar patches")
 

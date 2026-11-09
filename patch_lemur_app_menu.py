@@ -2471,6 +2471,32 @@ def _without_ui_mode_methods(methods: str) -> str:
     return methods
 
 
+def clean_ui_mode_from_lemur_menu(path: Path) -> None:
+    if not path.exists():
+        return
+    text = path.read_text(encoding="utf-8")
+    start_marker = "    // Helium: Lemur Browser-style rounded bottom popup menu panel.\n"
+    method_anchor = "    private ListItem buildSettingsItem() {\n"
+    start_pos = text.find(start_marker)
+    if start_pos < 0:
+        return
+    end_pos = text.find(method_anchor, start_pos)
+    if end_pos < 0:
+        end_pos = len(text)
+    methods = text[start_pos:end_pos]
+    if not any(
+        marker in methods
+        for marker in (
+            "UI Mode (移动版",
+            "// Tool 9: 界面模式",
+            "showUiModeSelectionDialog",
+        )
+    ):
+        return
+    cleaned_methods = _without_ui_mode_methods(methods)
+    path.write_text(text[:start_pos] + cleaned_methods + text[end_pos:], encoding="utf-8")
+
+
 def is_old_compat_branch(src_dir: Path) -> bool:
     try:
         for cwd in (os.path.dirname(os.path.abspath(__file__)), ".", str(src_dir)):
