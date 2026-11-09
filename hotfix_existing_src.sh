@@ -4290,6 +4290,8 @@ else
     restore_non_lemur_menu_baseline "$SRC_DIR"
 fi
 
+python3 "$SCRIPT_DIR/patch_extension_toolbar.py" "$SRC_DIR"
+
 if is_old_version_branch; then
     if [ -f "$SCRIPT_DIR/patch_android_min_sdk.py" ]; then
         python3 "$SCRIPT_DIR/patch_android_min_sdk.py" "$SRC_DIR"

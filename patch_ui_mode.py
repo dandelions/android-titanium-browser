@@ -43,12 +43,19 @@ def is_old_android_branch(src_dir: Path) -> bool:
         except OSError:
             continue
         branch = result.stdout.strip()
-        if branch in ("old-android", "old-version"):
+        if branch in ("", "HEAD"):
+            continue
+        if branch in ("old-android", "old-version") or branch.startswith("old-"):
             return True
         if branch in ("main", "lemur", "lemur-style-app-menu"):
             return False
 
-    return False
+    import os
+    return (
+        os.environ.get("OLD_VERSION") == "1"
+        or os.environ.get("OLD_ANDROID") == "1"
+        or os.environ.get("CAR_COMPAT") == "1"
+    )
 
 
 def patch_device_form_factor(src_dir: Path) -> None:
@@ -511,10 +518,43 @@ def patch_extensions_visibility(src_dir: Path) -> None:
                 || (mCanShowMenuIcon && isMenuButtonPinned());
     }"""
         new_should_show = """    private boolean shouldShowMenuIcon() {
-        return !mIsWebApp && mCanShowMenuIcon;
+        return !mIsWebApp;
     }"""
         if old_should_show in text:
             text = text.replace(old_should_show, new_should_show, 1)
+
+        old_consumer = """        @Override
+        public boolean hasSpaceToShow() {
+            return mCanShowMenuIcon;
+        }
+
+        @Override
+        public int updateVisibility(int availableWidth) {
+            int puzzleButtonWidth =
+                    mContainer.getResources().getDimensionPixelSize(R.dimen.toolbar_button_width);
+            mCanShowMenuIcon = puzzleButtonWidth <= availableWidth;
+
+            updateMenuIconVisibility();
+
+            return shouldShowMenuIcon() ? puzzleButtonWidth : 0;
+        }"""
+        new_consumer = """        @Override
+        public boolean hasSpaceToShow() {
+            return true;
+        }
+
+        @Override
+        public int updateVisibility(int availableWidth) {
+            int puzzleButtonWidth =
+                    mContainer.getResources().getDimensionPixelSize(R.dimen.toolbar_button_width);
+            mCanShowMenuIcon = true;
+
+            updateMenuIconVisibility();
+
+            return shouldShowMenuIcon() ? puzzleButtonWidth : 0;
+        }"""
+        if old_consumer in text:
+            text = text.replace(old_consumer, new_consumer, 1)
 
         ext_path.write_text(text, encoding="utf-8")
         print(f"[patch_ui_mode] Patched {ext_path} to keep extensions button visible")

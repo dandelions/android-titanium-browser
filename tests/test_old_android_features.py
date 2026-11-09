@@ -30,6 +30,7 @@ class OldAndroidFeatureConfigurationTest(unittest.TestCase):
                 text = (ROOT / name).read_text()
                 self.assertIn("patch_ui_mode.py", text)
                 self.assertIn("patch_lemur_app_menu.py", text)
+                self.assertIn("patch_extension_toolbar.py", text)
                 self.assertIn(
                     "Helium: follow the toolbar preference on the NTP and while editing",
                     text,

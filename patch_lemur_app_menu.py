@@ -194,11 +194,49 @@ def patch_extensions_toolbar_coordinator_impl(src_dir: Path) -> None:
                 || mShowExtensionsMenuPending
                 || (mCanShowMenuIcon && isMenuButtonPinned());
     }"""
-    new_should_show = """    private boolean shouldShowMenuIcon() {
+    alt_should_show = """    private boolean shouldShowMenuIcon() {
         return !mIsWebApp && mCanShowMenuIcon;
+    }"""
+    new_should_show = """    private boolean shouldShowMenuIcon() {
+        return !mIsWebApp;
     }"""
     if old_should_show in text:
         text = text.replace(old_should_show, new_should_show, 1)
+    elif alt_should_show in text:
+        text = text.replace(alt_should_show, new_should_show, 1)
+
+    old_consumer = """        @Override
+        public boolean hasSpaceToShow() {
+            return mCanShowMenuIcon;
+        }
+
+        @Override
+        public int updateVisibility(int availableWidth) {
+            int puzzleButtonWidth =
+                    mContainer.getResources().getDimensionPixelSize(R.dimen.toolbar_button_width);
+            mCanShowMenuIcon = puzzleButtonWidth <= availableWidth;
+
+            updateMenuIconVisibility();
+
+            return shouldShowMenuIcon() ? puzzleButtonWidth : 0;
+        }"""
+    new_consumer = """        @Override
+        public boolean hasSpaceToShow() {
+            return true;
+        }
+
+        @Override
+        public int updateVisibility(int availableWidth) {
+            int puzzleButtonWidth =
+                    mContainer.getResources().getDimensionPixelSize(R.dimen.toolbar_button_width);
+            mCanShowMenuIcon = true;
+
+            updateMenuIconVisibility();
+
+            return shouldShowMenuIcon() ? puzzleButtonWidth : 0;
+        }"""
+    if old_consumer in text:
+        text = text.replace(old_consumer, new_consumer, 1)
 
     old_show_ext_menu = """    @Override
     public void showExtensionsMenu() {
@@ -421,9 +459,45 @@ def patch_extensions_menu_coordinator(src_dir: Path) -> None:
             int iconResId = R.drawable.chrome_extension;
             mExtensionsMenuButton.setImageResource(iconResId);
         }"""
-    new_update_icon = """        mExtensionsMenuButton.setImageDrawable(createHeliumFourSquaresDrawable());"""
+    new_update_icon = """        mExtensionsMenuButton.setImageDrawable(createHeliumFourSquaresDrawable());
+        onTintChanged(
+                mThemeColorProvider.getTint(),
+                mThemeColorProvider.getActivityFocusTint(),
+                mThemeColorProvider.getBrandedColorScheme());"""
     if old_update_icon in text:
         text = text.replace(old_update_icon, new_update_icon, 1)
+
+    old_tint_reg = "        mThemeColorProvider.addTintObserver(mTintObserver);"
+    new_tint_reg = (
+        "        mThemeColorProvider.addTintObserver(mTintObserver);\n"
+        "        onTintChanged(\n"
+        "                mThemeColorProvider.getTint(),\n"
+        "                mThemeColorProvider.getActivityFocusTint(),\n"
+        "                mThemeColorProvider.getBrandedColorScheme());"
+    )
+    if new_tint_reg not in text and old_tint_reg in text:
+        text = text.replace(old_tint_reg, new_tint_reg, 1)
+
+    old_tint_fn = """    public void onTintChanged(
+            @Nullable ColorStateList tintList,
+            @Nullable ColorStateList activityFocusTintList,
+            @BrandedColorScheme int brandedColorScheme) {
+        ImageViewCompat.setImageTintList(mExtensionsMenuButton, activityFocusTintList);
+    }"""
+    new_tint_fn = """    public void onTintChanged(
+            @Nullable ColorStateList tintList,
+            @Nullable ColorStateList activityFocusTintList,
+            @BrandedColorScheme int brandedColorScheme) {
+        ColorStateList tint = activityFocusTintList != null ? activityFocusTintList : tintList;
+        if (tint == null) {
+            tint =
+                    org.chromium.chrome.browser.theme.ThemeUtils.getThemedToolbarIconTint(
+                            mContext, brandedColorScheme);
+        }
+        ImageViewCompat.setImageTintList(mExtensionsMenuButton, tint);
+    }"""
+    if old_tint_fn in text:
+        text = text.replace(old_tint_fn, new_tint_fn, 1)
 
     old_on_ready = """                        /* onReady= */ () -> {
                             mExtensionsMenuButton.showMenu();
@@ -2399,7 +2473,7 @@ def _without_ui_mode_methods(methods: str) -> str:
 
 def is_old_compat_branch(src_dir: Path) -> bool:
     try:
-        for cwd in (str(src_dir), os.path.dirname(os.path.abspath(__file__)), "."):
+        for cwd in (os.path.dirname(os.path.abspath(__file__)), ".", str(src_dir)):
             result = subprocess.run(
                 ["git", "rev-parse", "--abbrev-ref", "HEAD"],
                 capture_output=True,
@@ -2407,6 +2481,8 @@ def is_old_compat_branch(src_dir: Path) -> bool:
                 cwd=cwd,
             )
             branch = result.stdout.strip()
+            if branch in ("", "HEAD"):
+                continue
             if branch == "old-android" or branch == "old-version" or branch.startswith("old-"):
                 return True
             if branch in ("main", "lemur", "lemur-style-app-menu"):
@@ -2545,8 +2621,46 @@ def unpatch_extensions_toolbar_coordinator_impl(src_dir: Path) -> None:
     new_should_show = """    private boolean shouldShowMenuIcon() {
         return !mIsWebApp && mCanShowMenuIcon;
     }"""
-    if new_should_show in text:
+    new_should_show_v2 = """    private boolean shouldShowMenuIcon() {
+        return !mIsWebApp;
+    }"""
+    if new_should_show_v2 in text:
+        text = text.replace(new_should_show_v2, old_should_show, 1)
+    elif new_should_show in text:
         text = text.replace(new_should_show, old_should_show, 1)
+
+    old_consumer = """        @Override
+        public boolean hasSpaceToShow() {
+            return mCanShowMenuIcon;
+        }
+
+        @Override
+        public int updateVisibility(int availableWidth) {
+            int puzzleButtonWidth =
+                    mContainer.getResources().getDimensionPixelSize(R.dimen.toolbar_button_width);
+            mCanShowMenuIcon = puzzleButtonWidth <= availableWidth;
+
+            updateMenuIconVisibility();
+
+            return shouldShowMenuIcon() ? puzzleButtonWidth : 0;
+        }"""
+    new_consumer = """        @Override
+        public boolean hasSpaceToShow() {
+            return true;
+        }
+
+        @Override
+        public int updateVisibility(int availableWidth) {
+            int puzzleButtonWidth =
+                    mContainer.getResources().getDimensionPixelSize(R.dimen.toolbar_button_width);
+            mCanShowMenuIcon = true;
+
+            updateMenuIconVisibility();
+
+            return shouldShowMenuIcon() ? puzzleButtonWidth : 0;
+        }"""
+    if new_consumer in text:
+        text = text.replace(new_consumer, old_consumer, 1)
 
     # Revert showExtensionsMenu
     old_show_ext_menu = """    @Override
@@ -2643,11 +2757,15 @@ def unpatch_extensions_menu_coordinator(src_dir: Path) -> None:
                 was_open_str = "if (wasOpen) {\n                            return;\n                        }"
                 was_open_pos = text.find(was_open_str, dest_pos)
                 if was_open_pos != -1:
-                    end_idx = was_open_pos + len(was_open_str) + 21
+                    end_idx = text.find("}", was_open_pos + len(was_open_str)) + 1
                 else:
                     end_idx = text.find("}", dest_pos) + 1
 
-                standard_click = """mExtensionsMenuButton.setOnClickListener(
+                if "// Ignore clicks triggered by the touch-up" in text[end_idx : end_idx + 120]:
+                    standard_click = """mExtensionsMenuButton.setOnClickListener(
+                (view) -> {"""
+                else:
+                    standard_click = """mExtensionsMenuButton.setOnClickListener(
                 (view) -> {
                     if (mMediator != null) {
                         mExtensionsMenuButton.dismiss();
@@ -2664,8 +2782,47 @@ def unpatch_extensions_menu_coordinator(src_dir: Path) -> None:
             int iconResId = R.drawable.chrome_extension;
             mExtensionsMenuButton.setImageResource(iconResId);
         }"""
-    if four_squares_call in text:
+    new_update_icon = """        mExtensionsMenuButton.setImageDrawable(createHeliumFourSquaresDrawable());
+        onTintChanged(
+                mThemeColorProvider.getTint(),
+                mThemeColorProvider.getActivityFocusTint(),
+                mThemeColorProvider.getBrandedColorScheme());"""
+    if new_update_icon in text:
+        text = text.replace(new_update_icon, old_update_icon)
+    elif four_squares_call in text:
         text = text.replace("        " + four_squares_call, old_update_icon)
+
+    old_tint_reg = "        mThemeColorProvider.addTintObserver(mTintObserver);"
+    new_tint_reg = (
+        "        mThemeColorProvider.addTintObserver(mTintObserver);\n"
+        "        onTintChanged(\n"
+        "                mThemeColorProvider.getTint(),\n"
+        "                mThemeColorProvider.getActivityFocusTint(),\n"
+        "                mThemeColorProvider.getBrandedColorScheme());"
+    )
+    if new_tint_reg in text:
+        text = text.replace(new_tint_reg, old_tint_reg)
+
+    old_tint_fn = """    public void onTintChanged(
+            @Nullable ColorStateList tintList,
+            @Nullable ColorStateList activityFocusTintList,
+            @BrandedColorScheme int brandedColorScheme) {
+        ImageViewCompat.setImageTintList(mExtensionsMenuButton, activityFocusTintList);
+    }"""
+    new_tint_fn = """    public void onTintChanged(
+            @Nullable ColorStateList tintList,
+            @Nullable ColorStateList activityFocusTintList,
+            @BrandedColorScheme int brandedColorScheme) {
+        ColorStateList tint = activityFocusTintList != null ? activityFocusTintList : tintList;
+        if (tint == null) {
+            tint =
+                    org.chromium.chrome.browser.theme.ThemeUtils.getThemedToolbarIconTint(
+                            mContext, brandedColorScheme);
+        }
+        ImageViewCompat.setImageTintList(mExtensionsMenuButton, tint);
+    }"""
+    if new_tint_fn in text:
+        text = text.replace(new_tint_fn, old_tint_fn, 1)
 
     helper_marker = "    public void executeActionFromAppMenu("
     helper_anchor = "    @VisibleForTesting\n    View getContentView() {"

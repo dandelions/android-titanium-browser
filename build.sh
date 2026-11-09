@@ -199,6 +199,8 @@ ensure_titanium_extension_bundle() {
     local bundle_dir="$SCRIPT_DIR/extensions/dist"
     local bundle_index="$bundle_dir/bundled.json"
     local bundle_crx="$bundle_dir/titanium.crx"
+    # Remove any legacy helium.crx alias left by earlier gclient hook runs.
+    rm -f "$bundle_dir/helium.crx"
     if [ -f "$bundle_crx" ] && grep -q '"external_crx": "titanium.crx"' "$bundle_index" 2>/dev/null; then
         return 0
     fi

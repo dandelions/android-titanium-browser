@@ -965,16 +965,7 @@ grep -q 'Helium: ignore extension main-frame cancel/redirect' extensions/browser
 sed -i 's|public static void maybeDefaultEnableWindowSetting(Activity activity, Profile profile) {$|&WebsitePreferenceBridge.setContentSettingCustomScope(profile, ContentSettingsType.REQUEST_DESKTOP_SITE, "[*.]chromewebstore.google.com", SITE_WILDCARD, ContentSetting.ALLOW);|' chrome/browser/ui/android/desktop_site/java/src/org/chromium/chrome/browser/desktop_site/DesktopSiteUtils.java # desktop
 
 # ext: toolbar
-sed -i '/<ViewStub/{N;N;N;N;N;N; /optional_button_stub/a\
-        <ViewStub\
-            android:id="@+id/extensions_toolbar_container_stub"\
-            android:inflatedId="@+id/extensions_toolbar_container"\
-            android:layout_width="wrap_content"\
-            android:layout_height="?attr/toolbarButtonHeight"\
-            android:layout_marginVertical="?attr/toolbarButtonMarginVertical" />
-}' chrome/browser/ui/android/toolbar/java/res/layout/toolbar_phone.xml
-sed -i 's|(ToolbarTablet) mToolbarLayout,|mToolbarLayout,|' chrome/android/java/src/org/chromium/chrome/browser/toolbar/ToolbarManager.java
-sed -i '/\/\/ Draw the signin button if visible./i\        { View extContainer = findViewById(R.id.extensions_toolbar_container); if (extContainer != null \&\& extContainer.getVisibility() != View.GONE \&\& extContainer.getWidth() != 0) { canvas.save(); ViewUtils.translateCanvasToView(mToolbarButtonsContainer, extContainer, canvas); extContainer.draw(canvas); canvas.restore(); } }' chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/top/ToolbarPhone.java
+python3 "$SCRIPT_DIR/patch_extension_toolbar.py" .
 
 # ext: popup
 sed -i '/public class RecyclerViewDelegate {$/a\public View getContainerView() { return mContainer; }' chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionActionListCoordinator.java
