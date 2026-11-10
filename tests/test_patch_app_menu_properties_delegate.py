@@ -59,11 +59,44 @@ class TestPatchAppMenuPropertiesDelegate(unittest.TestCase):
             with self.subTest(script=name):
                 text = (REPO_ROOT / name).read_text(encoding="utf-8")
                 self.assertIn("HeliumAndroidNullContentsGuard", text)
+                self.assertIn("HeliumAndroidHighlightProfileGuard", text)
                 self.assertIn("HeliumAndroidDrawBlockerTimeout", text)
                 self.assertIn(
                     "content::WebContents* contents = tab ? tab->GetContents() : nullptr;",
                     text,
                 )
+
+    def test_highlighted_tab_profile_guard_rewrites_upstream_source(self):
+        upstream = """  for (tabs::TabInterface* tab : highlighted_tabs) {
+    content::WebContents* web_contents = tab->GetContents();
+    CHECK(web_contents);
+
+    if (highlight_info.window_id == -1) {
+      profile = Profile::FromBrowserContext(web_contents->GetBrowserContext());
+      highlight_info.window_id =
+          ExtensionTabUtil::GetWindowIdOfTab(web_contents);
+    }
+
+    int tab_id = ExtensionTabUtil::GetTabId(web_contents);
+    highlight_info.tab_ids.push_back(tab_id);
+  }
+  CHECK(profile);
+
+  base::ListValue args = api::tabs::OnHighlighted::Create(highlight_info);
+"""
+        for name in ("patch.sh", "hotfix_existing_src.sh"):
+            with self.subTest(script=name):
+                script = (REPO_ROOT / name).read_text(encoding="utf-8")
+                start = script.index('if "HeliumAndroidHighlightProfileGuard" not in text:')
+                end = script.index(
+                    "if path.read_text() != text:", start
+                )
+                namespace = {"text": upstream}
+                exec(script[start:end], namespace)
+                patched = namespace["text"]
+                self.assertIn("HeliumAndroidHighlightProfileGuard", patched)
+                self.assertIn("  if (!profile) {\n    return;\n  }", patched)
+                self.assertIn("  CHECK(profile);", patched)
 
     def test_lemur_menu_patch_runs_after_sdk_baseline_restore(self):
         # The baseline restore git-checkouts the app menu delegates, so running the

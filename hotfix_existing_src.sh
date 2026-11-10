@@ -3704,6 +3704,33 @@ if "HeliumAndroidNullContentsGuard" not in text:
     if update_indices_pattern in text:
         text = text.replace(update_indices_pattern, update_indices_replacement, 1)
 
+if "HeliumAndroidHighlightProfileGuard" not in text:
+    # The highlighted-tab callback skips tabs without WebContents, so a frozen
+    # restore selection can leave `profile` unset and trip the CHECK below.
+    highlight_profile_pattern = """    int tab_id = ExtensionTabUtil::GetTabId(web_contents);
+    highlight_info.tab_ids.push_back(tab_id);
+  }
+  CHECK(profile);
+
+  base::ListValue args = api::tabs::OnHighlighted::Create(highlight_info);"""
+    highlight_profile_replacement = """    int tab_id = ExtensionTabUtil::GetTabId(web_contents);
+    highlight_info.tab_ids.push_back(tab_id);
+  }
+#if BUILDFLAG(IS_ANDROID)
+  // HeliumAndroidHighlightProfileGuard: every highlighted tab can be skipped
+  // above when it still has no WebContents, so there is no profile to report.
+  if (!profile) {
+    return;
+  }
+#else
+  CHECK(profile);
+#endif
+
+  base::ListValue args = api::tabs::OnHighlighted::Create(highlight_info);"""
+    if highlight_profile_pattern in text:
+        text = text.replace(
+            highlight_profile_pattern, highlight_profile_replacement, 1)
+
 if path.read_text() != text:
     path.write_text(text)
 PYCODE
