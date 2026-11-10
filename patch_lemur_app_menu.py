@@ -1306,8 +1306,13 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
                     if (dialog.isShowing()) {
                         dialog.dismiss();
                     }
+                    android.util.Log.i(
+                            "HeliumTheme",
+                            "theme request -> " + targetTheme + " at " + android.os.SystemClock.elapsedRealtime());
+                    // Post instead of postDelayed: the sheet is already dismissed, so
+                    // the write only has to leave the current click-dispatch stack.
                     new android.os.Handler(android.os.Looper.getMainLooper())
-                            .postDelayed(
+                            .post(
                                     () -> {
                                         Activity currentAct = ContextUtils.activityFromContext(mContext);
                                         if (currentAct == null && mContext instanceof Activity) {
@@ -1318,8 +1323,7 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
                                         }
                                         ChromeSharedPreferences.getInstance()
                                                 .writeInt(ChromePreferenceKeys.UI_THEME_SETTING, targetTheme);
-                                    },
-                                    250);
+                                    });
                 });
 
         addLemurMainMenuTile(

@@ -50,9 +50,10 @@ class TestPatchAppMenuPropertiesDelegate(unittest.TestCase):
                 text = (REPO_ROOT / name).read_text(encoding="utf-8")
                 self.assertIn("cvh.requestRender();", text)
                 self.assertIn(
-                    "mHandler.postDelayed(\n                            mAppLaunchDrawBlocker::onActiveTabAvailableForRecreation, 350);",
+                    "mHandler.postDelayed(\n                            mAppLaunchDrawBlocker::onActiveTabAvailableForRecreation, 100);",
                     text,
                 )
+                self.assertIn('"recreated activity at "', text)
 
     def test_android_tab_list_null_contents_and_draw_blocker_guards(self):
         for name in ("patch.sh", "hotfix_existing_src.sh"):
