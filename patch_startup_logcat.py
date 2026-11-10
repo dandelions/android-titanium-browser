@@ -68,11 +68,19 @@ BODY = '''public static void postAttachBaseContext() {
                         }
                     });
 
+            // Only record entries from this process start; logcat otherwise
+            // replays whatever the system buffers still hold from earlier runs.
+            String sinceStamp =
+                    new java.text.SimpleDateFormat(
+                                    "MM-dd HH:mm:ss.SSS", java.util.Locale.US)
+                            .format(new java.util.Date());
+
             java.io.File logFile = new java.io.File(logDirectory, "startup-logcat.txt");
             new ProcessBuilder(
                             "/system/bin/logcat",
                             "-b", "all",
                             "-v", "threadtime",
+                            "-T", sinceStamp,
                             "--pid=" + android.os.Process.myPid(),
                             "-f", logFile.getAbsolutePath(),
                             "-r", "4096",
@@ -87,6 +95,7 @@ BODY = '''public static void postAttachBaseContext() {
                             "/system/bin/logcat",
                             "-b", "crash",
                             "-v", "threadtime",
+                            "-T", sinceStamp,
                             "-f", nativeCrashFile.getAbsolutePath(),
                             "-r", "2048",
                             "-n", "2")

@@ -46,6 +46,18 @@ class StartupLogcatPatchTest(unittest.TestCase):
         self.assertIn('"-n", "3"', result)
         self.assertLess(result.index("Helium startup logcat capture"), result.index("public static void onCreate()") if "public static void onCreate()" in result else len(result))
 
+    def test_both_captures_start_after_process_start(self):
+        # Without -T logcat replays whatever the system buffers still hold, which
+        # is why a fresh crash log used to contain entries from hours before.
+        PATCH.patch_source_tree(self.root)
+        result = self.hook_path.read_text()
+        self.assertIn('"MM-dd HH:mm:ss.SSS", java.util.Locale.US', result)
+        self.assertEqual(2, result.count('"-T", sinceStamp'))
+        for buffer_name in ('"-b", "all"', '"-b", "crash"'):
+            start = result.index(buffer_name)
+            block = result[start : result.index(".start()", start)]
+            self.assertIn('"-T", sinceStamp', block)
+
     def test_is_idempotent(self):
         PATCH.patch_source_tree(self.root)
         first_result = self.hook_path.read_text()
