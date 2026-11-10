@@ -4448,6 +4448,9 @@ else
     # Remove stale old-android crash guards while keeping standard extension visibility.
     python3 "$SCRIPT_DIR/patch_ui_mode.py" --remove-ui-mode "$SRC_DIR"
     python3 "$SCRIPT_DIR/patch_ui_mode.py" --extensions-only "$SRC_DIR"
+    # The old-android SD card logger lives in shared Chromium files, so a reused
+    # source tree keeps writing unbounded device-wide logcat unless it is removed.
+    python3 "$SCRIPT_DIR/patch_startup_logcat.py" --strip-legacy-car-logger "$SRC_DIR"
     sed -i 's/  if (!tab) return;/  CHECK(tab);/' "$SRC_DIR/chrome/browser/ui/android/tab_model/tab_model_observer_jni_bridge.cc" 2>/dev/null || true
     sed -i 's/        if (tab == null || !tab.isInitialized()) return;/        assert tab.isInitialized();/' "$SRC_DIR/chrome/android/java/src/org/chromium/chrome/browser/tabmodel/TabModelObserverJniBridge.java" 2>/dev/null || true
 fi

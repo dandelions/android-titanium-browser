@@ -87,6 +87,77 @@ class StartupLogcatPatchTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "ChromeApplicationImplHooks.java not found"):
             PATCH.patch_source_tree(self.root)
 
+    def test_installs_boot_crash_and_native_crash_capture(self):
+        PATCH.patch_source_tree(self.root)
+        result = self.hook_path.read_text()
+        self.assertIn('"helium_boot.log"', result)
+        self.assertIn('"Helium process started at "', result)
+        self.assertIn('"crash_log.txt"', result)
+        self.assertIn("Thread.setDefaultUncaughtExceptionHandler", result)
+        self.assertIn("error.printStackTrace(crashWriter);", result)
+        self.assertIn("previousHandler.uncaughtException(thread, error);", result)
+        # debuggerd reports from another process, so the tombstone needs an
+        # unfiltered crash buffer capture in addition to the --pid capture.
+        self.assertIn('"native-crash.txt"', result)
+        self.assertIn('"-b", "crash"', result)
+
+    def test_upgrades_previous_logcat_only_hook(self):
+        self.hook_path.write_text(
+            """final class ChromeApplicationImplHooks {
+    private static final String TAG = "ChromeApplicationImplHooks";
+    public static void postAttachBaseContext() {
+        // Helium startup logcat capture
+        startCapture();
+    }
+
+    public static void onCreate() {
+    }
+}
+"""
+        )
+        self.assertTrue(PATCH.patch_source_tree(self.root))
+        result = self.hook_path.read_text()
+        self.assertIn('"crash_log.txt"', result)
+        self.assertIn('"native-crash.txt"', result)
+
+    def test_strips_legacy_car_logger(self):
+        target = self.root / PATCH.LEGACY_CALLERS[0]
+        target.parent.mkdir(parents=True)
+        target.write_text(
+            """final class SplitChromeApplication {
+    protected void attachBaseContext(Context context) {
+        super.attachBaseContext(context);
+        initCarSdcardLogging(context);
+    }
+
+    // [CAR_SDCARD_LOGGER_START]
+    private static void initCarSdcardLogging(android.content.Context context) {
+        new java.io.FileWriter(new java.io.File("helium_boot.log"), true);
+    }
+    // [CAR_SDCARD_LOGGER_END]
+
+}
+"""
+        )
+        self.assertTrue(PATCH.strip_legacy_car_logger(self.root))
+        result = target.read_text()
+        self.assertNotIn(PATCH.LEGACY_START, result)
+        self.assertNotIn("initCarSdcardLogging", result)
+        self.assertIn("super.attachBaseContext(context);", result)
+        self.assertEqual(result.count("{"), result.count("}"))
+        # Idempotent: nothing left to strip.
+        self.assertFalse(PATCH.strip_legacy_car_logger(self.root))
+
+    def test_strip_runs_only_on_standard_branches(self):
+        for name, root in (("patch.sh", "."), ("hotfix_existing_src.sh", '"$SRC_DIR"')):
+            with self.subTest(script=name):
+                text = (Path(__file__).resolve().parents[1] / name).read_text()
+                start = text.index('if [[ "$CURRENT_BRANCH" == old-* ]]')
+                else_start = text.index("\nelse\n", start)
+                end = text.index("\nfi", else_start)
+                self.assertNotIn("--strip-legacy-car-logger", text[start:else_start])
+                self.assertIn("--strip-legacy-car-logger", text[else_start:end])
+
 
 if __name__ == "__main__":
     unittest.main()
