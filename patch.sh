@@ -4247,8 +4247,6 @@ restore_modern_android_sdk_baseline() {
     done
 }
 
-python3 "$SCRIPT_DIR/patch_lemur_app_menu.py" .
-
 if is_old_version_branch; then
     if [ -f "$SCRIPT_DIR/patch_android_min_sdk.py" ]; then
         python3 "$SCRIPT_DIR/patch_android_min_sdk.py" .
@@ -4256,6 +4254,10 @@ if is_old_version_branch; then
 else
     restore_modern_android_sdk_baseline .
 fi
+
+# The menu baseline restore above git-checkouts the app menu delegates, so the
+# branch menu patches must run after it, not before.
+python3 "$SCRIPT_DIR/patch_lemur_app_menu.py" .
 
 python3 "$SCRIPT_DIR/patch_omnibox_dropdown.py" .
 python3 "$SCRIPT_DIR/patch_toolbar_phone.py" . || exit 1

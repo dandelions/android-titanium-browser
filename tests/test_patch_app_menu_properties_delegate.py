@@ -65,6 +65,23 @@ class TestPatchAppMenuPropertiesDelegate(unittest.TestCase):
                     text,
                 )
 
+    def test_lemur_menu_patch_runs_after_sdk_baseline_restore(self):
+        # The baseline restore git-checkouts the app menu delegates, so running the
+        # Lemur menu patch first would leave the build without its custom menu.
+        for name, restore_call in (
+            ("patch.sh", "restore_modern_android_sdk_baseline ."),
+            (
+                "hotfix_existing_src.sh",
+                'restore_modern_android_sdk_baseline "$SRC_DIR"',
+            ),
+        ):
+            with self.subTest(script=name):
+                text = (REPO_ROOT / name).read_text(encoding="utf-8")
+                self.assertLess(
+                    text.rindex(restore_call),
+                    text.rindex("patch_lemur_app_menu.py"),
+                )
+
 
 if __name__ == "__main__":
     unittest.main()
