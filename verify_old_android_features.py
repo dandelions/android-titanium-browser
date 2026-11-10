@@ -95,11 +95,15 @@ def verify(root):
     forwarder_path = root / EVENT_FORWARDER
     if forwarder_path.is_file():
         forwarder = forwarder_path.read_text(encoding="utf-8")
-        if re.search(r"getRaw[XY]\([^)]", forwarder):
+        # 注释里会提到被替换掉的 API 名称，只检查实际代码行。
+        forwarder_code = "\n".join(
+            line for line in forwarder.splitlines() if not line.lstrip().startswith("//")
+        )
+        if re.search(r"getRaw[XY]\([^)]", forwarder_code):
             raise SystemExit(
                 f"MotionEvent.getRawX(int) API 29 input compat patch is missing: {forwarder_path}"
             )
-        if "int gestureClassification = event.getClassification();" in forwarder:
+        if "int gestureClassification = event.getClassification();" in forwarder_code:
             raise SystemExit(
                 "MotionEvent.getClassification() API 29 input compat patch is missing: "
                 f"{forwarder_path}"
