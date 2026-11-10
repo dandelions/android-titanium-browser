@@ -3410,9 +3410,8 @@ new_block = """                if (isFromRecreating()) {
                                                         ::onActiveTabAvailableForRecreation);
                                         cvh.requestRender();
                                     });
-                    android.util.Log.i(
-                            "HeliumTheme",
-                            "recreated activity at " + android.os.SystemClock.elapsedRealtime());
+                    org.chromium.chrome.browser.ChromeApplicationImplHooks.breadcrumb(
+                            "activity-recreated");
                     mHandler.postDelayed(
                             mAppLaunchDrawBlocker::onActiveTabAvailableForRecreation, 100);
                 } else {

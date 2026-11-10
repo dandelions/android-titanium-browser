@@ -1306,9 +1306,8 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
                     if (dialog.isShowing()) {
                         dialog.dismiss();
                     }
-                    android.util.Log.i(
-                            "HeliumTheme",
-                            "theme request -> " + targetTheme + " at " + android.os.SystemClock.elapsedRealtime());
+                    org.chromium.chrome.browser.ChromeApplicationImplHooks.breadcrumb(
+                            "theme-request:" + targetTheme);
                     // Post instead of postDelayed: the sheet is already dismissed, so
                     // the write only has to leave the current click-dispatch stack.
                     new android.os.Handler(android.os.Looper.getMainLooper())

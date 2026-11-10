@@ -113,7 +113,9 @@ BODY = '''public static void postAttachBaseContext() {
 
             java.io.File logFile = new java.io.File(logDirectory, "startup-logcat.txt");
             StringBuilder logcatLine = new StringBuilder(detach);
-            logcatLine.append("/system/bin/logcat -b all -v threadtime");
+            // Skip the events buffer: it is high volume and made logcat fall behind
+            // logd enough to die with "Unexpected EOF" before writing anything.
+            logcatLine.append("/system/bin/logcat -b main,system,crash -v threadtime");
             if (timeFilterSupported) {
                 logcatLine.append(" -T '").append(sinceStamp).append("'");
             }
@@ -124,7 +126,12 @@ BODY = '''public static void postAttachBaseContext() {
                     .append(" >/dev/null 2>>'")
                     .append(errorLog.getAbsolutePath())
                     .append("'");
-            new ProcessBuilder("/system/bin/sh", "-c", logcatLine + " &").start();
+            // logd drops slow readers, so keep the capture alive by restarting it.
+            new ProcessBuilder(
+                            "/system/bin/sh",
+                            "-c",
+                            "while :; do " + logcatLine + "; sleep 1; done &")
+                    .start();
 
             // debuggerd dumps native crashes (SIGTRAP/SIGSEGV) from its own process, so the
             // --pid filter above never records the tombstone. Keep the whole crash buffer.
@@ -141,7 +148,11 @@ BODY = '''public static void postAttachBaseContext() {
                     .append(" >/dev/null 2>>'")
                     .append(errorLog.getAbsolutePath())
                     .append("'");
-            new ProcessBuilder("/system/bin/sh", "-c", crashLine + " &").start();
+            new ProcessBuilder(
+                            "/system/bin/sh",
+                            "-c",
+                            "while :; do " + crashLine + "; sleep 1; done &")
+                    .start();
 
             if (timeFilterSupported) {
                 // A time filter the platform reads differently than intended leaves
@@ -174,7 +185,11 @@ BODY = '''public static void postAttachBaseContext() {
                                                     .append(errorLog.getAbsolutePath())
                                                     .append("'");
                                             new ProcessBuilder(
-                                                            "/system/bin/sh", "-c", fallback + " &")
+                                                            "/system/bin/sh",
+                                                            "-c",
+                                                            "while :; do "
+                                                                    + fallback
+                                                                    + "; sleep 1; done &")
                                                     .start();
                                         } catch (Throwable ignored) {
                                             // Nothing left to fall back to.
@@ -186,6 +201,24 @@ BODY = '''public static void postAttachBaseContext() {
             }
         } catch (Exception e) {
             android.util.Log.e(TAG, "Cannot start startup logcat capture", e);
+        }
+    }
+
+    // Helium breadcrumb: records a stage to a file so it survives when logcat is
+    // unavailable, which makes recreate and theme timings measurable.
+    public static void breadcrumb(String stage) {
+        try {
+            java.io.File logDirectory =
+                    org.chromium.base.ContextUtils.getApplicationContext()
+                            .getExternalFilesDir("logs");
+            if (logDirectory == null) return;
+            java.io.FileWriter writer =
+                    new java.io.FileWriter(
+                            new java.io.File(logDirectory, "helium_events.log"), true);
+            writer.write(stage + " at " + android.os.SystemClock.elapsedRealtime() + "\\n");
+            writer.close();
+        } catch (Throwable ignored) {
+            // Breadcrumbs must never affect startup.
         }
     }'''
 

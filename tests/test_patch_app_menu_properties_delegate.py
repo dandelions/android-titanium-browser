@@ -53,7 +53,7 @@ class TestPatchAppMenuPropertiesDelegate(unittest.TestCase):
                     "mHandler.postDelayed(\n                            mAppLaunchDrawBlocker::onActiveTabAvailableForRecreation, 100);",
                     text,
                 )
-                self.assertIn('"recreated activity at "', text)
+                self.assertIn('"activity-recreated"', text)
 
     def test_android_tab_list_null_contents_and_draw_blocker_guards(self):
         for name in ("patch.sh", "hotfix_existing_src.sh"):

@@ -39,7 +39,7 @@ class StartupLogcatPatchTest(unittest.TestCase):
         result = self.hook_path.read_text()
         self.assertIn('getExternalFilesDir("logs")', result)
         self.assertIn('"startup-logcat.txt"', result)
-        self.assertIn("/system/bin/logcat -b all -v threadtime", result)
+        self.assertIn("/system/bin/logcat -b main,system,crash -v threadtime", result)
         self.assertIn('" --pid="', result)
         self.assertIn("android.os.Process.myPid()", result)
         self.assertIn("-r 4096 -n 3", result)
@@ -56,8 +56,8 @@ class StartupLogcatPatchTest(unittest.TestCase):
         for name in ("logcatLine", "crashLine"):
             start = result.index(f"StringBuilder {name} = ")
             block = result[start : result.index(".start();", start)]
-            self.assertIn('"/system/bin/sh", "-c"', block)
-            self.assertIn('+ " &"', block)
+            self.assertIn('"/system/bin/sh",', block)
+            self.assertIn('"while :; do "', block)
 
     def test_generated_java_has_no_unterminated_string_literal(self):
         # A bare "\n" inside the Python template becomes a real newline and breaks
@@ -82,7 +82,7 @@ class StartupLogcatPatchTest(unittest.TestCase):
         PATCH.patch_source_tree(self.root)
         result = self.hook_path.read_text()
         self.assertIn('"MM-dd HH:mm:ss.SSS", java.util.Locale.US', result)
-        for name, buffer in (("logcatLine", "-b all"), ("crashLine", "-b crash")):
+        for name, buffer in (("logcatLine", "-b main,system,crash"), ("crashLine", "-b crash")):
             start = result.index(f"StringBuilder {name} = ")
             block = result[start : result.index(".start();", start)]
             self.assertIn("if (timeFilterSupported) {", block)
