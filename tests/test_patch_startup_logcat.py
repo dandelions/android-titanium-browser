@@ -60,6 +60,42 @@ class StartupLogcatPatchTest(unittest.TestCase):
             self.assertIn(f'{command}.add("-T")', block)
             self.assertIn(f"{command}.add(sinceStamp)", block)
 
+    def test_time_filter_stamp_is_utc(self):
+        # The device reads the -T wall clock as UTC; a local-time stamp pushed the
+        # filter hours into the future and left every capture empty.
+        PATCH.patch_source_tree(self.root)
+        result = self.hook_path.read_text()
+        self.assertIn("java.text.SimpleDateFormat sinceFormat", result)
+        self.assertIn(
+            'sinceFormat.setTimeZone(java.util.TimeZone.getTimeZone("UTC"))', result
+        )
+        self.assertLess(
+            result.index('getTimeZone("UTC")'), result.index("String sinceStamp")
+        )
+
+    def test_empty_filtered_capture_falls_back_to_unfiltered(self):
+        # Even with a correct stamp, a platform that drops entries must not cost us
+        # the tombstone: verify the file shortly after startup and restart without -T.
+        PATCH.patch_source_tree(self.root)
+        result = self.hook_path.read_text()
+        self.assertIn("nativeCrashFile.length() > 0", result)
+        self.assertIn("crashCapture.destroy();", result)
+        guard_start = result.index('"helium-logcat-guard"')
+        guard = result[result.index("// A time filter that the platform", 0) : guard_start]
+        self.assertIn("java.lang.Thread.sleep(1500);", guard)
+        self.assertNotIn('add("-T");', guard)
+
+    def test_logcat_stderr_is_kept_for_diagnosis(self):
+        PATCH.patch_source_tree(self.root)
+        result = self.hook_path.read_text()
+        self.assertIn('"logcat-error.txt"', result)
+        self.assertGreaterEqual(
+            result.count(
+                "java.lang.ProcessBuilder.Redirect.appendTo(errorLog)"
+            ),
+            2,
+        )
+
     def test_time_filter_is_probed_before_use(self):
         # A logcat build that rejects -T exits before writing anything, which left
         # only helium_boot.log behind, so probe first and record the outcome.
@@ -72,17 +108,6 @@ class StartupLogcatPatchTest(unittest.TestCase):
         self.assertIn("probe.waitFor(500, java.util.concurrent.TimeUnit.MILLISECONDS)", result)
         self.assertIn('" timeFilter="', result)
         self.assertIn("+ timeFilterSupported", result)
-
-    def test_logcat_stderr_is_kept_for_diagnosis(self):
-        PATCH.patch_source_tree(self.root)
-        result = self.hook_path.read_text()
-        self.assertIn('"logcat-error.txt"', result)
-        self.assertEqual(
-            2,
-            result.count(
-                "redirectError(java.lang.ProcessBuilder.Redirect.appendTo(errorLog))"
-            ),
-        )
 
     def test_is_idempotent(self):
         PATCH.patch_source_tree(self.root)

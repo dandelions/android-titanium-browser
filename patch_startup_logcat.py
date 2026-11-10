@@ -29,12 +29,14 @@ BODY = '''public static void postAttachBaseContext() {
             java.io.File errorLog = new java.io.File(logDirectory, "logcat-error.txt");
 
             // -T keeps a capture from replaying what the system buffers already
-            // hold, but some logcat builds reject it and then exit before writing
-            // anything. Probe once, and fall back to an unfiltered capture.
-            String sinceStamp =
+            // hold, but it needs a stamp logcat understands. This device interprets
+            // the wall clock as UTC, so a local-time string made the filter start
+            // hours in the future and every capture stayed empty. Always format UTC.
+            java.text.SimpleDateFormat sinceFormat =
                     new java.text.SimpleDateFormat(
-                                    "MM-dd HH:mm:ss.SSS", java.util.Locale.US)
-                            .format(new java.util.Date());
+                            "MM-dd HH:mm:ss.SSS", java.util.Locale.US);
+            sinceFormat.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
+            String sinceStamp = sinceFormat.format(new java.util.Date());
             boolean timeFilterSupported = false;
             try {
                 java.util.List<String> probeCommand = new java.util.ArrayList<String>();
@@ -143,9 +145,58 @@ BODY = '''public static void postAttachBaseContext() {
             crashCommand.add("2048");
             crashCommand.add("-n");
             crashCommand.add("2");
-            new ProcessBuilder(crashCommand)
-                    .redirectError(java.lang.ProcessBuilder.Redirect.appendTo(errorLog))
-                    .start();
+            final java.lang.Process crashCapture =
+                    new ProcessBuilder(crashCommand)
+                            .redirectError(
+                                    java.lang.ProcessBuilder.Redirect.appendTo(errorLog))
+                            .start();
+
+            if (timeFilterSupported) {
+                // A time filter that the platform reads differently than intended
+                // leaves the capture silently empty. Verify shortly after startup
+                // and restart it unfiltered rather than lose the tombstone.
+                new java.lang.Thread(
+                                new java.lang.Runnable() {
+                                    @Override
+                                    public void run() {
+                                        try {
+                                            java.lang.Thread.sleep(1500);
+                                        } catch (InterruptedException ignored) {
+                                            return;
+                                        }
+                                        if (!crashCapture.isAlive()
+                                                || nativeCrashFile.length() > 0) {
+                                            return;
+                                        }
+                                        try {
+                                            crashCapture.destroy();
+                                            java.util.List<String> fallbackCommand =
+                                                    new java.util.ArrayList<String>();
+                                            fallbackCommand.add("/system/bin/logcat");
+                                            fallbackCommand.add("-b");
+                                            fallbackCommand.add("crash");
+                                            fallbackCommand.add("-v");
+                                            fallbackCommand.add("threadtime");
+                                            fallbackCommand.add("-f");
+                                            fallbackCommand.add(
+                                                    nativeCrashFile.getAbsolutePath());
+                                            fallbackCommand.add("-r");
+                                            fallbackCommand.add("2048");
+                                            fallbackCommand.add("-n");
+                                            fallbackCommand.add("2");
+                                            new ProcessBuilder(fallbackCommand)
+                                                    .redirectError(
+                                                            java.lang.ProcessBuilder.Redirect
+                                                                    .appendTo(errorLog))
+                                                    .start();
+                                        } catch (Throwable ignored) {
+                                            // Nothing left to fall back to.
+                                        }
+                                    }
+                                },
+                                "helium-logcat-guard")
+                        .start();
+            }
         } catch (Exception e) {
             android.util.Log.e(TAG, "Cannot start startup logcat capture", e);
         }
