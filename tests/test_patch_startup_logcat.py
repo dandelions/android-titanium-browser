@@ -39,13 +39,25 @@ class StartupLogcatPatchTest(unittest.TestCase):
         result = self.hook_path.read_text()
         self.assertIn('getExternalFilesDir("logs")', result)
         self.assertIn('"startup-logcat.txt"', result)
-        self.assertIn('"/system/bin/logcat"', result)
-        self.assertIn('add("-v");', result)
-        self.assertIn('add("threadtime");', result)
-        self.assertIn('"--pid=" + android.os.Process.myPid()', result)
-        self.assertIn('add("4096");', result)
-        self.assertIn('add("3");', result)
+        self.assertIn("/system/bin/logcat -b all -v threadtime", result)
+        self.assertIn('" --pid="', result)
+        self.assertIn("android.os.Process.myPid()", result)
+        self.assertIn("-r 4096 -n 3", result)
         self.assertLess(result.index("Helium startup logcat capture"), result.index("public static void onCreate()") if "public static void onCreate()" in result else len(result))
+
+    def test_captures_detach_from_the_app_process_group(self):
+        # Android kills a crashed app's process group; without setsid the logcat
+        # children died before flushing, which left the log files behind empty.
+        PATCH.patch_source_tree(self.root)
+        result = self.hook_path.read_text()
+        self.assertIn('new java.io.File("/system/bin/setsid").canExecute()', result)
+        self.assertIn("String detach =", result)
+        self.assertEqual(3, result.count("new StringBuilder(detach)"))
+        for name in ("logcatLine", "crashLine"):
+            start = result.index(f"StringBuilder {name} = ")
+            block = result[start : result.index(".start();", start)]
+            self.assertIn('"/system/bin/sh", "-c"', block)
+            self.assertIn('+ " &"', block)
 
     def test_generated_java_has_no_unterminated_string_literal(self):
         # A bare "\n" inside the Python template becomes a real newline and breaks
@@ -70,12 +82,12 @@ class StartupLogcatPatchTest(unittest.TestCase):
         PATCH.patch_source_tree(self.root)
         result = self.hook_path.read_text()
         self.assertIn('"MM-dd HH:mm:ss.SSS", java.util.Locale.US', result)
-        for command in ("logcatCommand", "crashCommand"):
-            block_start = result.index(f"java.util.List<String> {command}")
-            block = result[block_start : result.index(".start()", block_start)]
+        for name, buffer in (("logcatLine", "-b all"), ("crashLine", "-b crash")):
+            start = result.index(f"StringBuilder {name} = ")
+            block = result[start : result.index(".start();", start)]
             self.assertIn("if (timeFilterSupported) {", block)
-            self.assertIn(f'{command}.add("-T")', block)
-            self.assertIn(f"{command}.add(sinceStamp)", block)
+            self.assertIn('append(" -T \'").append(sinceStamp)', block)
+            self.assertIn(buffer, block)
 
     def test_time_filter_stamp_is_utc(self):
         # The device reads the -T wall clock as UTC; a local-time stamp pushed the
@@ -92,25 +104,23 @@ class StartupLogcatPatchTest(unittest.TestCase):
 
     def test_empty_filtered_capture_falls_back_to_unfiltered(self):
         # Even with a correct stamp, a platform that drops entries must not cost us
-        # the tombstone: verify the file shortly after startup and restart without -T.
+        # the tombstone: add an unfiltered writer when the file stays empty.
         PATCH.patch_source_tree(self.root)
         result = self.hook_path.read_text()
         self.assertIn("nativeCrashFile.length() > 0", result)
-        self.assertIn("crashCapture.destroy();", result)
         guard_start = result.index('"helium-logcat-guard"')
-        guard = result[result.index("// A time filter that the platform", 0) : guard_start]
+        guard = result[result.index("// A time filter the platform", 0) : guard_start]
         self.assertIn("java.lang.Thread.sleep(1500);", guard)
-        self.assertNotIn('add("-T");', guard)
+        self.assertIn("/system/bin/logcat -b crash -v threadtime", guard)
+        self.assertNotIn(" -T '", guard)
 
     def test_logcat_stderr_is_kept_for_diagnosis(self):
         PATCH.patch_source_tree(self.root)
         result = self.hook_path.read_text()
         self.assertIn('"logcat-error.txt"', result)
         self.assertGreaterEqual(
-            result.count(
-                "java.lang.ProcessBuilder.Redirect.appendTo(errorLog)"
-            ),
-            2,
+            result.count("append(errorLog.getAbsolutePath())"),
+            3,
         )
 
     def test_time_filter_is_probed_before_use(self):
@@ -119,7 +129,7 @@ class StartupLogcatPatchTest(unittest.TestCase):
         PATCH.patch_source_tree(self.root)
         result = self.hook_path.read_text()
         probe = result.index("timeFilterSupported =")
-        first_capture = result.index("java.util.List<String> logcatCommand")
+        first_capture = result.index("StringBuilder logcatLine")
         self.assertLess(probe, first_capture)
         self.assertIn('probeCommand.add("-T")', result)
         self.assertIn("probe.waitFor(500, java.util.concurrent.TimeUnit.MILLISECONDS)", result)
@@ -179,7 +189,7 @@ class StartupLogcatPatchTest(unittest.TestCase):
         # debuggerd reports from another process, so the tombstone needs an
         # unfiltered crash buffer capture in addition to the --pid capture.
         self.assertIn('"native-crash.txt"', result)
-        self.assertIn('crashCommand.add("crash");', result)
+        self.assertIn("/system/bin/logcat -b crash -v threadtime", result)
 
     def test_upgrades_previous_logcat_only_hook(self):
         self.hook_path.write_text(

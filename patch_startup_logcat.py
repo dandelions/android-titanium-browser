@@ -103,58 +103,50 @@ BODY = '''public static void postAttachBaseContext() {
                         }
                     });
 
+            // Android kills a crashed app's process group, which used to take the
+            // logcat children down before they could flush the tombstone. setsid
+            // moves them into their own session so they outlive the app.
+            String detach =
+                    new java.io.File("/system/bin/setsid").canExecute()
+                            ? "/system/bin/setsid "
+                            : "";
+
             java.io.File logFile = new java.io.File(logDirectory, "startup-logcat.txt");
-            java.util.List<String> logcatCommand = new java.util.ArrayList<String>();
-            logcatCommand.add("/system/bin/logcat");
-            logcatCommand.add("-b");
-            logcatCommand.add("all");
-            logcatCommand.add("-v");
-            logcatCommand.add("threadtime");
+            StringBuilder logcatLine = new StringBuilder(detach);
+            logcatLine.append("/system/bin/logcat -b all -v threadtime");
             if (timeFilterSupported) {
-                logcatCommand.add("-T");
-                logcatCommand.add(sinceStamp);
+                logcatLine.append(" -T '").append(sinceStamp).append("'");
             }
-            logcatCommand.add("--pid=" + android.os.Process.myPid());
-            logcatCommand.add("-f");
-            logcatCommand.add(logFile.getAbsolutePath());
-            logcatCommand.add("-r");
-            logcatCommand.add("4096");
-            logcatCommand.add("-n");
-            logcatCommand.add("3");
-            new ProcessBuilder(logcatCommand)
-                    .redirectError(java.lang.ProcessBuilder.Redirect.appendTo(errorLog))
-                    .start();
+            logcatLine.append(" --pid=").append(android.os.Process.myPid());
+            logcatLine.append(" -f '").append(logFile.getAbsolutePath()).append("'");
+            logcatLine.append(" -r 4096 -n 3");
+            logcatLine
+                    .append(" >/dev/null 2>>'")
+                    .append(errorLog.getAbsolutePath())
+                    .append("'");
+            new ProcessBuilder("/system/bin/sh", "-c", logcatLine + " &").start();
 
             // debuggerd dumps native crashes (SIGTRAP/SIGSEGV) from its own process, so the
             // --pid filter above never records the tombstone. Keep the whole crash buffer.
             java.io.File nativeCrashFile =
                     new java.io.File(logDirectory, "native-crash.txt");
-            java.util.List<String> crashCommand = new java.util.ArrayList<String>();
-            crashCommand.add("/system/bin/logcat");
-            crashCommand.add("-b");
-            crashCommand.add("crash");
-            crashCommand.add("-v");
-            crashCommand.add("threadtime");
+            StringBuilder crashLine = new StringBuilder(detach);
+            crashLine.append("/system/bin/logcat -b crash -v threadtime");
             if (timeFilterSupported) {
-                crashCommand.add("-T");
-                crashCommand.add(sinceStamp);
+                crashLine.append(" -T '").append(sinceStamp).append("'");
             }
-            crashCommand.add("-f");
-            crashCommand.add(nativeCrashFile.getAbsolutePath());
-            crashCommand.add("-r");
-            crashCommand.add("2048");
-            crashCommand.add("-n");
-            crashCommand.add("2");
-            final java.lang.Process crashCapture =
-                    new ProcessBuilder(crashCommand)
-                            .redirectError(
-                                    java.lang.ProcessBuilder.Redirect.appendTo(errorLog))
-                            .start();
+            crashLine.append(" -f '").append(nativeCrashFile.getAbsolutePath()).append("'");
+            crashLine.append(" -r 2048 -n 2");
+            crashLine
+                    .append(" >/dev/null 2>>'")
+                    .append(errorLog.getAbsolutePath())
+                    .append("'");
+            new ProcessBuilder("/system/bin/sh", "-c", crashLine + " &").start();
 
             if (timeFilterSupported) {
-                // A time filter that the platform reads differently than intended
-                // leaves the capture silently empty. Verify shortly after startup
-                // and restart it unfiltered rather than lose the tombstone.
+                // A time filter the platform reads differently than intended leaves
+                // the capture silently empty. Add an unfiltered writer rather than
+                // lose the tombstone; it only doubles up in that broken case.
                 new java.lang.Thread(
                                 new java.lang.Runnable() {
                                     @Override
@@ -164,30 +156,25 @@ BODY = '''public static void postAttachBaseContext() {
                                         } catch (InterruptedException ignored) {
                                             return;
                                         }
-                                        if (!crashCapture.isAlive()
-                                                || nativeCrashFile.length() > 0) {
+                                        if (nativeCrashFile.length() > 0) {
                                             return;
                                         }
                                         try {
-                                            crashCapture.destroy();
-                                            java.util.List<String> fallbackCommand =
-                                                    new java.util.ArrayList<String>();
-                                            fallbackCommand.add("/system/bin/logcat");
-                                            fallbackCommand.add("-b");
-                                            fallbackCommand.add("crash");
-                                            fallbackCommand.add("-v");
-                                            fallbackCommand.add("threadtime");
-                                            fallbackCommand.add("-f");
-                                            fallbackCommand.add(
-                                                    nativeCrashFile.getAbsolutePath());
-                                            fallbackCommand.add("-r");
-                                            fallbackCommand.add("2048");
-                                            fallbackCommand.add("-n");
-                                            fallbackCommand.add("2");
-                                            new ProcessBuilder(fallbackCommand)
-                                                    .redirectError(
-                                                            java.lang.ProcessBuilder.Redirect
-                                                                    .appendTo(errorLog))
+                                            StringBuilder fallback =
+                                                    new StringBuilder(detach);
+                                            fallback.append(
+                                                    "/system/bin/logcat -b crash -v threadtime");
+                                            fallback
+                                                    .append(" -f '")
+                                                    .append(nativeCrashFile.getAbsolutePath())
+                                                    .append("'");
+                                            fallback.append(" -r 2048 -n 2");
+                                            fallback
+                                                    .append(" >/dev/null 2>>'")
+                                                    .append(errorLog.getAbsolutePath())
+                                                    .append("'");
+                                            new ProcessBuilder(
+                                                            "/system/bin/sh", "-c", fallback + " &")
                                                     .start();
                                         } catch (Throwable ignored) {
                                             // Nothing left to fall back to.
