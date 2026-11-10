@@ -200,11 +200,31 @@ class TestPatchLemurAppMenu(unittest.TestCase):
         repaired = self.tabbed_path.read_text(encoding="utf-8")
         self.assertNotIn("registerLemurExtensionsMenuOpener", repaired)
 
+    def test_extensions_menu_click_handler_is_patched_independently_of_icon(self):
+        text = self.menu_coord_path.read_text(encoding="utf-8")
+        # Reproduce a partially patched source tree: the four-square icon helper exists,
+        # but Chromium's original click listener is still installed.
+        marker = "        // Menu mediator is created when menu is triggered.\n"
+        self.assertIn(marker, text)
+        text = text.replace(
+            marker,
+            "    private Drawable createHeliumFourSquaresDrawable() { return null; }\n\n" + marker,
+            1,
+        )
+        self.menu_coord_path.write_text(text, encoding="utf-8")
+
+        patch_extensions_menu_coordinator(self.work_dir)
+        patched = self.menu_coord_path.read_text(encoding="utf-8")
+        self.assertIn("CUSTOM_EXTENSIONS_MENU_OPENERS", patched)
+        self.assertIn("customOpener.onResult(mExtensionsMenuButton);", patched)
+        self.assertIn("createMediator();", patched)
+
     def test_extensions_menu_coordinator_four_squares_and_tint(self):
         original = self.menu_coord_path.read_text(encoding="utf-8")
         patch_extensions_menu_coordinator(self.work_dir)
         patched = self.menu_coord_path.read_text(encoding="utf-8")
         self.assertIn("createHeliumFourSquaresDrawable()", patched)
+        self.assertIn("CUSTOM_EXTENSIONS_MENU_OPENERS", patched)
         self.assertIn("activityFocusTintList != null ? activityFocusTintList : tintList", patched)
         self.assertIn("mThemeColorProvider.getTint(),", patched)
         self.assertIn("ThemeUtils.getThemedToolbarIconTint(", patched)

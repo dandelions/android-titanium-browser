@@ -441,7 +441,7 @@ def patch_extensions_menu_coordinator(src_dir: Path) -> None:
                             return;
                         }
                     }"""
-    if "createHeliumFourSquaresDrawable()" not in text:
+    if "CUSTOM_EXTENSIONS_MENU_OPENERS" not in text:
         if old_click_v2 in text:
             text = text.replace(old_click_v2, new_click_block, 1)
         elif old_click_v1 in text:
@@ -450,6 +450,16 @@ def patch_extensions_menu_coordinator(src_dir: Path) -> None:
             text = text.replace(old_click_vanilla, new_click_block, 1)
         else:
             raise SystemExit(f"mExtensionsMenuButton.setOnClickListener anchor not found in {path}")
+
+    if "createHeliumFourSquaresDrawable()" not in text:
+        icon_anchor = "        // Menu mediator is created when menu is triggered.\n"
+        if icon_anchor in text:
+            text = text.replace(
+                icon_anchor,
+                "        mExtensionsMenuButton.setImageDrawable(createHeliumFourSquaresDrawable());\n"
+                + icon_anchor,
+                1,
+            )
 
     # Keep the 4-small-squares icon in updateButtonState instead of overwriting with puzzle icon
     old_update_icon = """        if (state.getIcon() != null) {
