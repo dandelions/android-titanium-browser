@@ -2061,12 +2061,24 @@ def patch_bind_isolated_service_compat(src_dir: str) -> None:
             content = f.read()
 
         new_content = content
-        if "boolean disableZygote =" in new_content and "Build.VERSION.SDK_INT < 29" not in new_content:
-            new_content = re.sub(
-                r'boolean\s+disableZygote\s*=\s*\n?\s*Build\.VERSION\.SDK_INT\s*==\s*29',
-                'boolean disableZygote =\n                (Build.VERSION.SDK_INT < 29)\n                        || (Build.VERSION.SDK_INT == 29',
-                new_content,
+        if "boolean disableZygote =" in new_content:
+            repaired_block = (
+                'boolean disableZygote =\n                (Build.VERSION.SDK_INT < 29)\n'
+                '                        || (Build.VERSION.SDK_INT == 29\n'
+                '                                && AndroidInfo.getAndroidBuildFingerprint().startsWith("OnePlus/"));'
             )
+            broken_pattern = (
+                r'boolean\s+disableZygote\s*=\s*\n?\s*\(Build\.VERSION\.SDK_INT\s*<\s*29\)\s*\n?'
+                r'\s*\|\|\s*\(Build\.VERSION\.SDK_INT\s*==\s*29\s*\n?'
+                r'\s*&&\s*AndroidInfo\.getAndroidBuildFingerprint\(\)\.startsWith\("OnePlus/"\);'
+            )
+            new_content = re.sub(broken_pattern, repaired_block, new_content)
+
+            clean_pattern = (
+                r'boolean\s+disableZygote\s*=\s*\n?\s*Build\.VERSION\.SDK_INT\s*==\s*29\s*\n?'
+                r'\s*&&\s*AndroidInfo\.getAndroidBuildFingerprint\(\)\.startsWith\("OnePlus/"\);'
+            )
+            new_content = re.sub(clean_pattern, repaired_block, new_content)
 
         if new_content != content:
             with open(target, "w", encoding="utf-8") as f:
