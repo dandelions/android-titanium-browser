@@ -2113,6 +2113,61 @@ if old_block in text:
     cta.write_text(text, encoding="utf-8")
 PYCODE
 
+# Recreation stability: a pre-draw blocker whose readiness signal never arrives
+# leaves the window permanently blank, so it never gains focus and input times out.
+VIEW_DRAW_BLOCKER=chrome/android/java/src/org/chromium/chrome/browser/ui/ViewDrawBlocker.java
+if [ -f "$VIEW_DRAW_BLOCKER" ]; then
+    python3 - "$VIEW_DRAW_BLOCKER" <<'PYCODE'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+old_blocker = """    public static void blockViewDrawUntilReady(View view, Supplier<Boolean> viewReadySupplier) {
+        view.getViewTreeObserver()
+                .addOnPreDrawListener(
+                        new OnPreDrawListener() {
+                            @Override
+                            public boolean onPreDraw() {
+                                if (!viewReadySupplier.get()) return false;
+
+                                view.getViewTreeObserver().removeOnPreDrawListener(this);
+                                return true;
+                            }
+                        });
+    }"""
+new_blocker = """    public static void blockViewDrawUntilReady(View view, Supplier<Boolean> viewReadySupplier) {
+        OnPreDrawListener listener =
+                new OnPreDrawListener() {
+                    @Override
+                    public boolean onPreDraw() {
+                        if (!viewReadySupplier.get()) return false;
+
+                        view.getViewTreeObserver().removeOnPreDrawListener(this);
+                        return true;
+                    }
+                };
+        view.getViewTreeObserver().addOnPreDrawListener(listener);
+        // HeliumAndroidDrawBlockerTimeout: a readiness signal missed during activity
+        // recreation must not leave the window blank and unfocusable forever.
+        view.postDelayed(
+                () -> {
+                    try {
+                        if (!view.getViewTreeObserver().isAlive()) return;
+                        view.getViewTreeObserver().removeOnPreDrawListener(listener);
+                        view.invalidate();
+                    } catch (RuntimeException ignored) {
+                    }
+                },
+                2000);
+    }"""
+if old_blocker in text:
+    text = text.replace(old_blocker, new_blocker, 1)
+if path.read_text(encoding="utf-8") != text:
+    path.write_text(text, encoding="utf-8")
+PYCODE
+fi
+
 # ext: app
 sed -i 's|^  "app": {$|&\n    "platforms": ["chromeos", "linux", "mac", "win"],|' chrome/common/extensions/api/_api_features.json
 
@@ -3257,7 +3312,127 @@ if marker not in text:
     )
     if marker not in text:
         raise SystemExit(f"tabs event router patterns not found in {path}")
-path.write_text(text)
+
+if "HeliumAndroidNullContentsGuard" not in text:
+    # Android tab-list callbacks also fire for tabs that have no WebContents yet
+    # (frozen restore and reparenting), so the upstream CHECK(contents) traps.
+    tab_added_pattern = """void TabsEventRouter::OnTabAdded(TabListInterface& tab_list,
+                                 tabs::TabInterface* tab,
+                                 int index) {
+  content::WebContents* contents = tab->GetContents();
+  CHECK(contents);"""
+    tab_added_replacement = """void TabsEventRouter::OnTabAdded(TabListInterface& tab_list,
+                                 tabs::TabInterface* tab,
+                                 int index) {
+  // HeliumAndroidNullContentsGuard
+  content::WebContents* contents = tab ? tab->GetContents() : nullptr;
+#if BUILDFLAG(IS_ANDROID)
+  if (!contents) {
+    UpdateTabIndices(tab_list, index + 1);
+    return;
+  }
+#else
+  CHECK(contents);
+#endif"""
+    if tab_added_pattern in text:
+        text = text.replace(tab_added_pattern, tab_added_replacement, 1)
+
+    active_tab_pattern = """void TabsEventRouter::OnActiveTabChanged(TabListInterface& tab_list,
+                                         tabs::TabInterface* tab) {
+  content::WebContents* tab_contents = tab->GetContents();
+  CHECK(tab_contents);"""
+    active_tab_replacement = """void TabsEventRouter::OnActiveTabChanged(TabListInterface& tab_list,
+                                         tabs::TabInterface* tab) {
+  content::WebContents* tab_contents = tab ? tab->GetContents() : nullptr;
+#if BUILDFLAG(IS_ANDROID)
+  if (!tab_contents) {
+    return;
+  }
+#else
+  CHECK(tab_contents);
+#endif"""
+    if active_tab_pattern in text:
+        text = text.replace(active_tab_pattern, active_tab_replacement, 1)
+
+    tab_removed_pattern = """void TabsEventRouter::OnTabRemoved(TabListInterface& tab_list,
+                                   tabs::TabInterface* tab,
+                                   TabRemovedReason removed_reason) {
+  content::WebContents* web_contents = tab->GetContents();
+  CHECK(web_contents);"""
+    tab_removed_replacement = """void TabsEventRouter::OnTabRemoved(TabListInterface& tab_list,
+                                   tabs::TabInterface* tab,
+                                   TabRemovedReason removed_reason) {
+  content::WebContents* web_contents = tab ? tab->GetContents() : nullptr;
+#if BUILDFLAG(IS_ANDROID)
+  if (!web_contents) {
+    return;
+  }
+#else
+  CHECK(web_contents);
+#endif"""
+    if tab_removed_pattern in text:
+        text = text.replace(tab_removed_pattern, tab_removed_replacement, 1)
+
+    tab_moved_pattern = """void TabsEventRouter::OnTabMoved(TabListInterface& tab_list,
+                                 tabs::TabInterface* tab,
+                                 int from_index,
+                                 int to_index) {
+  CHECK(tab);
+  content::WebContents* web_contents = tab->GetContents();
+  CHECK(web_contents);"""
+    tab_moved_replacement = """void TabsEventRouter::OnTabMoved(TabListInterface& tab_list,
+                                 tabs::TabInterface* tab,
+                                 int from_index,
+                                 int to_index) {
+  CHECK(tab);
+  content::WebContents* web_contents = tab ? tab->GetContents() : nullptr;
+#if BUILDFLAG(IS_ANDROID)
+  if (!web_contents) {
+    UpdateTabIndices(tab_list, std::min(from_index, to_index));
+    return;
+  }
+#else
+  CHECK(web_contents);
+#endif"""
+    if tab_moved_pattern in text:
+        text = text.replace(tab_moved_pattern, tab_moved_replacement, 1)
+
+    tab_selection_pattern = """  for (tabs::TabInterface* tab : highlighted_tabs) {
+    content::WebContents* web_contents = tab->GetContents();
+    CHECK(web_contents);"""
+    tab_selection_replacement = """  for (tabs::TabInterface* tab : highlighted_tabs) {
+    if (!tab) continue;
+    content::WebContents* web_contents = tab->GetContents();
+#if BUILDFLAG(IS_ANDROID)
+    if (!web_contents) continue;
+#else
+    CHECK(web_contents);
+#endif"""
+    if tab_selection_pattern in text:
+        text = text.replace(tab_selection_pattern, tab_selection_replacement, 1)
+
+    update_indices_pattern = """  const std::vector<tabs::TabInterface*> tabs = tab_list.GetAllTabs();
+  for (size_t i = static_cast<size_t>(std::max(first_index, 0));
+       i < tabs.size(); ++i) {
+    content::WebContents* web_contents = tabs[i]->GetContents();
+    CHECK(web_contents);"""
+    update_indices_replacement = """  const std::vector<tabs::TabInterface*> tabs = tab_list.GetAllTabs();
+  for (size_t i = static_cast<size_t>(std::max(first_index, 0));
+       i < tabs.size(); ++i) {
+    content::WebContents* web_contents =
+        tabs[i] ? tabs[i]->GetContents() : nullptr;
+#if BUILDFLAG(IS_ANDROID)
+    if (!web_contents) {
+      continue;
+    }
+#else
+    CHECK(web_contents);
+#endif"""
+    if update_indices_pattern in text:
+        text = text.replace(update_indices_pattern, update_indices_replacement, 1)
+
+if path.read_text() != text:
+    path.write_text(text)
 PYCODE
 fi
 

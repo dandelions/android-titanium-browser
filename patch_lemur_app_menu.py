@@ -1307,7 +1307,7 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
                         dialog.dismiss();
                     }
                     new android.os.Handler(android.os.Looper.getMainLooper())
-                            .post(
+                            .postDelayed(
                                     () -> {
                                         Activity currentAct = ContextUtils.activityFromContext(mContext);
                                         if (currentAct == null && mContext instanceof Activity) {
@@ -1318,7 +1318,8 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
                                         }
                                         ChromeSharedPreferences.getInstance()
                                                 .writeInt(ChromePreferenceKeys.UI_THEME_SETTING, targetTheme);
-                                    });
+                                    },
+                                    250);
                 });
 
         addLemurMainMenuTile(

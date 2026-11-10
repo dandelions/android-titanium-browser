@@ -54,6 +54,17 @@ class TestPatchAppMenuPropertiesDelegate(unittest.TestCase):
                     text,
                 )
 
+    def test_android_tab_list_null_contents_and_draw_blocker_guards(self):
+        for name in ("patch.sh", "hotfix_existing_src.sh"):
+            with self.subTest(script=name):
+                text = (REPO_ROOT / name).read_text(encoding="utf-8")
+                self.assertIn("HeliumAndroidNullContentsGuard", text)
+                self.assertIn("HeliumAndroidDrawBlockerTimeout", text)
+                self.assertIn(
+                    "content::WebContents* contents = tab ? tab->GetContents() : nullptr;",
+                    text,
+                )
+
 
 if __name__ == "__main__":
     unittest.main()
