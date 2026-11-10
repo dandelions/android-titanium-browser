@@ -1948,6 +1948,132 @@ def patch_omnibox_animation_matrix_compat(src_dir: str) -> None:
             print(f"Patched View.getAnimationMatrix API 28 compat in: {target}")
 
 
+def patch_bind_isolated_service_compat(src_dir: str) -> None:
+    # Android 9 (API 28) 缺少 Context.bindIsolatedService 与 Context.updateServiceGroup (API 29+ 引入)。
+    # Chromium 157 在 BindService.java 中直接调用 context.bindIsolatedService，
+    # 在 Android 9 车机设备启动子进程（渲染进程 / GPU 进程）阶段引发：
+    # java.lang.NoSuchMethodError: No virtual method bindIsolatedService(Landroid/content/Intent;ILjava/lang/String;Ljava/util/concurrent/Executor;Landroid/content/ServiceConnection;)Z in class Landroid/content/Context;
+    # 导致 Chrome_ProcessLauncherThread 致命闪退。
+    target_files = [
+        os.path.join(
+            src_dir,
+            "base/android/java/src/org/chromium/base/process_launcher/BindService.java",
+        ),
+        os.path.join(
+            src_dir,
+            "chromium/src/base/android/java/src/org/chromium/base/process_launcher/BindService.java",
+        ),
+        os.path.join(
+            src_dir,
+            "src/base/android/java/src/org/chromium/base/process_launcher/BindService.java",
+        ),
+    ]
+
+    for sub in ["base/android", "base"]:
+        scan_path = os.path.join(src_dir, sub)
+        if os.path.isdir(scan_path):
+            for root, _, files in os.walk(scan_path):
+                for f in files:
+                    if f == "BindService.java":
+                        full_f = os.path.join(root, f)
+                        if full_f not in target_files:
+                            target_files.append(full_f)
+
+    for target in target_files:
+        if not os.path.isfile(target):
+            continue
+        with open(target, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        new_content = content
+
+        # 1. 守卫 bindIsolatedService 调用：在 API 29 以下跳过并回退到常规 bindService
+        if "bindIsolatedService" in new_content:
+            old_bind_pattern = (
+                r'([ \t]*)if\s*\(\s*instanceName\s*!=\s*null\s*\)\s*\{\s*\n'
+                r'[ \t]*return\s+context\.bindIsolatedService\s*\([^)]*\)\s*;\s*\n'
+                r'[ \t]*\}'
+            )
+            new_bind_block = (
+                r'\1if (instanceName != null && android.os.Build.VERSION.SDK_INT >= 29) {\n'
+                r'\1    try {\n'
+                r'\1        return context.bindIsolatedService(intent, flags, instanceName, executor, connection);\n'
+                r'\1    } catch (Throwable ignored) {}\n'
+                r'\1}'
+            )
+            if "android.os.Build.VERSION.SDK_INT >= 29" not in new_content or "bindIsolatedService" in new_content:
+                new_content = re.sub(old_bind_pattern, new_bind_block, new_content)
+
+        # 2. 守卫 updateServiceGroup 调用：API 29+ 引入
+        if "context.updateServiceGroup(" in new_content and "try {\n        context.updateServiceGroup" not in new_content:
+            old_update_pattern = (
+                r'([ \t]*)context\.updateServiceGroup\s*\(\s*connection\s*,\s*group\s*,\s*importanceInGroup\s*\)\s*;'
+            )
+            new_update_block = (
+                r'\1if (android.os.Build.VERSION.SDK_INT >= 29) {\n'
+                r'\1    try {\n'
+                r'\1        context.updateServiceGroup(connection, group, importanceInGroup);\n'
+                r'\1    } catch (Throwable ignored) {}\n'
+                r'\1}'
+            )
+            new_content = re.sub(old_update_pattern, new_update_block, new_content)
+
+        # 3. 守卫 doRebindService 中对 Context.BindServiceFlags (API 34+) 的类解析
+        if "Context.BindServiceFlags bindServiceFlags" in new_content and "Build.VERSION.SDK_INT < 34" not in new_content:
+            new_content = re.sub(
+                r'([ \t]*)Context\.BindServiceFlags\s+bindServiceFlags\s*=',
+                r'\1if (android.os.Build.VERSION.SDK_INT < 34) return;\n\1Context.BindServiceFlags bindServiceFlags =',
+                new_content,
+                count=1,
+            )
+
+        # 4. 将 bindServiceByReflection 异常捕获由 ReflectiveOperationException 拓宽为 Throwable
+        if "catch (ReflectiveOperationException reflectionException)" in new_content:
+            new_content = new_content.replace(
+                "catch (ReflectiveOperationException reflectionException)",
+                "catch (Throwable reflectionException)",
+            )
+
+        if new_content != content:
+            with open(target, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            print(f"Patched BindService for API 28 compat in: {target}")
+
+    # 5. 守卫 ChildConnectionAllocator.java 中对 Android 10 Zygote 的默认假设
+    allocator_files = [
+        os.path.join(
+            src_dir,
+            "base/android/java/src/org/chromium/base/process_launcher/ChildConnectionAllocator.java",
+        ),
+        os.path.join(
+            src_dir,
+            "chromium/src/base/android/java/src/org/chromium/base/process_launcher/ChildConnectionAllocator.java",
+        ),
+        os.path.join(
+            src_dir,
+            "src/base/android/java/src/org/chromium/base/process_launcher/ChildConnectionAllocator.java",
+        ),
+    ]
+    for target in allocator_files:
+        if not os.path.isfile(target):
+            continue
+        with open(target, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        new_content = content
+        if "boolean disableZygote =" in new_content and "Build.VERSION.SDK_INT < 29" not in new_content:
+            new_content = re.sub(
+                r'boolean\s+disableZygote\s*=\s*\n?\s*Build\.VERSION\.SDK_INT\s*==\s*29',
+                'boolean disableZygote =\n                (Build.VERSION.SDK_INT < 29)\n                        || (Build.VERSION.SDK_INT == 29',
+                new_content,
+            )
+
+        if new_content != content:
+            with open(target, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            print(f"Patched ChildConnectionAllocator disableZygote for API 28 compat in: {target}")
+
+
 def main() -> None:
     src_dir = sys.argv[1] if len(sys.argv) > 1 else "."
 
@@ -2031,6 +2157,7 @@ def main() -> None:
     patch_default_browser_promo_compat(src_dir)
     patch_compositor_view_compat(src_dir)
     patch_omnibox_animation_matrix_compat(src_dir)
+    patch_bind_isolated_service_compat(src_dir)
 
     print("SDK version patch (minSdk: 28) & car-compat checks complete.")
 

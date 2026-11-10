@@ -57,6 +57,88 @@ class OldAndroidFeatureConfigurationTest(unittest.TestCase):
                     text,
                 )
 
+    def test_patch_bind_isolated_service_compat(self):
+        import tempfile
+        from patch_android_min_sdk import patch_bind_isolated_service_compat
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmppath = pathlib.Path(tmpdir)
+            bind_service_file = (
+                tmppath
+                / "base/android/java/src/org/chromium/base/process_launcher/BindService.java"
+            )
+            bind_service_file.parent.mkdir(parents=True, exist_ok=True)
+            bind_service_file.write_text(
+                """public class BindService {
+    static boolean doBindService(Context context, Intent intent, ServiceConnection connection,
+            int flags, Handler handler, Executor executor, @Nullable String instanceName) {
+        if (sBinderCallCounter != null) {
+            sBinderCallCounter.mBindServiceCount++;
+        }
+        if (instanceName != null) {
+            return context.bindIsolatedService(intent, flags, instanceName, executor, connection);
+        }
+        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.N) {
+            return bindServiceByCall(context, intent, connection, flags);
+        }
+        try {
+            return bindServiceByReflection(context, intent, connection, flags, handler);
+        } catch (ReflectiveOperationException reflectionException) {
+            try {
+                return bindServiceByCall(context, intent, connection, flags);
+            } catch (RuntimeException runtimeException) {
+                throw new RuntimeException(runtimeException.getMessage(), reflectionException);
+            }
+        }
+    }
+    static void doRebindService(Context context, ServiceConnection connection, int flags, boolean urgent) {
+        if (sBinderCallCounter != null) {
+            sBinderCallCounter.mRebindServiceCount++;
+        }
+        Context.BindServiceFlags bindServiceFlags =
+                Context.BindServiceFlags.of(sanitizeFlagsForBindServiceFlags(flags));
+    }
+    static void doUpdateServiceGroup(Context context, ServiceConnection connection, int group, int importanceInGroup) {
+        if (sBinderCallCounter != null) {
+            sBinderCallCounter.mUpdateServiceGroupCount++;
+        }
+        context.updateServiceGroup(connection, group, importanceInGroup);
+    }
+}
+""",
+                encoding="utf-8",
+            )
+
+            allocator_file = (
+                tmppath
+                / "base/android/java/src/org/chromium/base/process_launcher/ChildConnectionAllocator.java"
+            )
+            allocator_file.parent.mkdir(parents=True, exist_ok=True)
+            allocator_file.write_text(
+                """public class ChildConnectionAllocator {
+    public static ChildConnectionAllocator createVariableSize() {
+        boolean disableZygote =
+                Build.VERSION.SDK_INT == 29
+                        && AndroidInfo.getAndroidBuildFingerprint().startsWith("OnePlus/");
+        return null;
+    }
+}
+""",
+                encoding="utf-8",
+            )
+
+            patch_bind_isolated_service_compat(str(tmppath))
+
+            patched_bind = bind_service_file.read_text(encoding="utf-8")
+            self.assertIn("android.os.Build.VERSION.SDK_INT >= 29", patched_bind)
+            self.assertIn("context.bindIsolatedService", patched_bind)
+            self.assertIn("context.updateServiceGroup", patched_bind)
+            self.assertIn("Build.VERSION.SDK_INT < 34", patched_bind)
+            self.assertIn("catch (Throwable reflectionException)", patched_bind)
+
+            patched_alloc = allocator_file.read_text(encoding="utf-8")
+            self.assertIn("(Build.VERSION.SDK_INT < 29)", patched_alloc)
+
 
 if __name__ == "__main__":
     unittest.main()
