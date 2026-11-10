@@ -53,7 +53,8 @@ class TestPatchAppMenuPropertiesDelegate(unittest.TestCase):
                     "mHandler.postDelayed(\n                            mAppLaunchDrawBlocker::onActiveTabAvailableForRecreation, 100);",
                     text,
                 )
-                self.assertIn('"activity-recreated"', text)
+                self.assertIn('new java.io.File(eventsDir, "helium_events.log")', text)
+                self.assertIn('"activity-recreated at "', text)
 
     def test_android_tab_list_null_contents_and_draw_blocker_guards(self):
         for name in ("patch.sh", "hotfix_existing_src.sh"):

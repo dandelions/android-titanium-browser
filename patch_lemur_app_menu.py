@@ -1306,8 +1306,25 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
                     if (dialog.isShowing()) {
                         dialog.dismiss();
                     }
-                    org.chromium.chrome.browser.ChromeApplicationImplHooks.breadcrumb(
-                            "theme-request:" + targetTheme);
+                    try {
+                        java.io.File themeLogDir =
+                                org.chromium.base.ContextUtils.getApplicationContext()
+                                        .getExternalFilesDir("logs");
+                        if (themeLogDir != null) {
+                            java.io.FileWriter themeWriter =
+                                    new java.io.FileWriter(
+                                            new java.io.File(themeLogDir, "helium_events.log"),
+                                            true);
+                            themeWriter.write(
+                                    "theme-request:"
+                                            + targetTheme
+                                            + " at "
+                                            + android.os.SystemClock.elapsedRealtime()
+                                            + "\\n");
+                            themeWriter.close();
+                        }
+                    } catch (Throwable ignored) {
+                    }
                     // Post instead of postDelayed: the sheet is already dismissed, so
                     // the write only has to leave the current click-dispatch stack.
                     new android.os.Handler(android.os.Looper.getMainLooper())

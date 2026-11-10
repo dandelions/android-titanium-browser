@@ -202,24 +202,6 @@ BODY = '''public static void postAttachBaseContext() {
         } catch (Exception e) {
             android.util.Log.e(TAG, "Cannot start startup logcat capture", e);
         }
-    }
-
-    // Helium breadcrumb: records a stage to a file so it survives when logcat is
-    // unavailable, which makes recreate and theme timings measurable.
-    public static void breadcrumb(String stage) {
-        try {
-            java.io.File logDirectory =
-                    org.chromium.base.ContextUtils.getApplicationContext()
-                            .getExternalFilesDir("logs");
-            if (logDirectory == null) return;
-            java.io.FileWriter writer =
-                    new java.io.FileWriter(
-                            new java.io.File(logDirectory, "helium_events.log"), true);
-            writer.write(stage + " at " + android.os.SystemClock.elapsedRealtime() + "\\n");
-            writer.close();
-        } catch (Throwable ignored) {
-            // Breadcrumbs must never affect startup.
-        }
     }'''
 
 

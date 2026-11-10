@@ -2103,8 +2103,22 @@ new_block = """                if (isFromRecreating()) {
                                                         ::onActiveTabAvailableForRecreation);
                                         cvh.requestRender();
                                     });
-                    org.chromium.chrome.browser.ChromeApplicationImplHooks.breadcrumb(
-                            "activity-recreated");
+                    try {
+                        java.io.File eventsDir =
+                                org.chromium.base.ContextUtils.getApplicationContext()
+                                        .getExternalFilesDir("logs");
+                        if (eventsDir != null) {
+                            java.io.FileWriter eventsWriter =
+                                    new java.io.FileWriter(
+                                            new java.io.File(eventsDir, "helium_events.log"), true);
+                            eventsWriter.write(
+                                    "activity-recreated at "
+                                            + android.os.SystemClock.elapsedRealtime()
+                                            + "\\n");
+                            eventsWriter.close();
+                        }
+                    } catch (Throwable ignored) {
+                    }
                     mHandler.postDelayed(
                             mAppLaunchDrawBlocker::onActiveTabAvailableForRecreation, 100);
                 } else {

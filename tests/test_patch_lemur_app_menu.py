@@ -102,7 +102,8 @@ class TestPatchLemurAppMenu(unittest.TestCase):
         self.assertIn("hideCustomAppMenu();", patched)
         self.assertIn("Helium: Lemur Browser-style rounded bottom popup menu panel.", patched)
         self.assertIn("new android.os.Handler(android.os.Looper.getMainLooper())", patched)
-        self.assertIn("breadcrumb(", patched)
+        self.assertIn('new java.io.File(themeLogDir, "helium_events.log")', patched)
+        self.assertIn('"theme-request:"', patched)
         self.assertNotIn("triggerMenuAction(dialog, menuId);", patched)
 
         unpatch_tabbed_app_menu_delegate(self.work_dir)
