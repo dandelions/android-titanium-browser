@@ -77,11 +77,13 @@ The configured Chromium build machine is reachable at `192.168.2.30`.
 
 The local SSH private key is stored at `~/.ssh/android_helium_build`. Its public key is installed on the build machine. Verify access with `ssh helium-build 'hostname'`; do not copy either key into the repository.
 
-Use the following from this repository root to update the build machine's `main` checkout and prepare its source:
+Use the following from this repository root to update the build machine's checkout and prepare its source. **Always `git checkout` the branch you are about to pull** — the build machine is shared across `main`, `lemur-style-app-menu`, and `old-android`, and `git pull --ff-only origin <branch>` fast-forwards whatever branch is currently checked out. Pulling a branch that is not checked out fails with `Diverging branches can't be fast-forwarded` instead of switching.
 
 ```bash
-ssh helium-build 'cd /root/android-helium-browser && git -c http.proxy=http://192.168.2.1:37896 pull --ff-only origin main && git submodule sync --recursive && git -c http.proxy=http://192.168.2.1:37896 submodule update --init --recursive --jobs 8'
+ssh helium-build 'cd /root/android-helium-browser && git fetch origin && git checkout <branch> && git merge --ff-only origin/<branch> && git submodule sync --recursive && git -c http.proxy=http://192.168.2.1:37896 submodule update --init --recursive --jobs 8'
 ```
+
+Replace `<branch>` with the branch you are building (`main`, `lemur-style-app-menu`, or `old-android`). The commands below use `lemur-style-app-menu` as the worked example.
 
 To run the ARM64 full build remotely:
 
@@ -92,5 +94,5 @@ ssh helium-build 'cd /root/android-helium-browser && BUILD_PROXY=http://192.168.
 Use a full build for a fresh checkout, after a Chromium/Vanadium version change, or whenever the source version differs from `vanadium/args.gn`. For a downstream-only update after a successful full build and a matching Chromium version, run:
 
 ```bash
-ssh helium-build 'cd /root/android-helium-browser && ./hotfix_existing_src.sh chromium/src && FAST_LOCAL_BUILD=1 BUILD_PROXY=http://192.168.2.1:37896 BUILD_ARM=0 BUILD_ARM64=1 BUILD_AAB=0 NINJA_JOBS=14 ./build.sh'
+ssh helium-build 'cd /root/android-helium-browser && git fetch origin && git checkout lemur-style-app-menu && git merge --ff-only origin/lemur-style-app-menu && ./hotfix_existing_src.sh chromium/src && FAST_LOCAL_BUILD=1 BUILD_PROXY=http://192.168.2.1:37896 BUILD_ARM=0 BUILD_ARM64=1 BUILD_AAB=0 NINJA_JOBS=14 ./build.sh'
 ```
