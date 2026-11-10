@@ -4294,6 +4294,8 @@ restore_modern_android_sdk_baseline() {
                 base/android/java/src/org/chromium/base/ApplicationStatus.java \
                 base/android/java/src/org/chromium/base/PowerMonitor.java \
                 base/android/java/src/org/chromium/base/PathUtils.java \
+                base/android/java/src/org/chromium/base/process_launcher/BindService.java \
+                base/android/java/src/org/chromium/base/process_launcher/ChildConnectionAllocator.java \
                 chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java \
                 chrome/android/java/src/org/chromium/chrome/browser/IntentHandler.java \
                 chrome/android/java/src/org/chromium/chrome/browser/compositor/CompositorView.java \
@@ -4302,6 +4304,7 @@ restore_modern_android_sdk_baseline() {
                 chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/top/ToolbarControlContainer.java \
                 chrome/browser/ui/android/theme/java/src/org/chromium/chrome/browser/theme/TopUiThemeColorProvider.java \
                 chrome/browser/ui/android/default_browser_promo/java/src/org/chromium/chrome/browser/ui/default_browser_promo/DefaultBrowserPromoUtils.java \
+                ui/edge_to_edge/android/java/src/org/chromium/ui/edge_to_edge/WindowSystemBarColorHelper.java \
                 ui/gl/init/gl_initializer_android.cc \
                 gpu/config/gpu_finch_features.cc \
                 gpu/command_buffer/service/shared_image/ahardwarebuffer_image_backing_factory.cc \
