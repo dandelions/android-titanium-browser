@@ -4265,6 +4265,7 @@ restore_modern_android_sdk_baseline() {
                 chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java \
                 chrome/android/java/src/org/chromium/chrome/browser/IntentHandler.java \
                 chrome/android/java/src/org/chromium/chrome/browser/compositor/CompositorView.java \
+                chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java \
                 chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/UrlBar.java \
                 chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/suggestions/OmniboxSuggestionsDropdown.java \
                 chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/top/ToolbarControlContainer.java \

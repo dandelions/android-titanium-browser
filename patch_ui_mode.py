@@ -471,11 +471,19 @@ def clean_ui_mode_from_standard_branches(src_dir: Path) -> None:
     tabbed_path = src_dir / TABBED_DELEGATE_REL
     if tabbed_path.exists():
         text = tabbed_path.read_text(encoding="utf-8")
-        if "modelList.add(buildUiModeItem());\n" in text:
-            text = text.replace("        modelList.add(buildUiModeItem());\n", "")
+        text = re.sub(r"^[ \t]*modelList\.add\(buildUiModeItem\(\)\);[ \t]*\n?", "", text, flags=re.MULTILINE)
         if "private ListItem buildUiModeItem()" in text:
             text = re.sub(r"    private ListItem buildUiModeChoiceItem\([\s\S]*?    private ListItem buildSettingsItem\(\) \{\n", "    private ListItem buildSettingsItem() {\n", text)
-        tabbed_path.write_text(text, encoding="utf-8")
+        if "buildUiModeItem" in text and (src_dir / ".git").exists():
+            import subprocess
+            subprocess.run(
+                ["git", "checkout", "--", TABBED_DELEGATE_REL],
+                cwd=src_dir,
+                check=True,
+            )
+            text = tabbed_path.read_text(encoding="utf-8")
+        else:
+            tabbed_path.write_text(text, encoding="utf-8")
 
     from patch_lemur_app_menu import clean_ui_mode_from_lemur_menu
 
