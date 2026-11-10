@@ -40,10 +40,11 @@ class StartupLogcatPatchTest(unittest.TestCase):
         self.assertIn('getExternalFilesDir("logs")', result)
         self.assertIn('"startup-logcat.txt"', result)
         self.assertIn('"/system/bin/logcat"', result)
-        self.assertIn('"-v", "threadtime"', result)
+        self.assertIn('add("-v");', result)
+        self.assertIn('add("threadtime");', result)
         self.assertIn('"--pid=" + android.os.Process.myPid()', result)
-        self.assertIn('"-r", "4096"', result)
-        self.assertIn('"-n", "3"', result)
+        self.assertIn('add("4096");', result)
+        self.assertIn('add("3");', result)
         self.assertLess(result.index("Helium startup logcat capture"), result.index("public static void onCreate()") if "public static void onCreate()" in result else len(result))
 
     def test_both_captures_start_after_process_start(self):
@@ -52,11 +53,36 @@ class StartupLogcatPatchTest(unittest.TestCase):
         PATCH.patch_source_tree(self.root)
         result = self.hook_path.read_text()
         self.assertIn('"MM-dd HH:mm:ss.SSS", java.util.Locale.US', result)
-        self.assertEqual(2, result.count('"-T", sinceStamp'))
-        for buffer_name in ('"-b", "all"', '"-b", "crash"'):
-            start = result.index(buffer_name)
-            block = result[start : result.index(".start()", start)]
-            self.assertIn('"-T", sinceStamp', block)
+        for command in ("logcatCommand", "crashCommand"):
+            block_start = result.index(f"java.util.List<String> {command}")
+            block = result[block_start : result.index(".start()", block_start)]
+            self.assertIn("if (timeFilterSupported) {", block)
+            self.assertIn(f'{command}.add("-T")', block)
+            self.assertIn(f"{command}.add(sinceStamp)", block)
+
+    def test_time_filter_is_probed_before_use(self):
+        # A logcat build that rejects -T exits before writing anything, which left
+        # only helium_boot.log behind, so probe first and record the outcome.
+        PATCH.patch_source_tree(self.root)
+        result = self.hook_path.read_text()
+        probe = result.index("timeFilterSupported =")
+        first_capture = result.index("java.util.List<String> logcatCommand")
+        self.assertLess(probe, first_capture)
+        self.assertIn('probeCommand.add("-T")', result)
+        self.assertIn("probe.waitFor(500, java.util.concurrent.TimeUnit.MILLISECONDS)", result)
+        self.assertIn('" timeFilter="', result)
+        self.assertIn("+ timeFilterSupported", result)
+
+    def test_logcat_stderr_is_kept_for_diagnosis(self):
+        PATCH.patch_source_tree(self.root)
+        result = self.hook_path.read_text()
+        self.assertIn('"logcat-error.txt"', result)
+        self.assertEqual(
+            2,
+            result.count(
+                "redirectError(java.lang.ProcessBuilder.Redirect.appendTo(errorLog))"
+            ),
+        )
 
     def test_is_idempotent(self):
         PATCH.patch_source_tree(self.root)
@@ -111,7 +137,7 @@ class StartupLogcatPatchTest(unittest.TestCase):
         # debuggerd reports from another process, so the tombstone needs an
         # unfiltered crash buffer capture in addition to the --pid capture.
         self.assertIn('"native-crash.txt"', result)
-        self.assertIn('"-b", "crash"', result)
+        self.assertIn('crashCommand.add("crash");', result)
 
     def test_upgrades_previous_logcat_only_hook(self):
         self.hook_path.write_text(

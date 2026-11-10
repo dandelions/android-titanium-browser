@@ -26,6 +26,37 @@ BODY = '''public static void postAttachBaseContext() {
                 return;
             }
             java.io.File bootLog = new java.io.File(logDirectory, "helium_boot.log");
+            java.io.File errorLog = new java.io.File(logDirectory, "logcat-error.txt");
+
+            // -T keeps a capture from replaying what the system buffers already
+            // hold, but some logcat builds reject it and then exit before writing
+            // anything. Probe once, and fall back to an unfiltered capture.
+            String sinceStamp =
+                    new java.text.SimpleDateFormat(
+                                    "MM-dd HH:mm:ss.SSS", java.util.Locale.US)
+                            .format(new java.util.Date());
+            boolean timeFilterSupported = false;
+            try {
+                java.util.List<String> probeCommand = new java.util.ArrayList<String>();
+                probeCommand.add("/system/bin/logcat");
+                probeCommand.add("-b");
+                probeCommand.add("crash");
+                probeCommand.add("-T");
+                probeCommand.add(sinceStamp);
+                probeCommand.add("-d");
+                probeCommand.add("-t");
+                probeCommand.add("1");
+                java.lang.Process probe = new ProcessBuilder(probeCommand).start();
+                timeFilterSupported =
+                        probe.waitFor(500, java.util.concurrent.TimeUnit.MILLISECONDS)
+                                && probe.exitValue() == 0;
+                if (!timeFilterSupported) {
+                    probe.destroy();
+                }
+            } catch (Throwable ignored) {
+                // Treated as unsupported; the captures below stay usable.
+            }
+
             java.io.FileWriter bootWriter = new java.io.FileWriter(bootLog, true);
             bootWriter.write(
                     "Helium process started at "
@@ -34,7 +65,9 @@ BODY = '''public static void postAttachBaseContext() {
                             + android.os.Process.myPid()
                             + " process="
                             + android.app.Application.getProcessName()
-                            + "\\n");
+                            + " timeFilter="
+                            + timeFilterSupported
+                            + "\n");
             bootWriter.close();
 
             final java.io.File javaCrashLog =
@@ -68,37 +101,50 @@ BODY = '''public static void postAttachBaseContext() {
                         }
                     });
 
-            // Only record entries from this process start; logcat otherwise
-            // replays whatever the system buffers still hold from earlier runs.
-            String sinceStamp =
-                    new java.text.SimpleDateFormat(
-                                    "MM-dd HH:mm:ss.SSS", java.util.Locale.US)
-                            .format(new java.util.Date());
-
             java.io.File logFile = new java.io.File(logDirectory, "startup-logcat.txt");
-            new ProcessBuilder(
-                            "/system/bin/logcat",
-                            "-b", "all",
-                            "-v", "threadtime",
-                            "-T", sinceStamp,
-                            "--pid=" + android.os.Process.myPid(),
-                            "-f", logFile.getAbsolutePath(),
-                            "-r", "4096",
-                            "-n", "3")
+            java.util.List<String> logcatCommand = new java.util.ArrayList<String>();
+            logcatCommand.add("/system/bin/logcat");
+            logcatCommand.add("-b");
+            logcatCommand.add("all");
+            logcatCommand.add("-v");
+            logcatCommand.add("threadtime");
+            if (timeFilterSupported) {
+                logcatCommand.add("-T");
+                logcatCommand.add(sinceStamp);
+            }
+            logcatCommand.add("--pid=" + android.os.Process.myPid());
+            logcatCommand.add("-f");
+            logcatCommand.add(logFile.getAbsolutePath());
+            logcatCommand.add("-r");
+            logcatCommand.add("4096");
+            logcatCommand.add("-n");
+            logcatCommand.add("3");
+            new ProcessBuilder(logcatCommand)
+                    .redirectError(java.lang.ProcessBuilder.Redirect.appendTo(errorLog))
                     .start();
 
             // debuggerd dumps native crashes (SIGTRAP/SIGSEGV) from its own process, so the
             // --pid filter above never records the tombstone. Keep the whole crash buffer.
             java.io.File nativeCrashFile =
                     new java.io.File(logDirectory, "native-crash.txt");
-            new ProcessBuilder(
-                            "/system/bin/logcat",
-                            "-b", "crash",
-                            "-v", "threadtime",
-                            "-T", sinceStamp,
-                            "-f", nativeCrashFile.getAbsolutePath(),
-                            "-r", "2048",
-                            "-n", "2")
+            java.util.List<String> crashCommand = new java.util.ArrayList<String>();
+            crashCommand.add("/system/bin/logcat");
+            crashCommand.add("-b");
+            crashCommand.add("crash");
+            crashCommand.add("-v");
+            crashCommand.add("threadtime");
+            if (timeFilterSupported) {
+                crashCommand.add("-T");
+                crashCommand.add(sinceStamp);
+            }
+            crashCommand.add("-f");
+            crashCommand.add(nativeCrashFile.getAbsolutePath());
+            crashCommand.add("-r");
+            crashCommand.add("2048");
+            crashCommand.add("-n");
+            crashCommand.add("2");
+            new ProcessBuilder(crashCommand)
+                    .redirectError(java.lang.ProcessBuilder.Redirect.appendTo(errorLog))
                     .start();
         } catch (Exception e) {
             android.util.Log.e(TAG, "Cannot start startup logcat capture", e);
