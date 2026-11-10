@@ -3736,6 +3736,46 @@ if path.read_text() != text:
 PYCODE
 fi
 
+# Android restores tabs as frozen entries without WebContents, so extension
+# helpers must not hand a null pointer to their callers.
+if [ -f "$EXTENSION_TAB_UTIL_CC" ]; then
+    python3 - "$EXTENSION_TAB_UTIL_CC" <<'PYCODE'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+if "HeliumAndroidForEachTabNullContentsGuard" not in text:
+    for_each_tab_pattern = """void ExtensionTabUtil::ForEachTab(
+    base::RepeatingCallback<void(WebContents*)> callback) {
+  tabs::ForEachTabInterface([&callback](tabs::TabInterface* tab) {
+    callback.Run(tab->GetContents());
+    return true;
+  });
+}"""
+    for_each_tab_replacement = """void ExtensionTabUtil::ForEachTab(
+    base::RepeatingCallback<void(WebContents*)> callback) {
+  tabs::ForEachTabInterface([&callback](tabs::TabInterface* tab) {
+    // HeliumAndroidForEachTabNullContentsGuard: frozen restore tabs have no
+    // WebContents yet, and callers dereference whatever they are handed.
+    WebContents* contents = tab ? tab->GetContents() : nullptr;
+#if BUILDFLAG(IS_ANDROID)
+    if (!contents) {
+      return true;
+    }
+#endif
+    callback.Run(contents);
+    return true;
+  });
+}"""
+    if for_each_tab_pattern in text:
+        text = text.replace(for_each_tab_pattern, for_each_tab_replacement, 1)
+
+if path.read_text() != text:
+    path.write_text(text)
+PYCODE
+fi
+
 # crbug.com/helium: Android extension popup should see active incognito tab.
 if [ -f "$TABS_API_CC" ]; then
     grep -q 'build/build_config.h' "$TABS_API_CC" || \

@@ -98,6 +98,36 @@ class TestPatchAppMenuPropertiesDelegate(unittest.TestCase):
                 self.assertIn("  if (!profile) {\n    return;\n  }", patched)
                 self.assertIn("  CHECK(profile);", patched)
 
+    def test_for_each_tab_skips_tabs_without_contents(self):
+        # Frozen restore tabs are added to the model before they own a
+        # WebContents, and every ForEachTab caller dereferences what it gets.
+        upstream = """void ExtensionTabUtil::ForEachTab(
+    base::RepeatingCallback<void(WebContents*)> callback) {
+  tabs::ForEachTabInterface([&callback](tabs::TabInterface* tab) {
+    callback.Run(tab->GetContents());
+    return true;
+  });
+}
+"""
+        for name in ("patch.sh", "hotfix_existing_src.sh"):
+            with self.subTest(script=name):
+                script = (REPO_ROOT / name).read_text(encoding="utf-8")
+                start = script.index(
+                    'if "HeliumAndroidForEachTabNullContentsGuard" not in text:'
+                )
+                end = script.index("if path.read_text() != text:", start)
+                namespace = {"text": upstream}
+                exec(script[start:end], namespace)
+                patched = namespace["text"]
+                self.assertIn("HeliumAndroidForEachTabNullContentsGuard", patched)
+                self.assertIn(
+                    "    WebContents* contents = tab ? tab->GetContents() : nullptr;",
+                    patched,
+                )
+                self.assertIn("#if BUILDFLAG(IS_ANDROID)\n    if (!contents) {", patched)
+                self.assertIn("    callback.Run(contents);", patched)
+                self.assertNotIn("    callback.Run(tab->GetContents());", patched)
+
     def test_lemur_menu_patch_runs_after_sdk_baseline_restore(self):
         # The baseline restore git-checkouts the app menu delegates, so running the
         # Lemur menu patch first would leave the build without its custom menu.
