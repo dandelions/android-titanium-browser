@@ -6,6 +6,19 @@
 - Do not commit, revert, or otherwise modify unrelated user changes.
 - In the final response for a repository change, include the commit hash and the appropriate build commands below.
 
+## Branch Isolation: main / lemur vs old-android (old-version)
+
+`main` and `lemur*` are the modern baseline; `old-android` / `old-version` carry the Android 9 (API 28)
+car head-unit adaptation. Keep them strictly separated:
+
+- A fix or feature for `old-android` / `old-version` stays on that branch. Do not port it to `main` or `lemur`.
+- A change made for `main` or `lemur` must not be merged, cherry-picked, or copied into `old-android` /
+  `old-version` unless the user explicitly asks for that merge.
+- Never resolve an `old-android` build failure by pulling in `lemur`/`main` code paths. Fix the
+  `old-android` side instead (branch-gated patching), and the other way round.
+- Downstream patching must stay branch-gated: scripts decide via the current git branch, `OLD_ANDROID`,
+  `OLD_VERSION`, or `CAR_COMPAT`; verify a patch only runs on its intended branch before changing it.
+
 ## Build With Local Proxy
 
 Run all commands from the repository root. The configured local proxy is `http://192.168.2.1:37896`.

@@ -144,6 +144,43 @@ class TestPatchLemurAppMenu(unittest.TestCase):
         self.assertNotIn("registerLemurExtensionsMenuOpener", repaired)
         self.assertNotIn("hideCustomAppMenu", repaired)
 
+    def test_lemur_patch_preserves_appearance_and_ui_mode_methods(self):
+        """先应用 Lemur 方法块，再由其它补丁注入外观/界面模式方法，二次应用时必须保留定义。"""
+        # 第一次：写入 Lemur 方法块（模拟 hotfix 中较早的一次 patch_lemur_app_menu 调用）。
+        patch_tabbed_app_menu_delegate(self.work_dir)
+        text = self.tabbed_path.read_text(encoding="utf-8")
+        anchor = "    private ListItem buildSettingsItem() {\n"
+        self.assertIn(anchor, text)
+        injected = (
+            "    private ListItem buildAppearanceThemeItem(int id, int theme) {\n"
+            "        return null;\n"
+            "    }\n"
+            "\n"
+            "    private ListItem buildAppearanceItem() {\n"
+            "        return null;\n"
+            "    }\n"
+            "\n"
+            "    private ListItem buildUiModeItem() {\n"
+            "        return null;\n"
+            "    }\n"
+            "\n"
+        )
+        self.tabbed_path.write_text(text.replace(anchor, injected + anchor, 1), encoding="utf-8")
+
+        # 第二次：模拟末尾再次应用 Lemur 补丁，不得把上面注入的方法定义一起替换掉。
+        patch_tabbed_app_menu_delegate(self.work_dir)
+        patched = self.tabbed_path.read_text(encoding="utf-8")
+        self.assertIn("Helium: Lemur Browser-style rounded bottom popup menu panel.", patched)
+        self.assertIn("private ListItem buildAppearanceThemeItem(", patched)
+        self.assertIn("private ListItem buildAppearanceItem()", patched)
+        self.assertIn("private ListItem buildUiModeItem()", patched)
+        self.assertEqual(1, patched.count("private ListItem buildAppearanceItem()"))
+        self.assertEqual(1, patched.count("private ListItem buildUiModeItem()"))
+
+        # 幂等：重复执行不得重复追加。
+        patch_tabbed_app_menu_delegate(self.work_dir)
+        self.assertEqual(patched, self.tabbed_path.read_text(encoding="utf-8"))
+
     def test_unpatch_corrupted_extensions_menu_mediator_state(self):
         """Tests that when fallback context menu button is used without declaration, unpatch repairs it."""
         patch_extensions_menu_mediator(self.work_dir)

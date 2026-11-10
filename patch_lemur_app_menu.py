@@ -2535,6 +2535,28 @@ def is_old_compat_branch(src_dir: Path) -> bool:
     return os.environ.get("OLD_VERSION") == "1" or os.environ.get("OLD_ANDROID") == "1"
 
 
+_MENU_METHOD_RE = re.compile(
+    r"^    private (?:static )?ListItem (\w+)\([^\n]*\{\n(?:.*?)^    \}\n",
+    re.MULTILINE | re.DOTALL,
+)
+
+
+def _preserved_menu_methods(existing: str, lemur_methods: str) -> str:
+    """取出区段中由其它补丁注入、且不属于 Lemur 方法块的方法定义。
+
+    外观菜单（buildAppearanceItem）与界面模式（buildUiModeItem）由 shell 内嵌脚本和
+    patch_ui_mode.py 插入到「Lemur 标记 → buildSettingsItem」之间，若整段替换就会只剩调用点，
+    编译时报 cannot find symbol。这里把这些方法原样保留下来。
+    """
+    kept = []
+    for match in _MENU_METHOD_RE.finditer(existing):
+        name = match.group(1)
+        if re.search(r"\b%s\(" % re.escape(name), lemur_methods):
+            continue
+        kept.append(match.group(0))
+    return "".join(kept)
+
+
 def patch_tabbed_app_menu_delegate(src_dir: Path) -> None:
     path = src_dir / TABBED_DELEGATE_REL
     if not path.exists():
@@ -2578,7 +2600,10 @@ def patch_tabbed_app_menu_delegate(src_dir: Path) -> None:
             end_idx = text.find(method_anchor, start_idx)
             if end_idx == -1:
                 raise SystemExit(f"buildSettingsItem anchor not found after Lemur marker in {path}")
-            text = text[:start_idx] + LEMUR_MENU_METHODS + text[end_idx:]
+            # 外观菜单 / 界面模式是由其它补丁注入到同一区段的，替换 Lemur 方法块时必须保留，
+            # 否则只剩调用点、没有定义，chrome_java 会报 cannot find symbol。
+            preserved = _preserved_menu_methods(text[start_idx:end_idx], LEMUR_MENU_METHODS)
+            text = text[:start_idx] + LEMUR_MENU_METHODS + preserved + text[end_idx:]
         else:
             last_brace = text.rfind("}")
             text = text[:start_idx] + LEMUR_MENU_METHODS + "\n}\n"
