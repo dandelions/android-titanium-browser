@@ -88,6 +88,43 @@ class PatchUiModeTest(unittest.TestCase):
             cleaned = dff.read_text(encoding="utf-8")
             self.assertEqual(MOCK_DEVICE_FORM_FACTOR, cleaned)
 
+    def test_clean_tabbed_delegate_removes_all_ui_mode_items(self):
+        from patch_ui_mode import TABBED_DELEGATE_REL
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            tabbed = root / TABBED_DELEGATE_REL
+            tabbed.parent.mkdir(parents=True, exist_ok=True)
+            original = """class TabbedAppMenuPropertiesDelegate {
+    void populate1(ModelList modelList) {
+        modelList.add(buildAppearanceItem());
+        modelList.add(buildUiModeItem());
+        modelList.add(buildSettingsItem());
+    }
+    void populate2(ModelList modelList) {
+        modelList.add(buildAppearanceItem());
+        modelList.add(buildUiModeItem());
+        modelList.add(buildSettingsItem());
+    }
+    private ListItem buildUiModeChoiceItem(int id, String title) {
+        return null;
+    }
+    private ListItem buildUiModeItem() {
+        return null;
+    }
+    private ListItem buildSettingsItem() {
+        return null;
+    }
+}
+"""
+            tabbed.write_text(original, encoding="utf-8")
+            clean_ui_mode_from_standard_branches(root)
+            cleaned = tabbed.read_text(encoding="utf-8")
+            self.assertNotIn("buildUiModeItem", cleaned)
+            self.assertNotIn("buildUiModeChoiceItem", cleaned)
+            self.assertIn("buildSettingsItem", cleaned)
+            self.assertIn("buildAppearanceItem", cleaned)
+
 
 if __name__ == "__main__":
     unittest.main()
