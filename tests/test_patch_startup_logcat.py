@@ -47,6 +47,23 @@ class StartupLogcatPatchTest(unittest.TestCase):
         self.assertIn('add("3");', result)
         self.assertLess(result.index("Helium startup logcat capture"), result.index("public static void onCreate()") if "public static void onCreate()" in result else len(result))
 
+    def test_generated_java_has_no_unterminated_string_literal(self):
+        # A bare "\n" inside the Python template becomes a real newline and breaks
+        # the Java literal (build error: unterminated string literal).
+        PATCH.patch_source_tree(self.root)
+        result = self.hook_path.read_text()
+        for number, line in enumerate(result.splitlines(), start=1):
+            self.assertFalse(
+                line.rstrip().endswith('+ "'),
+                f"line {number} ends with an unterminated literal: {line!r}",
+            )
+            self.assertEqual(
+                0,
+                line.count('"') % 2,
+                f"line {number} has an odd number of quotes: {line!r}",
+            )
+        self.assertIn('+ "\\n");', result)
+
     def test_both_captures_start_after_process_start(self):
         # Without -T logcat replays whatever the system buffers still hold, which
         # is why a fresh crash log used to contain entries from hours before.

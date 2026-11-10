@@ -69,7 +69,7 @@ BODY = '''public static void postAttachBaseContext() {
                             + android.app.Application.getProcessName()
                             + " timeFilter="
                             + timeFilterSupported
-                            + "\n");
+                            + "\\n");
             bootWriter.close();
 
             final java.io.File javaCrashLog =
