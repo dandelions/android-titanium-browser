@@ -111,6 +111,31 @@ class VerifyOldAndroidFeaturesTest(unittest.TestCase):
             result = subprocess.run([sys.executable, str(VERIFY), str(root)])
             self.assertNotEqual(result.returncode, 0)
 
+    def test_rejects_unguarded_motion_event_api(self):
+        files = {
+            "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsToolbarCoordinatorImpl.java": "return !mIsWebApp;",
+            "chrome/android/java/src/org/chromium/chrome/browser/app/appmenu/AppMenuPropertiesDelegateImpl.java": "boolean shouldShowExtensionsItem() {\n        return true;\n    }",
+            "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/ToolbarPositionController.java": "Helium: follow the toolbar preference on the NTP and while editing",
+            "chrome/android/java/src/org/chromium/chrome/browser/ntp/NewTabPageCoordinator.java": "AddressBarPreference.isToolbarConfiguredToShowOnTop()",
+            "chrome/browser/ui/android/toolbar/java/res/layout/toolbar_phone.xml": '<ViewStub android:id="@+id/extensions_toolbar_container_stub"/>',
+            "chrome/android/java/src/org/chromium/chrome/browser/toolbar/ToolbarManager.java": "mToolbarLayout,",
+            "ui/android/java/src/org/chromium/ui/base/EventForwarder.java": (
+                "class EventForwarder {\n"
+                "    private static boolean validateMotionEvent(MotionEvent event) {\n"
+                "        return !Float.isFinite(event.getRawX(0));\n"
+                "    }\n"
+                "}"
+            ),
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            for relative, content in files.items():
+                path = root / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(content)
+            result = subprocess.run([sys.executable, str(VERIFY), str(root)])
+            self.assertNotEqual(result.returncode, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

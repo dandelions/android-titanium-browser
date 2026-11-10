@@ -28,6 +28,9 @@ TOOLBAR_MANAGER = Path(
 DEVICE_FORM_FACTOR = Path(
     "ui/android/java/src/org/chromium/ui/base/DeviceFormFactor.java"
 )
+EVENT_FORWARDER = Path(
+    "ui/android/java/src/org/chromium/ui/base/EventForwarder.java"
+)
 
 
 def read(root, relative):
@@ -87,6 +90,19 @@ def verify(root):
         if dff.count("markUiModeStartupSuccess()") > 1:
             raise SystemExit(
                 f"DeviceFormFactor contains duplicate UI mode methods: {dff_path}"
+            )
+
+    forwarder_path = root / EVENT_FORWARDER
+    if forwarder_path.is_file():
+        forwarder = forwarder_path.read_text(encoding="utf-8")
+        if re.search(r"getRaw[XY]\([^)]", forwarder):
+            raise SystemExit(
+                f"MotionEvent.getRawX(int) API 29 input compat patch is missing: {forwarder_path}"
+            )
+        if "int gestureClassification = event.getClassification();" in forwarder:
+            raise SystemExit(
+                "MotionEvent.getClassification() API 29 input compat patch is missing: "
+                f"{forwarder_path}"
             )
 
     print("Verified old-android extension management and bottom address bar patches")

@@ -139,6 +139,52 @@ class OldAndroidFeatureConfigurationTest(unittest.TestCase):
             patched_alloc = allocator_file.read_text(encoding="utf-8")
             self.assertIn("(Build.VERSION.SDK_INT < 29)", patched_alloc)
 
+    def test_patch_motion_event_input_compat(self):
+        import tempfile
+        from patch_android_min_sdk import patch_motion_event_input_compat
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmppath = pathlib.Path(tmpdir)
+            forwarder_file = (
+                tmppath / "ui/android/java/src/org/chromium/ui/base/EventForwarder.java"
+            )
+            forwarder_file.parent.mkdir(parents=True, exist_ok=True)
+            forwarder_file.write_text(
+                """public class EventForwarder {
+    private static boolean validateMotionEvent(MotionEvent event) {
+        for (int i = 0; i < event.getPointerCount(); ++i) {
+            if (!Float.isFinite(event.getX(i))
+                    || !Float.isFinite(event.getY(i))
+                    || !Float.isFinite(event.getRawX(i))
+                    || !Float.isFinite(event.getRawY(i))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean sendTouchEvent(MotionEvent event, boolean isTouchHandleEvent) {
+        int gestureClassification = event.getClassification();
+        return gestureClassification == 0;
+    }
+}
+""",
+                encoding="utf-8",
+            )
+
+            patch_motion_event_input_compat(str(tmppath))
+
+            patched = forwarder_file.read_text(encoding="utf-8")
+            self.assertNotIn("getRawX(i)", patched)
+            self.assertNotIn("getRawY(i)", patched)
+            self.assertIn("final float rawOffsetX = event.getRawX() - event.getX();", patched)
+            self.assertIn("Build.VERSION.SDK_INT >= 29", patched)
+            self.assertIn("MotionEvent.CLASSIFICATION_NONE", patched)
+
+            # 重复执行必须保持幂等，否则增量编译会反复叠加补丁文本。
+            patch_motion_event_input_compat(str(tmppath))
+            self.assertEqual(patched, forwarder_file.read_text(encoding="utf-8"))
+
 
 if __name__ == "__main__":
     unittest.main()

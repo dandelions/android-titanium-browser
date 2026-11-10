@@ -2086,6 +2086,101 @@ def patch_bind_isolated_service_compat(src_dir: str) -> None:
             print(f"Patched ChildConnectionAllocator disableZygote for API 28 compat in: {target}")
 
 
+def patch_motion_event_input_compat(src_dir: str) -> None:
+    # Android 9 (API 28) 缺少 MotionEvent.getRawX(int)/getRawY(int) 与 MotionEvent.getClassification()
+    # （均为 Android 10 / API 29 引入）。Chromium 157 的 EventForwarder 在触摸事件入口
+    # validateMotionEvent() 与 sendTouchEvent() 中直接调用这些方法，在 Android 9 车机设备上
+    # 点击任意网页内容区域（例如 扩展管理 - 开发者模式）即抛出：
+    # java.lang.NoSuchMethodError: No virtual method getRawX(I)F in class Landroid/view/MotionEvent;
+    # 该异常发生在主线程输入分发阶段，导致浏览器直接致命闪退。
+    # 此处改为使用 API 1 的 getRawX()/getRawY() 与首个指针坐标之差换算各指针原始坐标，
+    # 并对 getClassification() 加 API 29 版本判断，低版本回退到 CLASSIFICATION_NONE。
+    target_files = []
+    for sub in ["ui/android/java/src/org/chromium/ui/base", "ui/android"]:
+        scan_path = os.path.join(src_dir, sub)
+        if os.path.isdir(scan_path):
+            for root, _, files in os.walk(scan_path):
+                for f in files:
+                    if f == "EventForwarder.java":
+                        full_f = os.path.join(root, f)
+                        if full_f not in target_files:
+                            target_files.append(full_f)
+
+    seen = set()
+    for target in target_files:
+        if not os.path.isfile(target):
+            continue
+        real_path = os.path.realpath(target)
+        if real_path in seen:
+            continue
+        seen.add(real_path)
+
+        with open(target, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        if "getRawX(i)" not in content and "event.getClassification()" not in content:
+            continue
+
+        new_content = content
+
+        # 1. validateMotionEvent(): 移除 API 29 的 getRawX(int)/getRawY(int)
+        if "getRawX(i)" in new_content:
+            pattern = (
+                r"([ \t]*)for \(int i = 0; i < event\.getPointerCount\(\); \+\+i\) \{\n"
+                r"[ \t]*if \(!Float\.isFinite\(event\.getX\(i\)\)\n"
+                r"[ \t]*\|\| !Float\.isFinite\(event\.getY\(i\)\)\n"
+                r"[ \t]*\|\| !Float\.isFinite\(event\.getRawX\(i\)\)\n"
+                r"[ \t]*\|\| !Float\.isFinite\(event\.getRawY\(i\)\)\) \{\n"
+                r"[ \t]*return false;\n"
+                r"[ \t]*\}\n"
+                r"[ \t]*\}"
+            )
+
+            def replace_validate(match: "re.Match[str]") -> str:
+                indent = match.group(1)
+                inner = indent + "    "
+                return (
+                    f"{indent}// MotionEvent.getRawX(int)/getRawY(int) 需要 Android 10 (API 29)，\n"
+                    f"{indent}// 用 API 1 的 getRawX()/getRawY() 与首个指针坐标换算其它指针的原始坐标。\n"
+                    f"{indent}final float rawOffsetX = event.getRawX() - event.getX();\n"
+                    f"{indent}final float rawOffsetY = event.getRawY() - event.getY();\n"
+                    f"{indent}if (!Float.isFinite(rawOffsetX) || !Float.isFinite(rawOffsetY)) {{\n"
+                    f"{inner}return false;\n"
+                    f"{indent}}}\n"
+                    f"{indent}for (int i = 0; i < event.getPointerCount(); ++i) {{\n"
+                    f"{inner}if (!Float.isFinite(event.getX(i)) || !Float.isFinite(event.getY(i))) {{\n"
+                    f"{inner}    return false;\n"
+                    f"{inner}}}\n"
+                    f"{indent}}}"
+                )
+
+            new_content = re.sub(pattern, replace_validate, new_content)
+
+        # 2. sendTouchEvent(): 为 API 29 的 getClassification() 加版本判断
+        classification_pattern = (
+            r"([ \t]*)int gestureClassification = event\.getClassification\(\);"
+        )
+
+        def replace_classification(match: "re.Match[str]") -> str:
+            indent = match.group(1)
+            return (
+                f"{indent}// MotionEvent.getClassification() 需要 Android 10 (API 29)。\n"
+                f"{indent}int gestureClassification =\n"
+                f"{indent}        Build.VERSION.SDK_INT >= 29\n"
+                f"{indent}                ? event.getClassification()\n"
+                f"{indent}                : MotionEvent.CLASSIFICATION_NONE;"
+            )
+
+        new_content = re.sub(
+            classification_pattern, replace_classification, new_content, count=1
+        )
+
+        if new_content != content:
+            with open(target, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            print(f"Patched MotionEvent API 28 input compat in: {target}")
+
+
 def main() -> None:
     src_dir = sys.argv[1] if len(sys.argv) > 1 else "."
 
@@ -2170,6 +2265,7 @@ def main() -> None:
     patch_compositor_view_compat(src_dir)
     patch_omnibox_animation_matrix_compat(src_dir)
     patch_bind_isolated_service_compat(src_dir)
+    patch_motion_event_input_compat(src_dir)
 
     print("SDK version patch (minSdk: 28) & car-compat checks complete.")
 
