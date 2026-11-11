@@ -133,21 +133,23 @@ BODY = '''public static void postAttachBaseContext() {
                             "while :; do " + logcatLine + "; sleep 1; done &")
                     .start();
 
-            // debuggerd dumps native crashes (SIGTRAP/SIGSEGV) from its own process, so the
-            // --pid filter above never records the tombstone. Keep the whole crash buffer.
+            // debuggerd writes tombstones to the shared crash buffer under its own
+            // PID, so --pid would miss them. Filter complete tombstone context by
+            // the embedded app Cmdline instead of saving every app's crashes.
             java.io.File nativeCrashFile =
                     new java.io.File(logDirectory, "native-crash.txt");
+            new java.io.FileOutputStream(nativeCrashFile, false).close();
             StringBuilder crashLine = new StringBuilder(detach);
             crashLine.append("/system/bin/logcat -b crash -v threadtime");
             if (timeFilterSupported) {
                 crashLine.append(" -T '").append(sinceStamp).append("'");
             }
-            crashLine.append(" -f '").append(nativeCrashFile.getAbsolutePath()).append("'");
-            crashLine.append(" -r 2048 -n 2");
-            crashLine
-                    .append(" >/dev/null 2>>'")
-                    .append(errorLog.getAbsolutePath())
-                    .append("'");
+            crashLine.append(" 2>>'").append(errorLog.getAbsolutePath()).append("'");
+            crashLine.append(
+                    " | /system/bin/grep -F -B 20 -A 120 "
+                            + "'Cmdline: io.github.jqssun.helium'");
+            crashLine.append(" >>'").append(nativeCrashFile.getAbsolutePath()).append("'");
+            crashLine.append(" 2>>'").append(errorLog.getAbsolutePath()).append("'");
             new ProcessBuilder(
                             "/system/bin/sh",
                             "-c",

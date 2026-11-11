@@ -76,6 +76,18 @@ class StartupLogcatPatchTest(unittest.TestCase):
             )
         self.assertIn('+ "\\n");', result)
 
+    def test_native_crash_capture_filters_to_helium_tombstones(self):
+        PATCH.patch_source_tree(self.root)
+        result = self.hook_path.read_text()
+        self.assertIn('new java.io.FileOutputStream(nativeCrashFile, false).close();', result)
+        start = result.index("StringBuilder crashLine = new StringBuilder(detach);")
+        end = result.index('"helium-logcat-guard"', start)
+        block = result[start:end]
+        self.assertIn('/system/bin/logcat -b crash -v threadtime', block)
+        self.assertIn("grep -F -B 20 -A 120", block)
+        self.assertIn("Cmdline: io.github.jqssun.helium", block)
+        self.assertNotIn("--pid=", block)
+
     def test_both_captures_start_after_process_start(self):
         # Without -T logcat replays whatever the system buffers still hold, which
         # is why a fresh crash log used to contain entries from hours before.
