@@ -1,6 +1,13 @@
 #!/bin/bash
 
 SCRIPT_DIR="${SCRIPT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
+SOURCE_ROOT="$SCRIPT_DIR/chromium/src"
+if [ ! -d "$SOURCE_ROOT" ]; then
+    echo "Chromium source directory not found: $SOURCE_ROOT" >&2
+    return 1 2>/dev/null || exit 1
+fi
+cd "$SOURCE_ROOT" || return 1 2>/dev/null || exit 1
+
 if ! declare -F version_lt >/dev/null 2>&1; then
     version_lt() {
         [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n1)" = "$1" ]
