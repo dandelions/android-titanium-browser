@@ -38,12 +38,12 @@ hooks = [
               'src']
   },
   {
-    'name': 'fetch_helium_extension',
+    'name': 'fetch_titanium_extension',
     'condition': 'checkout_android',
     'action': ['python3',
               '../extensions/bundle.py',
               '../extensions/dist',
-              'helium',
+              'titanium',
               'https://github.com/jqssun/android-titanium-extension/releases/latest/download/titanium.crx']
   },
 ]
