@@ -100,6 +100,29 @@ class TestPatchAppMenuPropertiesDelegate(unittest.TestCase):
                 self.assertIn("  if (!profile) {\n    return;\n  }", patched)
                 self.assertIn("  CHECK(profile);", patched)
 
+    def test_get_tab_by_id_skips_frozen_tabs_without_contents(self):
+        upstream = """    for (int i = 0; i < window->GetTabCount(); ++i) {
+      WebContents* target_contents = window->GetWebContentsAt(i);
+      int target_tab_id = sessions::SessionTabHelper::IdForTab(target_contents).id();
+#if BUILDFLAG(IS_ANDROID)
+      if (target_tab_id == -1) {
+"""
+        for name in ("patch.sh", "hotfix_existing_src.sh"):
+            with self.subTest(script=name):
+                script = (REPO_ROOT / name).read_text(encoding="utf-8")
+                start = script.index('if "HeliumAndroidGetTabByIdNullContentsGuard" not in text:')
+                end = script.index(
+                    'if "HeliumAndroidGetTabByIdTabModelListFallback" not in text:',
+                    start,
+                )
+                namespace = {"text": upstream}
+                exec(script[start:end], namespace)
+                patched = namespace["text"]
+                self.assertIn("HeliumAndroidGetTabByIdNullContentsGuard", patched)
+                self.assertIn("if (!target_contents) {", patched)
+                self.assertIn("continue;", patched)
+                self.assertIn("SessionTabHelper::IdForTab(target_contents)", patched)
+
     def test_for_each_tab_skips_tabs_without_contents(self):
         # Frozen restore tabs are added to the model before they own a
         # WebContents, and every ForEachTab caller dereferences what it gets.

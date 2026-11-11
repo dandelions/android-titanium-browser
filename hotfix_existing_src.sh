@@ -3101,6 +3101,27 @@ if "HeliumAndroidGetTabListInterfaceIncognitoFix" not in text:
         raise SystemExit(f"GetTabListInterface pattern not found in {path}")
     text = text.replace(old_gtli, new_gtli, 1)
 
+if "HeliumAndroidGetTabByIdNullContentsGuard" not in text:
+    get_tab_by_id_pattern = """    for (int i = 0; i < window->GetTabCount(); ++i) {
+      WebContents* target_contents = window->GetWebContentsAt(i);
+      int target_tab_id = sessions::SessionTabHelper::IdForTab(target_contents).id();
+#if BUILDFLAG(IS_ANDROID)
+      if (target_tab_id == -1) {"""
+    get_tab_by_id_replacement = """    for (int i = 0; i < window->GetTabCount(); ++i) {
+      WebContents* target_contents = window->GetWebContentsAt(i);
+#if BUILDFLAG(IS_ANDROID)
+      // HeliumAndroidGetTabByIdNullContentsGuard: frozen restore tabs have no
+      // WebContents until activated.
+      if (!target_contents) {
+        continue;
+      }
+#endif
+      int target_tab_id = sessions::SessionTabHelper::IdForTab(target_contents).id();
+#if BUILDFLAG(IS_ANDROID)
+      if (target_tab_id == -1) {"""
+    if get_tab_by_id_pattern in text:
+        text = text.replace(get_tab_by_id_pattern, get_tab_by_id_replacement, 1)
+
 if "HeliumAndroidGetTabByIdTabModelListFallback" not in text:
     old_gtbi = """  // Prerendering tab is not visible and it cannot be in `TabStripModel`, if the"""
     new_gtbi = """#if BUILDFLAG(IS_ANDROID)
