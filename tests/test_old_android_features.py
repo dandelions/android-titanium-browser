@@ -139,6 +139,30 @@ class OldAndroidFeatureConfigurationTest(unittest.TestCase):
             patched_alloc = allocator_file.read_text(encoding="utf-8")
             self.assertIn("(Build.VERSION.SDK_INT < 29)", patched_alloc)
 
+    def test_patch_zlib_fcntl_cloexec_compat(self):
+        import tempfile
+        from patch_android_min_sdk import patch_zlib_fcntl_cloexec_compat
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmppath = pathlib.Path(tmpdir)
+            zlib_file = tmppath / "third_party/zlib/gzlib.c"
+            zlib_file.parent.mkdir(parents=True)
+            zlib_file.write_text(
+                "#ifdef O_CLOEXEC\n"
+                "        if (oflag & O_CLOEXEC)\n"
+                "            fcntl(fd, F_SETFD, fcntl(fd, F_GETFD) | O_CLOEXEC);\n"
+                "#endif\n",
+                encoding="utf-8",
+            )
+
+            patch_zlib_fcntl_cloexec_compat(str(tmppath))
+            patched = zlib_file.read_text(encoding="utf-8")
+            self.assertIn("fcntl(fd, F_SETFD, fcntl(fd, F_GETFD) | FD_CLOEXEC);", patched)
+            self.assertNotIn("F_SETFD, fcntl(fd, F_GETFD) | O_CLOEXEC", patched)
+
+            patch_zlib_fcntl_cloexec_compat(str(tmppath))
+            self.assertEqual(patched, zlib_file.read_text(encoding="utf-8"))
+
     def test_patch_advanced_protection_api28_compat(self):
         import tempfile
         from patch_android_min_sdk import patch_advanced_protection_api28_compat

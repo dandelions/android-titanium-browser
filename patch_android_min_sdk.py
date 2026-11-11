@@ -2302,6 +2302,25 @@ def patch_advanced_protection_api28_compat(src_dir: str) -> None:
         print(f"Patched AdvancedProtection API 28 compat in: {target}")
 
 
+def patch_zlib_fcntl_cloexec_compat(src_dir: str) -> None:
+    # Android 9 bionic rejects O_CLOEXEC when passed to F_SETFD; use FD_CLOEXEC.
+    target = os.path.join(src_dir, "third_party/zlib/gzlib.c")
+    if not os.path.isfile(target):
+        return
+
+    with open(target, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    broken = "fcntl(fd, F_SETFD, fcntl(fd, F_GETFD) | O_CLOEXEC);"
+    fixed = "fcntl(fd, F_SETFD, fcntl(fd, F_GETFD) | FD_CLOEXEC);"
+    if broken not in content:
+        return
+
+    with open(target, "w", encoding="utf-8") as f:
+        f.write(content.replace(broken, fixed))
+    print(f"Patched zlib F_SETFD close-on-exec flag for API 28 compat in: {target}")
+
+
 def main() -> None:
     src_dir = sys.argv[1] if len(sys.argv) > 1 else "."
 
@@ -2388,6 +2407,7 @@ def main() -> None:
     patch_bind_isolated_service_compat(src_dir)
     patch_motion_event_input_compat(src_dir)
     patch_advanced_protection_api28_compat(src_dir)
+    patch_zlib_fcntl_cloexec_compat(src_dir)
 
     print("SDK version patch (minSdk: 28) & car-compat checks complete.")
 
