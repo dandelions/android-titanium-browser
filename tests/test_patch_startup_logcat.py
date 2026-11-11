@@ -126,14 +126,25 @@ class StartupLogcatPatchTest(unittest.TestCase):
         self.assertIn("/system/bin/logcat -b crash -v threadtime", guard)
         self.assertNotIn(" -T '", guard)
 
-    def test_logcat_stderr_is_kept_for_diagnosis(self):
+    def test_logcat_stderr_filters_repeated_unexpected_eof(self):
         PATCH.patch_source_tree(self.root)
         result = self.hook_path.read_text()
         self.assertIn('"logcat-error.txt"', result)
-        self.assertGreaterEqual(
-            result.count("append(errorLog.getAbsolutePath())"),
-            3,
-        )
+        self.assertGreaterEqual(result.count("sed '/Unexpected EOF!/d'"), 3)
+        self.assertIn('"logcat-main-stderr.tmp"', result)
+        self.assertIn('"logcat-crash-stderr.tmp"', result)
+        self.assertIn('"logcat-fallback-stderr.tmp"', result)
+        self.assertIn("append(errorLog.getAbsolutePath())", result)
+        self.assertIn("append(mainErrorTemp.getAbsolutePath())", result)
+        self.assertIn("append(crashErrorTemp.getAbsolutePath())", result)
+        self.assertIn("append(fallbackErrorTemp.getAbsolutePath())", result)
+
+    def test_logcat_stderr_keeps_non_eof_errors(self):
+        PATCH.patch_source_tree(self.root)
+        result = self.hook_path.read_text()
+        self.assertIn("sed '/Unexpected EOF!/d'", result)
+        self.assertIn(" >> '", result)
+        self.assertIn("; : > '", result)
 
     def test_time_filter_is_probed_before_use(self):
         # A logcat build that rejects -T exits before writing anything, which left

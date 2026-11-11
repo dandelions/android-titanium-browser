@@ -112,6 +112,10 @@ BODY = '''public static void postAttachBaseContext() {
                             : "";
 
             java.io.File logFile = new java.io.File(logDirectory, "startup-logcat.txt");
+            java.io.File mainErrorTemp = new java.io.File(logDirectory, "logcat-main-stderr.tmp");
+            java.io.File crashErrorTemp = new java.io.File(logDirectory, "logcat-crash-stderr.tmp");
+            java.io.File fallbackErrorTemp =
+                    new java.io.File(logDirectory, "logcat-fallback-stderr.tmp");
             StringBuilder logcatLine = new StringBuilder(detach);
             // Skip the events buffer: it is high volume and made logcat fall behind
             // logd enough to die with "Unexpected EOF" before writing anything.
@@ -123,10 +127,18 @@ BODY = '''public static void postAttachBaseContext() {
             logcatLine.append(" -f '").append(logFile.getAbsolutePath()).append("'");
             logcatLine.append(" -r 4096 -n 3");
             logcatLine
-                    .append(" >/dev/null 2>>'")
+                    .append(" >/dev/null 2>'")
+                    .append(mainErrorTemp.getAbsolutePath())
+                    .append("'; if [ -s '")
+                    .append(mainErrorTemp.getAbsolutePath())
+                    .append("' ]; then sed '/Unexpected EOF!/d' '")
+                    .append(mainErrorTemp.getAbsolutePath())
+                    .append("' >> '")
                     .append(errorLog.getAbsolutePath())
-                    .append("'");
-            // logd drops slow readers, so keep the capture alive by restarting it.
+                    .append("'; : > '")
+                    .append(mainErrorTemp.getAbsolutePath())
+                    .append("'; fi");
+            // logd drops slow readers; reconnect while suppressing its repeated EOF notice.
             new ProcessBuilder(
                             "/system/bin/sh",
                             "-c",
@@ -144,12 +156,16 @@ BODY = '''public static void postAttachBaseContext() {
             if (timeFilterSupported) {
                 crashLine.append(" -T '").append(sinceStamp).append("'");
             }
-            crashLine.append(" 2>>'").append(errorLog.getAbsolutePath()).append("'");
+            crashLine.append(" 2>'").append(crashErrorTemp.getAbsolutePath()).append("'");
             crashLine.append(
                     " | /system/bin/grep -F -B 20 -A 120 "
-                            + "'Cmdline: io.github.jqssun.helium'");
+                            + "'Cmdline: io.github.jqssun.helium' 2>/dev/null");
             crashLine.append(" >>'").append(nativeCrashFile.getAbsolutePath()).append("'");
-            crashLine.append(" 2>>'").append(errorLog.getAbsolutePath()).append("'");
+            crashLine.append("; if [ -s '").append(crashErrorTemp.getAbsolutePath());
+            crashLine.append("' ]; then sed '/Unexpected EOF!/d' '");
+            crashLine.append(crashErrorTemp.getAbsolutePath());
+            crashLine.append("' >> '").append(errorLog.getAbsolutePath()).append("'");
+            crashLine.append("; : > '").append(crashErrorTemp.getAbsolutePath()).append("'; fi");
             new ProcessBuilder(
                             "/system/bin/sh",
                             "-c",
@@ -183,9 +199,17 @@ BODY = '''public static void postAttachBaseContext() {
                                                     .append("'");
                                             fallback.append(" -r 2048 -n 2");
                                             fallback
-                                                    .append(" >/dev/null 2>>'")
+                                                    .append(" >/dev/null 2>'")
+                                                    .append(fallbackErrorTemp.getAbsolutePath())
+                                                    .append("'; if [ -s '")
+                                                    .append(fallbackErrorTemp.getAbsolutePath())
+                                                    .append("' ]; then sed '/Unexpected EOF!/d' '")
+                                                    .append(fallbackErrorTemp.getAbsolutePath())
+                                                    .append("' >> '")
                                                     .append(errorLog.getAbsolutePath())
-                                                    .append("'");
+                                                    .append("'; : > '")
+                                                    .append(fallbackErrorTemp.getAbsolutePath())
+                                                    .append("'; fi");
                                             new ProcessBuilder(
                                                             "/system/bin/sh",
                                                             "-c",
