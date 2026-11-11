@@ -185,14 +185,20 @@ storePassword=your-store-password
 
 ## 7. 启动闪退日志
 
-应用会在 Chromium 初始化前启动 logcat 采集，并将日志写入应用专属外部目录：
+应用会在 Chromium 初始化前启动日志采集，将启动上下文、Java 异常、native 崩溃和本应用告警写入应用专属外部目录：
 
 ```text
+/Android/data/app.vanadium.browser/files/logs/helium_boot.log
 /Android/data/app.vanadium.browser/files/logs/startup-logcat.txt
 /Android/data/app.vanadium.browser/files/logs/warning-error-logcat.txt
+/Android/data/app.vanadium.browser/files/logs/crash_log.txt
+/Android/data/app.vanadium.browser/files/logs/native-crash.txt
+/Android/data/app.vanadium.browser/files/logs/logcat-error.txt
 ```
 
-`startup-logcat.txt` 只记录应用主进程，用于保留启动和崩溃上下文。`warning-error-logcat.txt` 只记录应用 UID 可读取的 `WARN` 与 `ERROR` 级日志。两个文件各自按 logcat 轮转参数最多保留 3 个旧文件和 1 个当前文件，每个约 4 MiB。Android 普通应用不能读取完整系统或其他应用日志；隔离 UID 的 Chromium 子进程日志也不会出现在告警文件中。设备实际安装包名不同的情况下，目录中的包名也会相应变化。
+`helium_boot.log` 记录启动时间、进程号、进程名和时间过滤器状态。`startup-logcat.txt` 保存应用主进程启动前后的主日志、系统日志与 crash buffer；采集器会重连以应对 logd 断开，并脱离应用进程组，避免应用退出时一起被杀。`warning-error-logcat.txt` 单独记录应用 UID 可读取的 `WARN`/`ERROR` 级日志。`crash_log.txt` 保存未捕获 Java 异常栈，`native-crash.txt` 只保存 tombstone 中命令行为 Helium 包名的 native 崩溃上下文，`logcat-error.txt` 保存非重复的采集错误。
+
+主日志、告警日志各最多保留 3 个旧文件和 1 个当前文件，每个约 4 MiB。Android 普通应用不能读取完整系统或其他应用日志；隔离 UID 的 Chromium 子进程日志也不一定可读。设备实际安装包名不同的情况下，目录中的包名也会相应变化。
 
 完成完整构建或应用 `hotfix_existing_src.sh` 并增量构建后，复现闪退，再从上述目录取出日志文件。
 
