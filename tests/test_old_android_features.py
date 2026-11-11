@@ -139,6 +139,72 @@ class OldAndroidFeatureConfigurationTest(unittest.TestCase):
             patched_alloc = allocator_file.read_text(encoding="utf-8")
             self.assertIn("(Build.VERSION.SDK_INT < 29)", patched_alloc)
 
+    def test_patch_advanced_protection_api28_compat(self):
+        import tempfile
+        from patch_android_min_sdk import patch_advanced_protection_api28_compat
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmppath = pathlib.Path(tmpdir)
+            provider_file = (
+                tmppath
+                / "components/safe_browsing/android/java/src/org/chromium/components/safe_browsing/OsAdditionalSecurityProvider.java"
+            )
+            provider_file.parent.mkdir(parents=True, exist_ok=True)
+            provider_file.write_text(
+                """import android.security.advancedprotection.AdvancedProtectionManager;
+
+public class OsAdditionalSecurityProvider {
+    public OsAdditionalSecurityProvider() {
+        if (!BuildCompat.isAtLeastB()) {
+            return;
+        }
+
+        Context context = ContextUtils.getApplicationContext();
+        if (ContextCompat.checkSelfPermission(
+                        context, Manifest.permission.QUERY_ADVANCED_PROTECTION_MODE)
+                != PackageManager.PERMISSION_GRANTED) {
+            return;
+        }
+        var manager =
+                (AdvancedProtectionManager)
+                        context.getSystemService(Context.ADVANCED_PROTECTION_SERVICE);
+        if (manager == null) {
+            return;
+        }
+
+        mIsAdvancedProtectionRequestedByOs = manager.isAdvancedProtectionEnabled();
+        manager.registerAdvancedProtectionCallback(
+                Runnable::run,
+                isAdvancedProtectionEnabled -> {
+                    if (isAdvancedProtectionEnabled == mIsAdvancedProtectionRequestedByOs) {
+                        return;
+                    }
+
+                    ThreadUtils.postOnUiThread(
+                            () -> {
+                                mIsAdvancedProtectionRequestedByOs = isAdvancedProtectionEnabled;
+                                for (Observer observer : mObservers) {
+                                    observer.onAdvancedProtectionOsSettingChanged();
+                                }
+                            });
+                });
+    }
+}
+""",
+                encoding="utf-8",
+            )
+
+            patch_advanced_protection_api28_compat(str(tmppath))
+            patched = provider_file.read_text(encoding="utf-8")
+            self.assertNotIn("import android.security.advancedprotection.AdvancedProtectionManager;", patched)
+            self.assertNotIn("(AdvancedProtectionManager)", patched)
+            self.assertIn('Class.forName(', patched)
+            self.assertIn('registerAdvancedProtectionCallback', patched)
+
+            first_result = patched
+            patch_advanced_protection_api28_compat(str(tmppath))
+            self.assertEqual(first_result, provider_file.read_text(encoding="utf-8"))
+
     def test_patch_motion_event_input_compat(self):
         import tempfile
         from patch_android_min_sdk import patch_motion_event_input_compat

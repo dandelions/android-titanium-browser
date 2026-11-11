@@ -2181,6 +2181,127 @@ def patch_motion_event_input_compat(src_dir: str) -> None:
             print(f"Patched MotionEvent API 28 input compat in: {target}")
 
 
+def patch_advanced_protection_api28_compat(src_dir: str) -> None:
+    # Android 9 cannot resolve AdvancedProtectionManager.Callback during class verification.
+    target = os.path.join(
+        src_dir,
+        "components/safe_browsing/android/java/src/org/chromium/components/safe_browsing/OsAdditionalSecurityProvider.java",
+    )
+    if not os.path.isfile(target):
+        return
+
+    with open(target, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    if "android.security.advancedprotection.AdvancedProtectionManager" not in content:
+        return
+
+    old_import = "import android.security.advancedprotection.AdvancedProtectionManager;\n"
+    if old_import not in content:
+        return
+
+    old_constructor = '''    public OsAdditionalSecurityProvider() {
+        if (!BuildCompat.isAtLeastB()) {
+            return;
+        }
+
+        Context context = ContextUtils.getApplicationContext();
+        if (ContextCompat.checkSelfPermission(
+                        context, Manifest.permission.QUERY_ADVANCED_PROTECTION_MODE)
+                != PackageManager.PERMISSION_GRANTED) {
+            return;
+        }
+        var manager =
+                (AdvancedProtectionManager)
+                        context.getSystemService(Context.ADVANCED_PROTECTION_SERVICE);
+        if (manager == null) {
+            return;
+        }
+
+        mIsAdvancedProtectionRequestedByOs = manager.isAdvancedProtectionEnabled();
+        manager.registerAdvancedProtectionCallback(
+                Runnable::run,
+                isAdvancedProtectionEnabled -> {
+                    if (isAdvancedProtectionEnabled == mIsAdvancedProtectionRequestedByOs) {
+                        return;
+                    }
+
+                    ThreadUtils.postOnUiThread(
+                            () -> {
+                                mIsAdvancedProtectionRequestedByOs = isAdvancedProtectionEnabled;
+                                for (Observer observer : mObservers) {
+                                    observer.onAdvancedProtectionOsSettingChanged();
+                                }
+                            });
+                });
+    }'''
+    new_constructor = '''    public OsAdditionalSecurityProvider() {
+        if (!BuildCompat.isAtLeastB()) {
+            return;
+        }
+
+        Context context = ContextUtils.getApplicationContext();
+        if (ContextCompat.checkSelfPermission(
+                        context, Manifest.permission.QUERY_ADVANCED_PROTECTION_MODE)
+                != PackageManager.PERMISSION_GRANTED) {
+            return;
+        }
+
+        // Keep Android 9 from resolving the Android B-only callback type during class verification.
+        try {
+            Object manager = context.getSystemService("advanced_protection");
+            if (manager == null) {
+                return;
+            }
+            java.lang.reflect.Method isEnabled =
+                    manager.getClass().getMethod("isAdvancedProtectionEnabled");
+            mIsAdvancedProtectionRequestedByOs = Boolean.TRUE.equals(isEnabled.invoke(manager));
+
+            Class<?> callbackClass =
+                    Class.forName(
+                            "android.security.advancedprotection.AdvancedProtectionManager$Callback");
+            Object callback =
+                    java.lang.reflect.Proxy.newProxyInstance(
+                            callbackClass.getClassLoader(),
+                            new Class<?>[] {callbackClass},
+                            (proxy, method, args) -> {
+                                if (args != null
+                                        && args.length > 0
+                                        && args[0] instanceof Boolean) {
+                                    boolean enabled = (Boolean) args[0];
+                                    if (enabled != mIsAdvancedProtectionRequestedByOs) {
+                                        ThreadUtils.postOnUiThread(
+                                                () -> {
+                                                    mIsAdvancedProtectionRequestedByOs = enabled;
+                                                    for (Observer observer : mObservers) {
+                                                        observer.onAdvancedProtectionOsSettingChanged();
+                                                    }
+                                                });
+                                    }
+                                }
+                                return null;
+                            });
+            java.lang.reflect.Method registerCallback =
+                    manager.getClass()
+                            .getMethod(
+                                    "registerAdvancedProtectionCallback",
+                                    java.util.concurrent.Executor.class,
+                                    callbackClass);
+            registerCallback.invoke(manager, (java.util.concurrent.Executor) Runnable::run, callback);
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            // Android versions without this service simply leave the feature disabled.
+        }
+    }'''
+    if old_constructor not in content:
+        raise RuntimeError(f"Advanced protection constructor not found in {target}")
+
+    patched = content.replace(old_import, "").replace(old_constructor, new_constructor)
+    if patched != content:
+        with open(target, "w", encoding="utf-8") as f:
+            f.write(patched)
+        print(f"Patched AdvancedProtection API 28 compat in: {target}")
+
+
 def main() -> None:
     src_dir = sys.argv[1] if len(sys.argv) > 1 else "."
 
@@ -2266,6 +2387,7 @@ def main() -> None:
     patch_omnibox_animation_matrix_compat(src_dir)
     patch_bind_isolated_service_compat(src_dir)
     patch_motion_event_input_compat(src_dir)
+    patch_advanced_protection_api28_compat(src_dir)
 
     print("SDK version patch (minSdk: 28) & car-compat checks complete.")
 
