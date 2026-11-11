@@ -50,11 +50,25 @@ class TestPatchAppMenuPropertiesDelegate(unittest.TestCase):
                 text = (REPO_ROOT / name).read_text(encoding="utf-8")
                 self.assertIn("cvh.requestRender();", text)
                 self.assertIn(
-                    "mHandler.postDelayed(\n                            mAppLaunchDrawBlocker::onActiveTabAvailableForRecreation, 100);",
+                    "mAppLaunchDrawBlocker.onActiveTabAvailableForRecreation();",
                     text,
                 )
                 self.assertIn('new java.io.File(eventsDir, "helium_events.log")', text)
                 self.assertIn('"activity-recreated at "', text)
+
+    def test_theme_switch_timing_is_logged_by_phase(self):
+        for name in ("patch.sh", "hotfix_existing_src.sh"):
+            with self.subTest(script=name):
+                text = (REPO_ROOT / name).read_text(encoding="utf-8")
+                self.assertIn("sHeliumThemeTimingId", text)
+                self.assertIn('phase=click theme=', text)
+                self.assertIn('phase=preference-written theme=', text)
+                self.assertIn('phase=activity-recreated theme=', text)
+                self.assertIn('phase=draw-unblocked theme=', text)
+                self.assertIn('click_to_preference_ms=', text)
+                self.assertIn('click_to_recreate_ms=', text)
+                self.assertIn('click_to_draw_ms=', text)
+                self.assertIn("SystemClock.elapsedRealtime()", text)
 
     def test_android_tab_list_null_contents_and_draw_blocker_guards(self):
         for name in ("patch.sh", "hotfix_existing_src.sh"):

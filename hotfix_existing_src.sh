@@ -563,6 +563,108 @@ if theme_type_import not in text:
     if night_mode_import not in text:
         raise SystemExit("ChromeActivity night mode import anchor not found")
     text = text.replace(night_mode_import, night_mode_import + theme_type_import, 1)
+if 'sHeliumThemeTimingId' not in text:
+    class_match = re.search(r'\bclass ChromeActivity\b', text)
+    if class_match is None:
+        raise SystemExit("ChromeActivity class anchor not found")
+    class_pos = class_match.start()
+    class_open = text.find('{', class_pos)
+    if class_open < 0:
+        raise SystemExit("ChromeActivity class opening brace not found")
+    timing_helpers = '''
+    private static long sHeliumThemeTimingId;
+    private static long sHeliumThemeClickAt;
+    private static long sHeliumThemePreferenceAt = -1;
+    private static long sHeliumThemeRecreatedAt = -1;
+    private static int sHeliumThemeTimingTheme;
+    private static boolean sHeliumThemeTimingPending;
+
+    private static void appendHeliumThemeTiming(String line) {
+        new Thread(
+                        () -> {
+                            try {
+                                java.io.File eventsDir =
+                                        org.chromium.base.ContextUtils.getApplicationContext()
+                                                .getExternalFilesDir("logs");
+                                if (eventsDir == null
+                                        || (!eventsDir.isDirectory() && !eventsDir.mkdirs())) {
+                                    return;
+                                }
+                                java.io.FileWriter writer =
+                                        new java.io.FileWriter(
+                                                new java.io.File(eventsDir, "helium_events.log"),
+                                                true);
+                                writer.write(line + "\\n");
+                                writer.close();
+                            } catch (Throwable ignored) {
+                                // Timing diagnostics must never affect theme switching.
+                            }
+                        },
+                        "HeliumThemeTimingLog")
+                .start();
+    }
+
+    private static synchronized long beginHeliumThemeTiming(int theme) {
+        long now = android.os.SystemClock.elapsedRealtime();
+        sHeliumThemeTimingId = now;
+        sHeliumThemeClickAt = now;
+        sHeliumThemePreferenceAt = -1;
+        sHeliumThemeRecreatedAt = -1;
+        sHeliumThemeTimingTheme = theme;
+        sHeliumThemeTimingPending = true;
+        appendHeliumThemeTiming(
+                "theme-switch id=" + now + " phase=click theme=" + theme + " at=" + now);
+        return now;
+    }
+
+    private static synchronized void recordHeliumThemeTiming(
+            String phase, long timingId, int theme) {
+        if (sHeliumThemeTimingPending && timingId == sHeliumThemeTimingId
+                && "preference-written".equals(phase)) {
+            sHeliumThemePreferenceAt = android.os.SystemClock.elapsedRealtime();
+            appendHeliumThemeTiming(
+                    "theme-switch id=" + sHeliumThemeTimingId
+                            + " phase=preference-written theme=" + theme
+                            + " at=" + sHeliumThemePreferenceAt
+                            + " duration=" + (sHeliumThemePreferenceAt - sHeliumThemeClickAt));
+        }
+    }
+
+    public static synchronized void recordHeliumThemeActivityRecreated() {
+        if (sHeliumThemeTimingPending) {
+            sHeliumThemeRecreatedAt = android.os.SystemClock.elapsedRealtime();
+            appendHeliumThemeTiming(
+                    "theme-switch id=" + sHeliumThemeTimingId
+                            + " phase=activity-recreated theme=" + sHeliumThemeTimingTheme
+                            + " at=" + sHeliumThemeRecreatedAt
+                            + " duration=" + (sHeliumThemeRecreatedAt - sHeliumThemeClickAt));
+        }
+    }
+
+    public static synchronized void recordHeliumThemeDrawUnblocked() {
+        if (!sHeliumThemeTimingPending) return;
+        final long drawAt = android.os.SystemClock.elapsedRealtime();
+        final long timingId = sHeliumThemeTimingId;
+        final long clickAt = sHeliumThemeClickAt;
+        final long preferenceAt = sHeliumThemePreferenceAt;
+        final long recreatedAt = sHeliumThemeRecreatedAt;
+        final int theme = sHeliumThemeTimingTheme;
+        sHeliumThemeTimingPending = false;
+        appendHeliumThemeTiming(
+                "theme-switch id=" + timingId
+                        + " phase=draw-unblocked theme=" + theme
+                        + " click=" + clickAt
+                        + " preference=" + preferenceAt
+                        + " activity_recreated=" + recreatedAt
+                        + " at=" + drawAt
+                        + " click_to_preference_ms="
+                        + (preferenceAt >= 0 ? preferenceAt - clickAt : -1)
+                        + " click_to_recreate_ms="
+                        + (recreatedAt >= 0 ? recreatedAt - clickAt : -1)
+                        + " click_to_draw_ms=" + (drawAt - clickAt));
+    }
+'''
+    text = text[:class_open + 1] + timing_helpers + text[class_open + 1:]
 text = re.sub(
         r'        if \(id == R\.id\.appearance_menu_id\) \{\n.*?        \}\n\n',
         '',
@@ -578,10 +680,12 @@ handler = """        if (id == R.id.appearance_system_default_menu_id
                 theme = ThemeType.DARK;
             }
             final int selectedTheme = theme;
+            final long themeTimingId = beginHeliumThemeTiming(selectedTheme);
             mHandler.post(() -> {
                 if (isActivityFinishingOrDestroyed()) return;
                 ChromeSharedPreferences.getInstance()
                         .writeInt(ChromePreferenceKeys.UI_THEME_SETTING, selectedTheme);
+                recordHeliumThemeTiming("preference-written", themeTimingId, selectedTheme);
             });
             RecordUserAction.record("MobileMenuAppearanceTheme");
             return true;
@@ -3427,10 +3531,16 @@ new_block = """                if (isFromRecreating()) {
                             .addSyncObserverAndCallIfNonNull(
                                     cvh -> {
                                         cvh.addDidSwapBuffersCallback(
-                                                mAppLaunchDrawBlocker
-                                                        ::onActiveTabAvailableForRecreation);
+                                                () -> {
+                                                    mAppLaunchDrawBlocker
+                                                            .onActiveTabAvailableForRecreation();
+                                                    org.chromium.chrome.browser.app.ChromeActivity
+                                                            .recordHeliumThemeDrawUnblocked();
+                                                });
                                         cvh.requestRender();
                                     });
+                    org.chromium.chrome.browser.app.ChromeActivity
+                            .recordHeliumThemeActivityRecreated();
                     try {
                         java.io.File eventsDir =
                                 org.chromium.base.ContextUtils.getApplicationContext()
@@ -3448,7 +3558,12 @@ new_block = """                if (isFromRecreating()) {
                     } catch (Throwable ignored) {
                     }
                     mHandler.postDelayed(
-                            mAppLaunchDrawBlocker::onActiveTabAvailableForRecreation, 100);
+                            () -> {
+                                mAppLaunchDrawBlocker.onActiveTabAvailableForRecreation();
+                                org.chromium.chrome.browser.app.ChromeActivity
+                                        .recordHeliumThemeDrawUnblocked();
+                            },
+                            100);
                 } else {
                     mAppLaunchDrawBlocker.onActiveTabAvailableForRecreation();
                 }"""
