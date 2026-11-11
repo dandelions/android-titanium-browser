@@ -39,11 +39,14 @@ class StartupLogcatPatchTest(unittest.TestCase):
         result = self.hook_path.read_text()
         self.assertIn('getExternalFilesDir("logs")', result)
         self.assertIn('"startup-logcat.txt"', result)
+        self.assertIn('"warning-error-logcat.txt"', result)
         self.assertIn('"/system/bin/logcat"', result)
         self.assertIn('"-v", "threadtime"', result)
         self.assertIn('"--pid=" + android.os.Process.myPid()', result)
-        self.assertIn('"-r", "4096"', result)
-        self.assertIn('"-n", "3"', result)
+        self.assertIn('"--uid=" + android.os.Process.myUid()', result)
+        self.assertIn('"*:W"', result)
+        self.assertEqual(2, result.count('"-r", "4096"'))
+        self.assertEqual(2, result.count('"-n", "3"'))
         self.assertLess(result.index("Helium startup logcat capture"), result.index("public static void onCreate()") if "public static void onCreate()" in result else len(result))
 
     def test_is_idempotent(self):

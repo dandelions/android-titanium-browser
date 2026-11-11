@@ -185,13 +185,14 @@ storePassword=your-store-password
 
 ## 7. 启动闪退日志
 
-应用会在 Chromium 初始化前启动 logcat 采集，并通过当前应用进程 PID 过滤，只将 Helium 进程日志写入应用专属外部目录：
+应用会在 Chromium 初始化前启动 logcat 采集，并将日志写入应用专属外部目录：
 
 ```text
 /Android/data/app.vanadium.browser/files/logs/startup-logcat.txt
+/Android/data/app.vanadium.browser/files/logs/warning-error-logcat.txt
 ```
 
-日志按 logcat 轮转参数最多保留 3 个旧文件和 1 个当前文件，每个约 4 MiB，总占用约 16 MiB。Android 普通应用通常只能读取自身可访问的日志，不能读取完整系统或其他应用的 logcat；该文件用于收集 Helium 启动和自身崩溃线索，不等同于通过电脑运行 `adb logcat -b all` 获得的完整系统日志。设备实际安装包名不同的情况下，目录中的包名也会相应变化。
+`startup-logcat.txt` 只记录应用主进程，用于保留启动和崩溃上下文。`warning-error-logcat.txt` 只记录应用 UID 可读取的 `WARN` 与 `ERROR` 级日志。两个文件各自按 logcat 轮转参数最多保留 3 个旧文件和 1 个当前文件，每个约 4 MiB。Android 普通应用不能读取完整系统或其他应用日志；隔离 UID 的 Chromium 子进程日志也不会出现在告警文件中。设备实际安装包名不同的情况下，目录中的包名也会相应变化。
 
 完成完整构建或应用 `hotfix_existing_src.sh` 并增量构建后，复现闪退，再从上述目录取出日志文件。
 

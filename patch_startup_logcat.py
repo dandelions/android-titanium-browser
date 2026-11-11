@@ -27,6 +27,17 @@ BODY = '''public static void postAttachBaseContext() {
                             "-r", "4096",
                             "-n", "3")
                     .start();
+            java.io.File warningLogFile = new java.io.File(logDirectory, "warning-error-logcat.txt");
+            new ProcessBuilder(
+                            "/system/bin/logcat",
+                            "-b", "all",
+                            "-v", "threadtime",
+                            "--uid=" + android.os.Process.myUid(),
+                            "*:W",
+                            "-f", warningLogFile.getAbsolutePath(),
+                            "-r", "4096",
+                            "-n", "3")
+                    .start();
         } catch (Exception e) {
             android.util.Log.e(TAG, "Cannot start startup logcat capture", e);
         }
