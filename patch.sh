@@ -922,8 +922,11 @@ timing_helpers = """
     }
 
     public static synchronized void recordHeliumThemeStep(String step) {
-        if (!sHeliumThemeTimingPending) return;
-        long now = android.os.SystemClock.elapsedRealtime();
+        // Keep tracing after the first frame: a late page load or repaint is
+        // exactly what the switch timing needs to explain.
+        long traceNow = android.os.SystemClock.elapsedRealtime();
+        if (sHeliumThemeClickAt == 0 || traceNow - sHeliumThemeClickAt > 5000) return;
+        long now = traceNow;
         appendHeliumThemeTiming(
                 "theme-switch id=" + sHeliumThemeTimingId
                         + " phase=" + step + " theme=" + sHeliumThemeTimingTheme
@@ -2345,6 +2348,30 @@ old_block = """                if (isFromRecreating()) {
 new_block = """                if (isFromRecreating()) {
                     org.chromium.chrome.browser.app.ChromeActivity
                             .recordHeliumThemeActivityRecreated();
+                    final org.chromium.chrome.browser.tab.Tab heliumTraceTab = getActivityTab();
+                    if (heliumTraceTab != null) {
+                        org.chromium.chrome.browser.app.ChromeActivity.recordHeliumThemeStep(
+                                "tab:" + heliumTraceTab.getUrl().getSpec());
+                        heliumTraceTab.addObserver(
+                                new org.chromium.chrome.browser.tab.TabObserver() {
+                                    @Override
+                                    public void onPageLoadStarted(
+                                            org.chromium.chrome.browser.tab.Tab tab,
+                                            org.chromium.url.GURL url) {
+                                        org.chromium.chrome.browser.app.ChromeActivity
+                                                .recordHeliumThemeStep("tab-load-start");
+                                    }
+
+                                    @Override
+                                    public void onPageLoadFinished(
+                                            org.chromium.chrome.browser.tab.Tab tab,
+                                            org.chromium.url.GURL url) {
+                                        org.chromium.chrome.browser.app.ChromeActivity
+                                                .recordHeliumThemeStep("tab-load-finished");
+                                        tab.removeObserver(this);
+                                    }
+                                });
+                    }
                     getCompositorViewHolderSupplier()
                             .addSyncObserverAndCallIfNonNull(
                                     cvh -> {
