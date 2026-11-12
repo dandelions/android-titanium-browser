@@ -9,6 +9,7 @@ from patch_lemur_app_menu import (
     HANDLER_IMPL_REL,
     TABBED_DELEGATE_REL,
     is_lemur_branch,
+    expose_theme_timing_methods,
     patch_app_menu_handler_impl,
     patch_app_menu_properties_delegate,
     patch_extensions_menu_mediator,
@@ -102,8 +103,9 @@ class TestPatchLemurAppMenu(unittest.TestCase):
         self.assertIn("hideCustomAppMenu();", patched)
         self.assertIn("Helium: Lemur Browser-style rounded bottom popup menu panel.", patched)
         self.assertIn("new android.os.Handler(android.os.Looper.getMainLooper())", patched)
-        self.assertIn('new java.io.File(themeLogDir, "helium_events.log")', patched)
-        self.assertIn('"theme-request:"', patched)
+        self.assertIn("ChromeActivity\n                                    .beginHeliumThemeTiming(targetTheme)", patched)
+        self.assertIn('"preference-written"', patched)
+        self.assertNotIn('"theme-request:"', patched)
         self.assertNotIn("triggerMenuAction(dialog, menuId);", patched)
 
         unpatch_tabbed_app_menu_delegate(self.work_dir)
@@ -148,6 +150,34 @@ class TestPatchLemurAppMenu(unittest.TestCase):
         unpatch_lemur_app_menu(self.work_dir)
         repaired = self.tabbed_path.read_text(encoding="utf-8")
         self.assertNotIn("registerLemurExtensionsMenuOpener", repaired)
+
+    def test_exposes_theme_timing_methods_after_baseline_restore(self):
+        activity = (
+            self.work_dir
+            / "chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActivity.java"
+        )
+        activity.parent.mkdir(parents=True, exist_ok=True)
+        activity.write_text(
+            "class ChromeActivity {\n"
+            "    private static synchronized long beginHeliumThemeTiming(int theme) {\n"
+            "        return 0;\n"
+            "    }\n"
+            "    private static synchronized void recordHeliumThemeTiming(\n"
+            "            String phase, long timingId, int theme) {}\n"
+            "}\n",
+            encoding="utf-8",
+        )
+
+        expose_theme_timing_methods(self.work_dir)
+        patched = activity.read_text(encoding="utf-8")
+        self.assertIn("public static synchronized long beginHeliumThemeTiming(int theme)", patched)
+        self.assertIn("public static synchronized void recordHeliumThemeTiming(", patched)
+
+        expose_theme_timing_methods(self.work_dir)
+        self.assertEqual(patched, activity.read_text(encoding="utf-8"))
+
+    def test_exposes_theme_timing_methods_without_activity_file(self):
+        expose_theme_timing_methods(self.work_dir)
 
 
 if __name__ == "__main__":

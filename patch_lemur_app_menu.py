@@ -1306,25 +1306,9 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
                     if (dialog.isShowing()) {
                         dialog.dismiss();
                     }
-                    try {
-                        java.io.File themeLogDir =
-                                org.chromium.base.ContextUtils.getApplicationContext()
-                                        .getExternalFilesDir("logs");
-                        if (themeLogDir != null) {
-                            java.io.FileWriter themeWriter =
-                                    new java.io.FileWriter(
-                                            new java.io.File(themeLogDir, "helium_events.log"),
-                                            true);
-                            themeWriter.write(
-                                    "theme-request:"
-                                            + targetTheme
-                                            + " at "
-                                            + android.os.SystemClock.elapsedRealtime()
-                                            + "\\n");
-                            themeWriter.close();
-                        }
-                    } catch (Throwable ignored) {
-                    }
+                    final long themeTimingId =
+                            org.chromium.chrome.browser.app.ChromeActivity
+                                    .beginHeliumThemeTiming(targetTheme);
                     // Post instead of postDelayed: the sheet is already dismissed, so
                     // the write only has to leave the current click-dispatch stack.
                     new android.os.Handler(android.os.Looper.getMainLooper())
@@ -1339,6 +1323,11 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
                                         }
                                         ChromeSharedPreferences.getInstance()
                                                 .writeInt(ChromePreferenceKeys.UI_THEME_SETTING, targetTheme);
+                                        org.chromium.chrome.browser.app.ChromeActivity
+                                                .recordHeliumThemeTiming(
+                                                        "preference-written",
+                                                        themeTimingId,
+                                                        targetTheme);
                                     });
                 });
 
@@ -3137,6 +3126,22 @@ def is_lemur_branch(src_dir: Path) -> bool:
     return False
 
 
+def expose_theme_timing_methods(src_dir: Path) -> None:
+    activity_path = src_dir / "chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActivity.java"
+    if not activity_path.exists():
+        return
+
+    activity_text = activity_path.read_text(encoding="utf-8")
+    updated_text = activity_text.replace(
+        "    private static synchronized long beginHeliumThemeTiming(int theme) {",
+        "    public static synchronized long beginHeliumThemeTiming(int theme) {")
+    updated_text = updated_text.replace(
+        "    private static synchronized void recordHeliumThemeTiming(\n",
+        "    public static synchronized void recordHeliumThemeTiming(\n")
+    if updated_text != activity_text:
+        activity_path.write_text(updated_text, encoding="utf-8")
+
+
 def main() -> None:
     if len(sys.argv) != 2:
         raise SystemExit("Usage: patch_lemur_app_menu.py <chromium-src-dir>")
@@ -3169,6 +3174,7 @@ def main() -> None:
             patch_chrome_activity(src_dir)
         except Exception as e:
             print(f"[patch_lemur_app_menu] Notice: UI mode sub-patching: {e}")
+    expose_theme_timing_methods(src_dir)
     print(f"Successfully applied Lemur-style toolbar icons, 3-line menu, and 4-square extensions sheet in {src_dir}")
 
 

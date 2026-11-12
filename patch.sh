@@ -817,32 +817,37 @@ if 'sHeliumThemeTimingId' not in text:
     private static int sHeliumThemeTimingTheme;
     private static boolean sHeliumThemeTimingPending;
 
+    private static final java.util.concurrent.ExecutorService sHeliumThemeTimingLogger =
+            java.util.concurrent.Executors.newSingleThreadExecutor(
+                    runnable -> {
+                        Thread thread = new Thread(runnable, "HeliumThemeTimingLog");
+                        thread.setDaemon(true);
+                        return thread;
+                    });
+
     private static void appendHeliumThemeTiming(String line) {
-        new Thread(
-                        () -> {
-                            try {
-                                java.io.File eventsDir =
-                                        org.chromium.base.ContextUtils.getApplicationContext()
-                                                .getExternalFilesDir("logs");
-                                if (eventsDir == null
-                                        || (!eventsDir.isDirectory() && !eventsDir.mkdirs())) {
-                                    return;
-                                }
-                                java.io.FileWriter writer =
-                                        new java.io.FileWriter(
-                                                new java.io.File(eventsDir, "helium_events.log"),
-                                                true);
-                                writer.write(line + "\\n");
-                                writer.close();
-                            } catch (Throwable ignored) {
-                                // Timing diagnostics must never affect theme switching.
-                            }
-                        },
-                        "HeliumThemeTimingLog")
-                .start();
+        sHeliumThemeTimingLogger.execute(
+                () -> {
+                    try {
+                        java.io.File eventsDir =
+                                org.chromium.base.ContextUtils.getApplicationContext()
+                                        .getExternalFilesDir("logs");
+                        if (eventsDir == null
+                                || (!eventsDir.isDirectory() && !eventsDir.mkdirs())) {
+                            return;
+                        }
+                        java.io.FileWriter writer =
+                                new java.io.FileWriter(
+                                        new java.io.File(eventsDir, "helium_events.log"), true);
+                        writer.write(line + "\\n");
+                        writer.close();
+                    } catch (Throwable ignored) {
+                        // Timing diagnostics must never affect theme switching.
+                    }
+                });
     }
 
-    private static synchronized long beginHeliumThemeTiming(int theme) {
+    public static synchronized long beginHeliumThemeTiming(int theme) {
         long now = android.os.SystemClock.elapsedRealtime();
         sHeliumThemeTimingId = now;
         sHeliumThemeClickAt = now;
@@ -855,7 +860,7 @@ if 'sHeliumThemeTimingId' not in text:
         return now;
     }
 
-    private static synchronized void recordHeliumThemeTiming(
+    public static synchronized void recordHeliumThemeTiming(
             String phase, long timingId, int theme) {
         if (sHeliumThemeTimingPending && timingId == sHeliumThemeTimingId
                 && "preference-written".equals(phase)) {
@@ -903,6 +908,12 @@ if 'sHeliumThemeTimingId' not in text:
     }
 '''
     text = text[:class_open + 1] + timing_helpers + text[class_open + 1:]
+text = text.replace(
+        "    private static synchronized long beginHeliumThemeTiming(int theme) {",
+        "    public static synchronized long beginHeliumThemeTiming(int theme) {")
+text = text.replace(
+        "    private static synchronized void recordHeliumThemeTiming(\n",
+        "    public static synchronized void recordHeliumThemeTiming(\n")
 text = re.sub(
         r'        if \(id == R\.id\.appearance_menu_id\) \{\n.*?        \}\n\n',
         '',
@@ -2211,6 +2222,8 @@ sed -i 's|if (isTabNtp \&\& !currentTab.isNativePage()) {|if (isTabNtp \&\& !cur
 else
 sed -i 's|if (isTabNtp \&\& !currentTab.isNativePage() \&\& !isTabWebUiNtp) {|if (isTabNtp \&\& !currentTab.isNativePage() \&\& !isTabWebUiNtp \&\& !UrlOverrideUtils.isNtpOverrideEnabled()) {|' chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
 fi
+apply_helium_recreation_timing() {
+[ -f "chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java" ] || return 0
 python3 - "chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java" <<'PYCODE'
 from pathlib import Path
 import sys
@@ -2228,6 +2241,8 @@ old_block = """                if (isFromRecreating()) {
                     mAppLaunchDrawBlocker.onActiveTabAvailableForRecreation();
                 }"""
 new_block = """                if (isFromRecreating()) {
+                    org.chromium.chrome.browser.app.ChromeActivity
+                            .recordHeliumThemeActivityRecreated();
                     getCompositorViewHolderSupplier()
                             .addSyncObserverAndCallIfNonNull(
                                     cvh -> {
@@ -2240,8 +2255,6 @@ new_block = """                if (isFromRecreating()) {
                                                 });
                                         cvh.requestRender();
                                     });
-                    org.chromium.chrome.browser.app.ChromeActivity
-                            .recordHeliumThemeActivityRecreated();
                     try {
                         java.io.File eventsDir =
                                 org.chromium.base.ContextUtils.getApplicationContext()
@@ -2272,6 +2285,8 @@ if old_block in text:
     text = text.replace(old_block, new_block, 1)
     cta.write_text(text, encoding="utf-8")
 PYCODE
+}
+apply_helium_recreation_timing
 
 # Recreation stability: a pre-draw blocker whose readiness signal never arrives
 # leaves the window permanently blank, so it never gains focus and input times out.
@@ -4483,6 +4498,9 @@ if is_old_version_branch; then
     fi
 else
     restore_modern_android_sdk_baseline .
+    # That baseline restore git-checkouts ChromeTabbedActivity.java, which also
+    # discards the recreation timing hooks and the draw-blocker wake-up above.
+    apply_helium_recreation_timing
 fi
 
 # The menu baseline restore above git-checkouts the app menu delegates, so the

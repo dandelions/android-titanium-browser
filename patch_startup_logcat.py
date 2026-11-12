@@ -114,16 +114,16 @@ BODY = '''public static void postAttachBaseContext() {
             java.io.File logFile = new java.io.File(logDirectory, "startup-logcat.txt");
             java.io.File mainErrorTemp = new java.io.File(logDirectory, "logcat-main-stderr.tmp");
             java.io.File crashErrorTemp = new java.io.File(logDirectory, "logcat-crash-stderr.tmp");
-            java.io.File fallbackErrorTemp =
-                    new java.io.File(logDirectory, "logcat-fallback-stderr.tmp");
-            StringBuilder logcatLine = new StringBuilder(detach);
-            // Skip the events buffer: it is high volume and made logcat fall behind
-            // logd enough to die with "Unexpected EOF" before writing anything.
-            logcatLine.append("/system/bin/logcat -b main,system,crash -v threadtime");
+            java.io.File nativeCrashFile =
+                    new java.io.File(logDirectory, "native-crash.txt");
+            new java.io.FileOutputStream(nativeCrashFile, false).close();
+
+            StringBuilder logcatLine = new StringBuilder();
+            logcatLine.append("/system/bin/logcat -b main,system -v threadtime");
             if (timeFilterSupported) {
                 logcatLine.append(" -T '").append(sinceStamp).append("'");
             }
-            logcatLine.append(" --pid=").append(android.os.Process.myPid());
+            logcatLine.append(" --uid=").append(android.os.Process.myUid());
             logcatLine.append(" -f '").append(logFile.getAbsolutePath()).append("'");
             logcatLine.append(" -r 4096 -n 3");
             logcatLine
@@ -138,20 +138,8 @@ BODY = '''public static void postAttachBaseContext() {
                     .append("'; : > '")
                     .append(mainErrorTemp.getAbsolutePath())
                     .append("'; fi");
-            // logd drops slow readers; reconnect while suppressing its repeated EOF notice.
-            new ProcessBuilder(
-                            "/system/bin/sh",
-                            "-c",
-                            "while :; do " + logcatLine + "; sleep 1; done &")
-                    .start();
 
-            // debuggerd writes tombstones to the shared crash buffer under its own
-            // PID, so --pid would miss them. Filter complete tombstone context by
-            // the embedded app Cmdline instead of saving every app's crashes.
-            java.io.File nativeCrashFile =
-                    new java.io.File(logDirectory, "native-crash.txt");
-            new java.io.FileOutputStream(nativeCrashFile, false).close();
-            StringBuilder crashLine = new StringBuilder(detach);
+            StringBuilder crashLine = new StringBuilder();
             crashLine.append("/system/bin/logcat -b crash -v threadtime");
             if (timeFilterSupported) {
                 crashLine.append(" -T '").append(sinceStamp).append("'");
@@ -166,65 +154,28 @@ BODY = '''public static void postAttachBaseContext() {
             crashLine.append(crashErrorTemp.getAbsolutePath());
             crashLine.append("' >> '").append(errorLog.getAbsolutePath()).append("'");
             crashLine.append("; : > '").append(crashErrorTemp.getAbsolutePath()).append("'; fi");
-            new ProcessBuilder(
-                            "/system/bin/sh",
-                            "-c",
-                            "while :; do " + crashLine + "; sleep 1; done &")
-                    .start();
 
-            if (timeFilterSupported) {
-                // A time filter the platform reads differently than intended leaves
-                // the capture silently empty. Add an unfiltered writer rather than
-                // lose the tombstone; it only doubles up in that broken case.
-                new java.lang.Thread(
-                                new java.lang.Runnable() {
-                                    @Override
-                                    public void run() {
-                                        try {
-                                            java.lang.Thread.sleep(1500);
-                                        } catch (InterruptedException ignored) {
-                                            return;
-                                        }
-                                        if (nativeCrashFile.length() > 0) {
-                                            return;
-                                        }
-                                        try {
-                                            StringBuilder fallback =
-                                                    new StringBuilder(detach);
-                                            fallback.append(
-                                                    "/system/bin/logcat -b crash -v threadtime");
-                                            fallback
-                                                    .append(" -f '")
-                                                    .append(nativeCrashFile.getAbsolutePath())
-                                                    .append("'");
-                                            fallback.append(" -r 2048 -n 2");
-                                            fallback
-                                                    .append(" >/dev/null 2>'")
-                                                    .append(fallbackErrorTemp.getAbsolutePath())
-                                                    .append("'; if [ -s '")
-                                                    .append(fallbackErrorTemp.getAbsolutePath())
-                                                    .append("' ]; then sed '/Unexpected EOF!/d' '")
-                                                    .append(fallbackErrorTemp.getAbsolutePath())
-                                                    .append("' >> '")
-                                                    .append(errorLog.getAbsolutePath())
-                                                    .append("'; : > '")
-                                                    .append(fallbackErrorTemp.getAbsolutePath())
-                                                    .append("'; fi");
-                                            new ProcessBuilder(
-                                                            "/system/bin/sh",
-                                                            "-c",
-                                                            "while :; do "
-                                                                    + fallback
-                                                                    + "; sleep 1; done &")
-                                                    .start();
-                                        } catch (Throwable ignored) {
-                                            // Nothing left to fall back to.
-                                        }
-                                    }
-                                },
-                                "helium-logcat-guard")
-                        .start();
+            java.io.File captureLock = new java.io.File(logDirectory, ".logcat-capture-lock");
+            StringBuilder supervisor = new StringBuilder();
+            supervisor.append("lock='").append(captureLock.getAbsolutePath()).append("'; ");
+            supervisor.append("if ! mkdir \\\"$lock\\\" 2>/dev/null; then ");
+            supervisor.append("owner=$(cat \\\"$lock/pid\\\" 2>/dev/null); ");
+            supervisor.append("case \\\"$owner\\\" in ''|*[!0-9]*) owner=;; esac; ");
+            supervisor.append("if [ -n \\\"$owner\\\" ] && kill -0 \\\"$owner\\\" 2>/dev/null; then exit 0; fi; ");
+            supervisor.append("rm -rf \\\"$lock\\\"; mkdir \\\"$lock\\\" || exit 0; fi; ");
+            supervisor.append("echo $$ > \\\"$lock/pid\\\"; trap 'rm -rf \\\"$lock\\\"' EXIT; ");
+            supervisor.append("while :; do ").append(logcatLine).append("; sleep 1; done & main=$!; ");
+            supervisor.append("while :; do ").append(crashLine).append("; sleep 1; done & crash=$!; ");
+            supervisor.append("wait; kill \\\"$main\\\" \\\"$crash\\\" 2>/dev/null; wait");
+            java.util.List<String> supervisorCommand = new java.util.ArrayList<String>();
+            java.io.File setsid = new java.io.File("/system/bin/setsid");
+            if (setsid.canExecute()) {
+                supervisorCommand.add(setsid.getAbsolutePath());
             }
+            supervisorCommand.add("/system/bin/sh");
+            supervisorCommand.add("-c");
+            supervisorCommand.add(supervisor.toString());
+            new ProcessBuilder(supervisorCommand).start();
         } catch (Exception e) {
             android.util.Log.e(TAG, "Cannot start startup logcat capture", e);
         }

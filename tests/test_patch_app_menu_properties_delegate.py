@@ -60,6 +60,8 @@ class TestPatchAppMenuPropertiesDelegate(unittest.TestCase):
         for name in ("patch.sh", "hotfix_existing_src.sh"):
             with self.subTest(script=name):
                 text = (REPO_ROOT / name).read_text(encoding="utf-8")
+                self.assertIn("public static synchronized long beginHeliumThemeTiming(int theme)", text)
+                self.assertIn("public static synchronized void recordHeliumThemeTiming(", text)
                 self.assertIn("sHeliumThemeTimingId", text)
                 self.assertIn('phase=click theme=', text)
                 self.assertIn('phase=preference-written theme=', text)
@@ -69,6 +71,19 @@ class TestPatchAppMenuPropertiesDelegate(unittest.TestCase):
                 self.assertIn('click_to_recreate_ms=', text)
                 self.assertIn('click_to_draw_ms=', text)
                 self.assertIn("SystemClock.elapsedRealtime()", text)
+
+    def test_recreation_timing_survives_baseline_restore(self):
+        # restore_modern_android_sdk_baseline git-checkouts ChromeTabbedActivity.java,
+        # so the recreation hooks must be applied again afterwards.
+        for name in ("patch.sh", "hotfix_existing_src.sh"):
+            with self.subTest(script=name):
+                text = (REPO_ROOT / name).read_text(encoding="utf-8")
+                self.assertIn("apply_helium_recreation_timing() {", text)
+                self.assertGreaterEqual(text.count("apply_helium_recreation_timing\n"), 2)
+                self.assertLess(
+                    text.index("restore_modern_android_sdk_baseline"),
+                    text.rindex("apply_helium_recreation_timing"),
+                )
 
     def test_android_tab_list_null_contents_and_draw_blocker_guards(self):
         for name in ("patch.sh", "hotfix_existing_src.sh"):

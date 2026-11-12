@@ -39,25 +39,24 @@ class StartupLogcatPatchTest(unittest.TestCase):
         result = self.hook_path.read_text()
         self.assertIn('getExternalFilesDir("logs")', result)
         self.assertIn('"startup-logcat.txt"', result)
-        self.assertIn("/system/bin/logcat -b main,system,crash -v threadtime", result)
-        self.assertIn('" --pid="', result)
-        self.assertIn("android.os.Process.myPid()", result)
+        self.assertIn("/system/bin/logcat -b main,system -v threadtime", result)
+        self.assertIn("/system/bin/logcat -b crash -v threadtime", result)
+        self.assertIn('" --uid="', result)
+        self.assertIn("android.os.Process.myUid()", result)
+        self.assertIn(".logcat-capture-lock", result)
+        self.assertIn("while :; do ", result)
         self.assertIn("-r 4096 -n 3", result)
         self.assertLess(result.index("Helium startup logcat capture"), result.index("public static void onCreate()") if "public static void onCreate()" in result else len(result))
 
     def test_captures_detach_from_the_app_process_group(self):
-        # Android kills a crashed app's process group; without setsid the logcat
-        # children died before flushing, which left the log files behind empty.
         PATCH.patch_source_tree(self.root)
         result = self.hook_path.read_text()
         self.assertIn('new java.io.File("/system/bin/setsid").canExecute()', result)
         self.assertIn("String detach =", result)
-        self.assertEqual(3, result.count("new StringBuilder(detach)"))
-        for name in ("logcatLine", "crashLine"):
-            start = result.index(f"StringBuilder {name} = ")
-            block = result[start : result.index(".start();", start)]
-            self.assertIn('"/system/bin/sh",', block)
-            self.assertIn('"while :; do "', block)
+        self.assertIn("java.io.File captureLock", result)
+        self.assertIn('supervisor.append("echo $$ > \\\"$lock/pid\\\"', result)
+        self.assertIn('supervisor.append("wait; kill \\\"$main\\\"', result)
+        self.assertNotIn('"helium-logcat-guard"', result)
 
     def test_generated_java_has_no_unterminated_string_literal(self):
         # A bare "\n" inside the Python template becomes a real newline and breaks
@@ -80,8 +79,8 @@ class StartupLogcatPatchTest(unittest.TestCase):
         PATCH.patch_source_tree(self.root)
         result = self.hook_path.read_text()
         self.assertIn('new java.io.FileOutputStream(nativeCrashFile, false).close();', result)
-        start = result.index("StringBuilder crashLine = new StringBuilder(detach);")
-        end = result.index('"helium-logcat-guard"', start)
+        start = result.index("StringBuilder crashLine = new StringBuilder();")
+        end = result.index("java.io.File captureLock", start)
         block = result[start:end]
         self.assertIn('/system/bin/logcat -b crash -v threadtime', block)
         self.assertIn("grep -F -B 20 -A 120", block)
@@ -89,14 +88,13 @@ class StartupLogcatPatchTest(unittest.TestCase):
         self.assertNotIn("--pid=", block)
 
     def test_both_captures_start_after_process_start(self):
-        # Without -T logcat replays whatever the system buffers still hold, which
-        # is why a fresh crash log used to contain entries from hours before.
         PATCH.patch_source_tree(self.root)
         result = self.hook_path.read_text()
         self.assertIn('"MM-dd HH:mm:ss.SSS", java.util.Locale.US', result)
-        for name, buffer in (("logcatLine", "-b main,system,crash"), ("crashLine", "-b crash")):
+        for name, buffer in (("logcatLine", "-b main,system"), ("crashLine", "-b crash")):
             start = result.index(f"StringBuilder {name} = ")
-            block = result[start : result.index(".start();", start)]
+            end = result.index("StringBuilder crashLine =", start) if name == "logcatLine" else result.index("java.io.File captureLock", start)
+            block = result[start:end]
             self.assertIn("if (timeFilterSupported) {", block)
             self.assertIn('append(" -T \'").append(sinceStamp)', block)
             self.assertIn(buffer, block)
@@ -114,30 +112,24 @@ class StartupLogcatPatchTest(unittest.TestCase):
             result.index('getTimeZone("UTC")'), result.index("String sinceStamp")
         )
 
-    def test_empty_filtered_capture_falls_back_to_unfiltered(self):
-        # Even with a correct stamp, a platform that drops entries must not cost us
-        # the tombstone: add an unfiltered writer when the file stays empty.
+    def test_no_duplicate_unfiltered_crash_fallback(self):
         PATCH.patch_source_tree(self.root)
         result = self.hook_path.read_text()
-        self.assertIn("nativeCrashFile.length() > 0", result)
-        guard_start = result.index('"helium-logcat-guard"')
-        guard = result[result.index("// A time filter the platform", 0) : guard_start]
-        self.assertIn("java.lang.Thread.sleep(1500);", guard)
-        self.assertIn("/system/bin/logcat -b crash -v threadtime", guard)
-        self.assertNotIn(" -T '", guard)
+        self.assertNotIn("nativeCrashFile.length() > 0", result)
+        self.assertNotIn('"helium-logcat-guard"', result)
+        self.assertEqual(1, result.count("/system/bin/logcat -b crash -v threadtime"))
 
     def test_logcat_stderr_filters_repeated_unexpected_eof(self):
         PATCH.patch_source_tree(self.root)
         result = self.hook_path.read_text()
         self.assertIn('"logcat-error.txt"', result)
-        self.assertGreaterEqual(result.count("sed '/Unexpected EOF!/d'"), 3)
+        self.assertEqual(result.count("sed '/Unexpected EOF!/d'"), 2)
         self.assertIn('"logcat-main-stderr.tmp"', result)
         self.assertIn('"logcat-crash-stderr.tmp"', result)
-        self.assertIn('"logcat-fallback-stderr.tmp"', result)
+        self.assertNotIn('"logcat-fallback-stderr.tmp"', result)
         self.assertIn("append(errorLog.getAbsolutePath())", result)
         self.assertIn("append(mainErrorTemp.getAbsolutePath())", result)
         self.assertIn("append(crashErrorTemp.getAbsolutePath())", result)
-        self.assertIn("append(fallbackErrorTemp.getAbsolutePath())", result)
 
     def test_logcat_stderr_keeps_non_eof_errors(self):
         PATCH.patch_source_tree(self.root)
