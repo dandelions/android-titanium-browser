@@ -4935,16 +4935,18 @@ if path.is_file():
     )
     changed = False
     for anchor, step in steps:
-        marker = 'recordHeliumThemeStep("%s")' % step
-        if marker in text:
-            continue
+        log_call = ("        android.util.Log.i(\"HeliumTheme\", \"" + step
+                + "@\" + android.os.SystemClock.elapsedRealtime());\n")
         if anchor not in text:
             raise SystemExit("extension init anchor missing: " + step)
-        text = text.replace(
-                anchor,
-                anchor + "        org.chromium.chrome.browser.app.ChromeActivity." + marker + ";\n",
-                1)
-        changed = True
+        legacy = ("        org.chromium.chrome.browser.app.ChromeActivity"
+                + ".recordHeliumThemeStep(\"" + step + "\");\n")
+        if legacy in text:
+            text = text.replace(legacy, log_call, 1)
+            changed = True
+        if log_call not in text:
+            text = text.replace(anchor, anchor + log_call, 1)
+            changed = True
     if changed:
         path.write_text(text, encoding="utf-8")
 PYCODE
