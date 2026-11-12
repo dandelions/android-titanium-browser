@@ -921,6 +921,44 @@ timing_helpers = """
                 "activity-destroyed", sHeliumThemeTimingId, sHeliumThemeTimingTheme);
     }
 
+    public static synchronized void recordHeliumThemeStep(String step) {
+        if (!sHeliumThemeTimingPending) return;
+        long now = android.os.SystemClock.elapsedRealtime();
+        appendHeliumThemeTiming(
+                "theme-switch id=" + sHeliumThemeTimingId
+                        + " phase=" + step + " theme=" + sHeliumThemeTimingTheme
+                        + " at=" + now
+                        + " duration=" + (now - sHeliumThemeClickAt));
+    }
+
+    private static void scheduleHeliumThemeProbes(
+            final long timingId, final long clickAt, final int theme) {
+        final android.os.Handler handler =
+                new android.os.Handler(android.os.Looper.getMainLooper());
+        handler.postDelayed(
+                () -> {
+                    long now = android.os.SystemClock.elapsedRealtime();
+                    appendHeliumThemeTiming(
+                            "theme-switch id=" + timingId
+                                    + " phase=post-draw-500 theme=" + theme
+                                    + " at=" + now
+                                    + " duration=" + (now - clickAt)
+                                    + " late_ms=" + (now - clickAt - 500));
+                },
+                500);
+        handler.postDelayed(
+                () -> {
+                    long now = android.os.SystemClock.elapsedRealtime();
+                    appendHeliumThemeTiming(
+                            "theme-switch id=" + timingId
+                                    + " phase=post-draw-1500 theme=" + theme
+                                    + " at=" + now
+                                    + " duration=" + (now - clickAt)
+                                    + " late_ms=" + (now - clickAt - 1500));
+                },
+                1500);
+    }
+
     public static synchronized void recordHeliumThemeActivityRecreated() {
         if (sHeliumThemeTimingPending) {
             sHeliumThemeRecreatedAt = android.os.SystemClock.elapsedRealtime();
@@ -943,6 +981,7 @@ timing_helpers = """
         final long recreatedAt = sHeliumThemeRecreatedAt;
         final int theme = sHeliumThemeTimingTheme;
         sHeliumThemeTimingPending = false;
+        scheduleHeliumThemeProbes(timingId, clickAt, theme);
         appendHeliumThemeTiming(
                 "theme-switch id=" + timingId
                         + " phase=draw-unblocked theme=" + theme
@@ -4565,6 +4604,39 @@ fi
 # The menu baseline restore above git-checkouts the app menu delegates, so the
 # branch menu patches must run after it, not before.
 python3 "$SCRIPT_DIR/patch_lemur_app_menu.py" .
+
+# Theme switch diagnostics: attribute extension UI init during activity recreation.
+python3 - "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsToolbarCoordinatorImpl.java" <<'PYCODE'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+if path.is_file():
+    text = path.read_text(encoding="utf-8")
+    steps = (
+        ("        mBridge = new ExtensionActionsBridge(task, profile);\n",
+         "ext-actions-bridge"),
+        ("        mContainer = (LinearLayout) extensionsToolbarStub.inflate();\n",
+         "ext-inflate"),
+        ("        mExtensionsToolbarBridge.addObserver(mExtensionsToolbarBridgeObserver);\n",
+         "ext-toolbar-bridge"),
+        ("        updateMenuIconVisibility();\n", "ext-menu"),
+    )
+    changed = False
+    for anchor, step in steps:
+        marker = 'recordHeliumThemeStep("%s")' % step
+        if marker in text:
+            continue
+        if anchor not in text:
+            raise SystemExit("extension init anchor missing: " + step)
+        text = text.replace(
+                anchor,
+                anchor + "        org.chromium.chrome.browser.app.ChromeActivity." + marker + ";\n",
+                1)
+        changed = True
+    if changed:
+        path.write_text(text, encoding="utf-8")
+PYCODE
 
 python3 "$SCRIPT_DIR/patch_omnibox_dropdown.py" .
 python3 "$SCRIPT_DIR/patch_toolbar_phone.py" . || exit 1
