@@ -229,6 +229,102 @@ public class OsAdditionalSecurityProvider {
             patch_advanced_protection_api28_compat(str(tmppath))
             self.assertEqual(first_result, provider_file.read_text(encoding="utf-8"))
 
+    def test_patch_accessibility_contrast_api28_compat(self):
+        import tempfile
+        from patch_android_min_sdk import patch_accessibility_contrast_api28_compat
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = (
+                pathlib.Path(tmpdir)
+                / "ui/accessibility/android/java/src/org/chromium/ui/accessibility/AccessibilityStateDelegateImpl.java"
+            )
+            target.parent.mkdir(parents=True)
+            target.write_text(
+                "import android.accessibilityservice.AccessibilityServiceInfo;\n"
+                "import android.app.UiModeManager;\n"
+                "import android.app.UiModeManager.ContrastChangeListener;\n"
+                "import android.content.Context;\n"
+                "import android.os.Build;\n"
+                "\n"
+                "import androidx.annotation.RequiresApi;\n"
+                "\n"
+                "import org.chromium.base.ContextUtils;\n"
+                "\n"
+                "class AccessibilityStateDelegateImpl {\n"
+                "    private @Nullable ServicesObserver mTextContrastObserver;\n"
+                "\n"
+                "    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)\n"
+                "    private @Nullable ContrastChangeListener mContrastChangeListener;\n"
+                "\n"
+                "    private @Nullable AccessibilityManager mAccessibilityManager;\n"
+                "\n"
+                "    void updateExtraState() {\n"
+                "        float contrastLevel = 0f;\n"
+                "\n"
+                "        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {\n"
+                "            UiModeManager uiModeManager =\n"
+                "                    (UiModeManager) context.getSystemService(Context.UI_MODE_SERVICE);\n"
+                "            // This value can be between -1 and 1, but in practice the UI\n"
+                "            // exposes 0 (default), 0.5 (medium), or 1 (high).\n"
+                "            contrastLevel = uiModeManager.getContrast();\n"
+                "        }\n"
+                "        // If high text contrast is enabled or the colour contrast level is high,\n"
+                "        // then high contrast is enabled.\n"
+                "        mHighContrastEnabled = highTextContrastEnabled == 1 || contrastLevel == 1f;\n"
+                "    }\n"
+                "\n"
+                "    void registerObservers() {\n"
+                "        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {\n"
+                "            mContrastChangeListener = (contrast) -> processExtraStateChange();\n"
+                "        }\n"
+                "\n"
+                "        // We want to be notified if the user changes their colour contrast settings.\n"
+                "        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {\n"
+                "            Context context = ContextUtils.getApplicationContext();\n"
+                "            UiModeManager uiModeManager =\n"
+                "                    (UiModeManager) context.getSystemService(Context.UI_MODE_SERVICE);\n"
+                "            if (uiModeManager != null && mContrastChangeListener != null) {\n"
+                "                uiModeManager.addContrastChangeListener(\n"
+                "                        context.getMainExecutor(), mContrastChangeListener);\n"
+                "            }\n"
+                "        }\n"
+                "\n"
+                "        mHasRegisteredObservers = true;\n"
+                "    }\n"
+                "\n"
+                "    void unregisterObservers(Context context) {\n"
+                "        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {\n"
+                "            UiModeManager uiModeManager =\n"
+                "                    (UiModeManager) context.getSystemService(Context.UI_MODE_SERVICE);\n"
+                "            if (uiModeManager != null && mContrastChangeListener != null) {\n"
+                "                uiModeManager.removeContrastChangeListener(mContrastChangeListener);\n"
+                "            }\n"
+                "            mContrastChangeListener = null;\n"
+                "        }\n"
+                "        mState = null;\n"
+                "    }\n"
+                "}\n",
+                encoding="utf-8",
+            )
+
+            patch_accessibility_contrast_api28_compat(tmpdir)
+            patched = target.read_text(encoding="utf-8")
+            self.assertNotIn("UiModeManager", patched)
+            self.assertNotIn("ContrastChangeListener", patched)
+            self.assertNotIn("getContrast", patched)
+            self.assertNotIn("RequiresApi", patched)
+            self.assertNotIn("UPSIDE_DOWN_CAKE", patched)
+            self.assertNotIn("\n\n\n", patched)
+            self.assertIn(
+                "mHighContrastEnabled = highTextContrastEnabled == 1 || contrastLevel == 1f;",
+                patched,
+            )
+            self.assertIn("        mHasRegisteredObservers = true;", patched)
+            self.assertIn("        mState = null;", patched)
+
+            patch_accessibility_contrast_api28_compat(tmpdir)
+            self.assertEqual(patched, target.read_text(encoding="utf-8"))
+
     def test_patch_motion_event_input_compat(self):
         import tempfile
         from patch_android_min_sdk import patch_motion_event_input_compat

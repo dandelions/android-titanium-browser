@@ -2302,6 +2302,91 @@ def patch_advanced_protection_api28_compat(src_dir: str) -> None:
         print(f"Patched AdvancedProtection API 28 compat in: {target}")
 
 
+def patch_accessibility_contrast_api28_compat(src_dir: str) -> None:
+    # UiModeManager.ContrastChangeListener and UiModeManager#getContrast were added in Android 14
+    # (API 34). Drop both from the Android 9 (API 28) build instead of leaving dex references that
+    # R8 models against minSdk 28; Android 9 falls back to the Settings high text contrast flag.
+    target = os.path.join(
+        src_dir,
+        "ui/accessibility/android/java/src/org/chromium/ui/accessibility/AccessibilityStateDelegateImpl.java",
+    )
+    if not os.path.isfile(target):
+        return
+
+    with open(target, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    patched = content
+    patched = patched.replace("import android.app.UiModeManager;\n", "")
+    patched = patched.replace("import android.app.UiModeManager.ContrastChangeListener;\n", "")
+    patched = patched.replace("\nimport androidx.annotation.RequiresApi;\n", "")
+    patched = re.sub(
+        r"[ \t]*@RequiresApi\(Build\.VERSION_CODES\.UPSIDE_DOWN_CAKE\)\n"
+        r"[ \t]*private @Nullable ContrastChangeListener mContrastChangeListener;\n\n",
+        "",
+        patched,
+    )
+    patched = re.sub(
+        r"[ \t]*if \(Build\.VERSION\.SDK_INT >= Build\.VERSION_CODES\.UPSIDE_DOWN_CAKE\) \{\n"
+        r"[ \t]*mContrastChangeListener = \(contrast\) -> processExtraStateChange\(\);\n"
+        r"[ \t]*\}\n\n",
+        "",
+        patched,
+    )
+    # Initial colour contrast level read.
+    patched = re.sub(
+        r"[ \t]*if \(Build\.VERSION\.SDK_INT >= Build\.VERSION_CODES\.UPSIDE_DOWN_CAKE\) \{\n"
+        r"[ \t]*UiModeManager uiModeManager =\n"
+        r"[ \t]*\(UiModeManager\) context\.getSystemService\(Context\.UI_MODE_SERVICE\);\n"
+        r"[ \t]*// This value can be between -1 and 1, but in practice the UI\n"
+        r"[ \t]*// exposes 0 \(default\), 0\.5 \(medium\), or 1 \(high\)\.\n"
+        r"[ \t]*contrastLevel = uiModeManager\.getContrast\(\);\n"
+        r"[ \t]*\}\n",
+        "",
+        patched,
+    )
+    patched = re.sub(
+        r"[ \t]*// We want to be notified if the user changes their colour contrast settings\.\n"
+        r"[ \t]*if \(Build\.VERSION\.SDK_INT >= Build\.VERSION_CODES\.UPSIDE_DOWN_CAKE\) \{\n"
+        r"[ \t]*Context context = ContextUtils\.getApplicationContext\(\);\n"
+        r"[ \t]*UiModeManager uiModeManager =\n"
+        r"[ \t]*\(UiModeManager\) context\.getSystemService\(Context\.UI_MODE_SERVICE\);\n"
+        r"[ \t]*if \(uiModeManager != null && mContrastChangeListener != null\) \{\n"
+        r"[ \t]*uiModeManager\.addContrastChangeListener\(\n"
+        r"[ \t]*context\.getMainExecutor\(\), mContrastChangeListener\);\n"
+        r"[ \t]*\}\n[ \t]*\}\n\n",
+        "",
+        patched,
+    )
+    patched = re.sub(
+        r"[ \t]*if \(Build\.VERSION\.SDK_INT >= Build\.VERSION_CODES\.UPSIDE_DOWN_CAKE\) \{\n"
+        r"[ \t]*UiModeManager uiModeManager =\n"
+        r"[ \t]*\(UiModeManager\) context\.getSystemService\(Context\.UI_MODE_SERVICE\);\n"
+        r"[ \t]*if \(uiModeManager != null && mContrastChangeListener != null\) \{\n"
+        r"[ \t]*uiModeManager\.removeContrastChangeListener\(mContrastChangeListener\);\n"
+        r"[ \t]*\}\n[ \t]*mContrastChangeListener = null;\n[ \t]*\}\n",
+        "",
+        patched,
+    )
+
+    for leftover in (
+        "UiModeManager",
+        "ContrastChangeListener",
+        "getContrast(",
+        "RequiresApi",
+        "UPSIDE_DOWN_CAKE",
+    ):
+        if leftover in patched:
+            raise RuntimeError(
+                f"Could not fully remove API 34 contrast references ({leftover}) in {target}"
+            )
+
+    if patched != content:
+        with open(target, "w", encoding="utf-8") as f:
+            f.write(patched)
+        print(f"Patched AccessibilityState API 28 compatibility in: {target}")
+
+
 def patch_zlib_fcntl_cloexec_compat(src_dir: str) -> None:
     # Android 9 bionic rejects O_CLOEXEC when passed to F_SETFD; use FD_CLOEXEC.
     target = os.path.join(src_dir, "third_party/zlib/gzlib.c")
@@ -2407,6 +2492,7 @@ def main() -> None:
     patch_bind_isolated_service_compat(src_dir)
     patch_motion_event_input_compat(src_dir)
     patch_advanced_protection_api28_compat(src_dir)
+    patch_accessibility_contrast_api28_compat(src_dir)
     patch_zlib_fcntl_cloexec_compat(src_dir)
 
     print("SDK version patch (minSdk: 28) & car-compat checks complete.")
