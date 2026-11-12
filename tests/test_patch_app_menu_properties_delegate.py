@@ -53,8 +53,11 @@ class TestPatchAppMenuPropertiesDelegate(unittest.TestCase):
                     "mAppLaunchDrawBlocker.onActiveTabAvailableForRecreation();",
                     text,
                 )
-                self.assertIn('new java.io.File(eventsDir, "helium_events.log")', text)
-                self.assertIn('"activity-recreated at "', text)
+                # The synchronous writer duplicated the timed line and blocked the
+                # main thread during recreation, so it must stay gone.
+                self.assertNotIn('"activity-recreated at "', text)
+                self.assertIn("recordHeliumThemeStopped();", text)
+                self.assertIn("recordHeliumThemeDestroyed();", text)
 
     def test_theme_switch_timing_is_logged_by_phase(self):
         for name in ("patch.sh", "hotfix_existing_src.sh"):
@@ -67,9 +70,19 @@ class TestPatchAppMenuPropertiesDelegate(unittest.TestCase):
                 self.assertIn('phase=preference-written theme=', text)
                 self.assertIn('phase=activity-recreated theme=', text)
                 self.assertIn('phase=draw-unblocked theme=', text)
-                self.assertIn('click_to_preference_ms=', text)
-                self.assertIn('click_to_recreate_ms=', text)
-                self.assertIn('click_to_draw_ms=', text)
+                self.assertIn('"activity-stopped"', text)
+                self.assertIn('"activity-destroyed"', text)
+                self.assertIn("void recordHeliumThemeStopped() {", text)
+                self.assertIn("void recordHeliumThemeDestroyed() {", text)
+                self.assertIn("public void onStop() {", text)
+                self.assertIn("protected final void onDestroy() {", text)
+                self.assertIn("recordHeliumThemeStopped();", text)
+                self.assertIn("recordHeliumThemeDestroyed();", text)
+                self.assertIn("click_to_preference_ms=", text)
+                self.assertIn("click_to_stop_ms=", text)
+                self.assertIn("click_to_destroy_ms=", text)
+                self.assertIn("click_to_recreate_ms=", text)
+                self.assertIn("click_to_draw_ms=", text)
                 self.assertIn("SystemClock.elapsedRealtime()", text)
 
     def test_recreation_timing_survives_baseline_restore(self):

@@ -576,6 +576,8 @@ if 'sHeliumThemeTimingId' not in text:
     private static long sHeliumThemeClickAt;
     private static long sHeliumThemePreferenceAt = -1;
     private static long sHeliumThemeRecreatedAt = -1;
+    private static long sHeliumThemeStoppedAt = -1;
+    private static long sHeliumThemeDestroyedAt = -1;
     private static int sHeliumThemeTimingTheme;
     private static boolean sHeliumThemeTimingPending;
 
@@ -615,6 +617,8 @@ if 'sHeliumThemeTimingId' not in text:
         sHeliumThemeClickAt = now;
         sHeliumThemePreferenceAt = -1;
         sHeliumThemeRecreatedAt = -1;
+        sHeliumThemeStoppedAt = -1;
+        sHeliumThemeDestroyedAt = -1;
         sHeliumThemeTimingTheme = theme;
         sHeliumThemeTimingPending = true;
         appendHeliumThemeTiming(
@@ -670,6 +674,97 @@ if 'sHeliumThemeTimingId' not in text:
     }
 '''
     text = text[:class_open + 1] + timing_helpers + text[class_open + 1:]
+# Upgrade a tree that already carries an older helper block in place.
+if 'sHeliumThemeStoppedAt' not in text:
+    text = text.replace(
+            '    private static long sHeliumThemeRecreatedAt = -1;\n',
+            '    private static long sHeliumThemeRecreatedAt = -1;\n'
+            '    private static long sHeliumThemeStoppedAt = -1;\n'
+            '    private static long sHeliumThemeDestroyedAt = -1;\n',
+            1)
+    old_record = '''        if (sHeliumThemeTimingPending && timingId == sHeliumThemeTimingId
+                && "preference-written".equals(phase)) {
+            sHeliumThemePreferenceAt = android.os.SystemClock.elapsedRealtime();
+            appendHeliumThemeTiming(
+                    "theme-switch id=" + sHeliumThemeTimingId
+                            + " phase=preference-written theme=" + theme
+                            + " at=" + sHeliumThemePreferenceAt
+                            + " duration=" + (sHeliumThemePreferenceAt - sHeliumThemeClickAt));
+        }'''
+    new_record = '''        if (!sHeliumThemeTimingPending || timingId != sHeliumThemeTimingId) return;
+        long now = android.os.SystemClock.elapsedRealtime();
+        if ("preference-written".equals(phase)) {
+            sHeliumThemePreferenceAt = now;
+        } else if ("activity-stopped".equals(phase)) {
+            sHeliumThemeStoppedAt = now;
+        } else if ("activity-destroyed".equals(phase)) {
+            sHeliumThemeDestroyedAt = now;
+        }
+        appendHeliumThemeTiming(
+                "theme-switch id=" + sHeliumThemeTimingId
+                        + " phase=" + phase + " theme=" + theme
+                        + " at=" + now
+                        + " duration=" + (now - sHeliumThemeClickAt));'''
+    if old_record not in text:
+        raise SystemExit("ChromeActivity theme timing record anchor not found")
+    text = text.replace(old_record, new_record, 1)
+
+    stopped_helpers = '''    public static synchronized void recordHeliumThemeStopped() {
+        if (!sHeliumThemeTimingPending) return;
+        recordHeliumThemeTiming(
+                "activity-stopped", sHeliumThemeTimingId, sHeliumThemeTimingTheme);
+    }
+
+    public static synchronized void recordHeliumThemeDestroyed() {
+        if (!sHeliumThemeTimingPending) return;
+        recordHeliumThemeTiming(
+                "activity-destroyed", sHeliumThemeTimingId, sHeliumThemeTimingTheme);
+    }
+
+'''
+    recreated_anchor = '    public static synchronized void recordHeliumThemeActivityRecreated() {'
+    if recreated_anchor not in text:
+        raise SystemExit("ChromeActivity activity-recreated anchor not found")
+    text = text.replace(recreated_anchor, stopped_helpers + recreated_anchor, 1)
+
+    text = text.replace(
+            '        final long recreatedAt = sHeliumThemeRecreatedAt;\n',
+            '        final long recreatedAt = sHeliumThemeRecreatedAt;\n'
+            '        final long stoppedAt = sHeliumThemeStoppedAt;\n'
+            '        final long destroyedAt = sHeliumThemeDestroyedAt;\n',
+            1)
+    text = text.replace(
+            '                        + " activity_recreated=" + recreatedAt\n',
+            '                        + " activity_recreated=" + recreatedAt\n'
+            '                        + " activity_stopped=" + stoppedAt\n'
+            '                        + " activity_destroyed=" + destroyedAt\n',
+            1)
+    text = text.replace(
+            '                        + " click_to_recreate_ms="\n',
+            '                        + " click_to_stop_ms="\n'
+            '                        + (stoppedAt >= 0 ? stoppedAt - clickAt : -1)\n'
+            '                        + " click_to_destroy_ms="\n'
+            '                        + (destroyedAt >= 0 ? destroyedAt - clickAt : -1)\n'
+            '                        + " click_to_recreate_ms="\n',
+            1)
+
+if '        sHeliumThemeStoppedAt = -1;\n' not in text:
+    text = text.replace(
+            '        sHeliumThemeRecreatedAt = -1;\n',
+            '        sHeliumThemeRecreatedAt = -1;\n'
+            '        sHeliumThemeStoppedAt = -1;\n'
+            '        sHeliumThemeDestroyedAt = -1;\n',
+            1)
+if 'recordHeliumThemeStopped();' not in text:
+    text = text.replace(
+            '    public void onStop() {\n',
+            '    public void onStop() {\n        recordHeliumThemeStopped();\n',
+            1)
+if 'recordHeliumThemeDestroyed();' not in text:
+    text = text.replace(
+            '    protected final void onDestroy() {\n',
+            '    protected final void onDestroy() {\n        recordHeliumThemeDestroyed();\n',
+            1)
 text = text.replace(
         "    private static synchronized long beginHeliumThemeTiming(int theme) {",
         "    public static synchronized long beginHeliumThemeTiming(int theme) {")
@@ -3525,10 +3620,12 @@ apply_helium_recreation_timing() {
 [ -f "$CTA" ] || return 0
 python3 - "$CTA" <<'PYCODE'
 from pathlib import Path
+import re
 import sys
 
 cta = Path(sys.argv[1])
 text = cta.read_text(encoding="utf-8")
+original = text
 old_block = """                if (isFromRecreating()) {
                     getCompositorViewHolderSupplier()
                             .addSyncObserverAndCallIfNonNull(
@@ -3554,22 +3651,6 @@ new_block = """                if (isFromRecreating()) {
                                                 });
                                         cvh.requestRender();
                                     });
-                    try {
-                        java.io.File eventsDir =
-                                org.chromium.base.ContextUtils.getApplicationContext()
-                                        .getExternalFilesDir("logs");
-                        if (eventsDir != null) {
-                            java.io.FileWriter eventsWriter =
-                                    new java.io.FileWriter(
-                                            new java.io.File(eventsDir, "helium_events.log"), true);
-                            eventsWriter.write(
-                                    "activity-recreated at "
-                                            + android.os.SystemClock.elapsedRealtime()
-                                            + "\\n");
-                            eventsWriter.close();
-                        }
-                    } catch (Throwable ignored) {
-                    }
                     mHandler.postDelayed(
                             () -> {
                                 mAppLaunchDrawBlocker.onActiveTabAvailableForRecreation();
@@ -3582,6 +3663,18 @@ new_block = """                if (isFromRecreating()) {
                 }"""
 if old_block in text:
     text = text.replace(old_block, new_block, 1)
+# Drop the earlier synchronous writer: it duplicated the timed phase line and
+# blocked the main thread during recreation.
+text = re.sub(
+        r'\n                    try \{\n'
+        r'                        java\.io\.File eventsDir =.*?'
+        r'\n                    \} catch \(Throwable ignored\) \{\n'
+        r'                    \}',
+        '',
+        text,
+        count=1,
+        flags=re.DOTALL)
+if text != original:
     cta.write_text(text, encoding="utf-8")
 PYCODE
 }

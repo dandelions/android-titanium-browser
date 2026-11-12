@@ -39,7 +39,7 @@ class StartupLogcatPatchTest(unittest.TestCase):
         result = self.hook_path.read_text()
         self.assertIn('getExternalFilesDir("logs")', result)
         self.assertIn('"startup-logcat.txt"', result)
-        self.assertIn("/system/bin/logcat -b main,system -v threadtime", result)
+        self.assertIn("/system/bin/logcat -b main -v threadtime", result)
         self.assertIn("/system/bin/logcat -b crash -v threadtime", result)
         self.assertIn('" --uid="', result)
         self.assertIn("android.os.Process.myUid()", result)
@@ -51,12 +51,15 @@ class StartupLogcatPatchTest(unittest.TestCase):
     def test_captures_detach_from_the_app_process_group(self):
         PATCH.patch_source_tree(self.root)
         result = self.hook_path.read_text()
-        self.assertIn('new java.io.File("/system/bin/setsid").canExecute()', result)
-        self.assertIn("String detach =", result)
+        self.assertIn('new java.io.File("/system/bin/setsid")', result)
         self.assertIn("java.io.File captureLock", result)
         self.assertIn('supervisor.append("echo $$ > \\\"$lock/pid\\\"', result)
         self.assertIn('supervisor.append("wait; kill \\\"$main\\\"', result)
         self.assertNotIn('"helium-logcat-guard"', result)
+        self.assertIn('supervisor.append("expected=\'")', result)
+        self.assertIn('kill -TERM -- \\\"-$owner\\\"', result)
+        self.assertIn('printf \'%s\' \\\"$expected\\\" > \\\"$lock/version\\\"', result)
+        self.assertIn("sleep 2", result)
 
     def test_generated_java_has_no_unterminated_string_literal(self):
         # A bare "\n" inside the Python template becomes a real newline and breaks
@@ -91,7 +94,7 @@ class StartupLogcatPatchTest(unittest.TestCase):
         PATCH.patch_source_tree(self.root)
         result = self.hook_path.read_text()
         self.assertIn('"MM-dd HH:mm:ss.SSS", java.util.Locale.US', result)
-        for name, buffer in (("logcatLine", "-b main,system"), ("crashLine", "-b crash")):
+        for name, buffer in (("logcatLine", "-b main"), ("crashLine", "-b crash")):
             start = result.index(f"StringBuilder {name} = ")
             end = result.index("StringBuilder crashLine =", start) if name == "logcatLine" else result.index("java.io.File captureLock", start)
             block = result[start:end]
@@ -119,11 +122,21 @@ class StartupLogcatPatchTest(unittest.TestCase):
         self.assertNotIn('"helium-logcat-guard"', result)
         self.assertEqual(1, result.count("/system/bin/logcat -b crash -v threadtime"))
 
-    def test_logcat_stderr_filters_repeated_unexpected_eof(self):
+    def test_logcat_stderr_filters_overrun_explanation(self):
+        # Filtering only the "Unexpected EOF!" line left logcat's 3-line
+        # explanation behind, so logcat-error.txt looked like a permanent failure.
         PATCH.patch_source_tree(self.root)
         result = self.hook_path.read_text()
         self.assertIn('"logcat-error.txt"', result)
-        self.assertEqual(result.count("sed '/Unexpected EOF!/d'"), 2)
+        self.assertEqual(result.count("String stderrFilter ="), 1)
+        self.assertEqual(2, result.count(".append(stderrFilter)"))
+        for pattern in (
+            "/Unexpected EOF!/d",
+            "/logd crashed, or this instance of logcat/d",
+            "/messages as quickly as they were being produced/d",
+            "/increase log buffer sizes/d",
+        ):
+            self.assertIn(pattern, result)
         self.assertIn('"logcat-main-stderr.tmp"', result)
         self.assertIn('"logcat-crash-stderr.tmp"', result)
         self.assertNotIn('"logcat-fallback-stderr.tmp"', result)
@@ -134,7 +147,7 @@ class StartupLogcatPatchTest(unittest.TestCase):
     def test_logcat_stderr_keeps_non_eof_errors(self):
         PATCH.patch_source_tree(self.root)
         result = self.hook_path.read_text()
-        self.assertIn("sed '/Unexpected EOF!/d'", result)
+        self.assertIn("/Unexpected EOF!/d", result)
         self.assertIn(" >> '", result)
         self.assertIn("; : > '", result)
 

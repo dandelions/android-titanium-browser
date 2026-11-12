@@ -103,14 +103,6 @@ BODY = '''public static void postAttachBaseContext() {
                         }
                     });
 
-            // Android kills a crashed app's process group, which used to take the
-            // logcat children down before they could flush the tombstone. setsid
-            // moves them into their own session so they outlive the app.
-            String detach =
-                    new java.io.File("/system/bin/setsid").canExecute()
-                            ? "/system/bin/setsid "
-                            : "";
-
             java.io.File logFile = new java.io.File(logDirectory, "startup-logcat.txt");
             java.io.File mainErrorTemp = new java.io.File(logDirectory, "logcat-main-stderr.tmp");
             java.io.File crashErrorTemp = new java.io.File(logDirectory, "logcat-crash-stderr.tmp");
@@ -119,7 +111,17 @@ BODY = '''public static void postAttachBaseContext() {
             new java.io.FileOutputStream(nativeCrashFile, false).close();
 
             StringBuilder logcatLine = new StringBuilder();
-            logcatLine.append("/system/bin/logcat -b main,system -v threadtime");
+            // logcat prints this explanation after dropping a slow reader; the
+            // "Unexpected EOF!" line used to be filtered alone and left the
+            // rest behind as noise.
+            String stderrFilter =
+                    "sed -e '/Unexpected EOF!/d'"
+                            + " -e '/logd crashed, or this instance of logcat/d'"
+                            + " -e '/messages as quickly as they were being produced/d'"
+                            + " -e '/increase log buffer sizes/d'";
+            // Chromium writes to the main buffer; the system buffer only adds
+            // volume and made logd drop this reader.
+            logcatLine.append("/system/bin/logcat -b main -v threadtime");
             if (timeFilterSupported) {
                 logcatLine.append(" -T '").append(sinceStamp).append("'");
             }
@@ -131,7 +133,9 @@ BODY = '''public static void postAttachBaseContext() {
                     .append(mainErrorTemp.getAbsolutePath())
                     .append("'; if [ -s '")
                     .append(mainErrorTemp.getAbsolutePath())
-                    .append("' ]; then sed '/Unexpected EOF!/d' '")
+                    .append("' ]; then ")
+                    .append(stderrFilter)
+                    .append(" '")
                     .append(mainErrorTemp.getAbsolutePath())
                     .append("' >> '")
                     .append(errorLog.getAbsolutePath())
@@ -150,22 +154,47 @@ BODY = '''public static void postAttachBaseContext() {
                             + "'Cmdline: io.github.jqssun.helium' 2>/dev/null");
             crashLine.append(" >>'").append(nativeCrashFile.getAbsolutePath()).append("'");
             crashLine.append("; if [ -s '").append(crashErrorTemp.getAbsolutePath());
-            crashLine.append("' ]; then sed '/Unexpected EOF!/d' '");
+            crashLine.append("' ]; then ").append(stderrFilter).append(" '");
             crashLine.append(crashErrorTemp.getAbsolutePath());
             crashLine.append("' >> '").append(errorLog.getAbsolutePath()).append("'");
             crashLine.append("; : > '").append(crashErrorTemp.getAbsolutePath()).append("'; fi");
 
             java.io.File captureLock = new java.io.File(logDirectory, ".logcat-capture-lock");
+            // The supervisor outlives the app process, so a reader started by an
+            // older APK would keep writing here after an upgrade. Stamp the lock
+            // with this package's update time and take over on a mismatch.
+            long heliumPackageUpdateTime = 0;
+            try {
+                android.content.Context appContext =
+                        org.chromium.base.ContextUtils.getApplicationContext();
+                heliumPackageUpdateTime =
+                        appContext.getPackageManager()
+                                .getPackageInfo(appContext.getPackageName(), 0)
+                                .lastUpdateTime;
+            } catch (Throwable ignored) {
+                // Without a stamp the takeover is skipped and the previous
+                // behavior applies.
+            }
             StringBuilder supervisor = new StringBuilder();
             supervisor.append("lock='").append(captureLock.getAbsolutePath()).append("'; ");
+            supervisor.append("expected='").append(heliumPackageUpdateTime).append("'; ");
+            supervisor.append("owner=$(cat \\\"$lock/pid\\\" 2>/dev/null); ");
+            supervisor.append("case \\\"$owner\\\" in ''|*[!0-9]*) owner=;; esac; ");
+            supervisor.append("if [ \\\"$expected\\\" != \\\"0\\\" ] && [ -f \\\"$lock/version\\\" ]; then ");
+            supervisor.append("if [ \\\"$(cat \\\"$lock/version\\\" 2>/dev/null)\\\" != \\\"$expected\\\" ]; then ");
+            supervisor.append("if [ -n \\\"$owner\\\" ]; then kill -TERM -- \\\"-$owner\\\" 2>/dev/null; fi; ");
+            supervisor.append("rm -rf \\\"$lock\\\"; owner=; fi; fi; ");
+            supervisor.append("if [ -n \\\"$owner\\\" ] && kill -0 \\\"$owner\\\" 2>/dev/null; then exit 0; fi; ");
             supervisor.append("if ! mkdir \\\"$lock\\\" 2>/dev/null; then ");
             supervisor.append("owner=$(cat \\\"$lock/pid\\\" 2>/dev/null); ");
             supervisor.append("case \\\"$owner\\\" in ''|*[!0-9]*) owner=;; esac; ");
             supervisor.append("if [ -n \\\"$owner\\\" ] && kill -0 \\\"$owner\\\" 2>/dev/null; then exit 0; fi; ");
             supervisor.append("rm -rf \\\"$lock\\\"; mkdir \\\"$lock\\\" || exit 0; fi; ");
-            supervisor.append("echo $$ > \\\"$lock/pid\\\"; trap 'rm -rf \\\"$lock\\\"' EXIT; ");
-            supervisor.append("while :; do ").append(logcatLine).append("; sleep 1; done & main=$!; ");
-            supervisor.append("while :; do ").append(crashLine).append("; sleep 1; done & crash=$!; ");
+            supervisor.append("echo $$ > \\\"$lock/pid\\\"; ");
+            supervisor.append("printf '%s' \\\"$expected\\\" > \\\"$lock/version\\\"; ");
+            supervisor.append("trap 'rm -rf \\\"$lock\\\"' EXIT; ");
+            supervisor.append("while :; do ").append(logcatLine).append("; sleep 2; done & main=$!; ");
+            supervisor.append("while :; do ").append(crashLine).append("; sleep 2; done & crash=$!; ");
             supervisor.append("wait; kill \\\"$main\\\" \\\"$crash\\\" 2>/dev/null; wait");
             java.util.List<String> supervisorCommand = new java.util.ArrayList<String>();
             java.io.File setsid = new java.io.File("/system/bin/setsid");
