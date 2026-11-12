@@ -67,7 +67,7 @@ class TestPatchAppMenuPropertiesDelegate(unittest.TestCase):
                 self.assertIn("public static synchronized void recordHeliumThemeTiming(", text)
                 self.assertIn("sHeliumThemeTimingId", text)
                 self.assertIn('phase=click theme=', text)
-                self.assertIn('phase=preference-written theme=', text)
+                self.assertIn('phase=" + phase + " theme="', text)
                 self.assertIn('phase=activity-recreated theme=', text)
                 self.assertIn('phase=draw-unblocked theme=', text)
                 self.assertIn('"activity-stopped"', text)

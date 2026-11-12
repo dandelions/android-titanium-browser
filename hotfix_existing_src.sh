@@ -563,21 +563,48 @@ if theme_type_import not in text:
     if night_mode_import not in text:
         raise SystemExit("ChromeActivity night mode import anchor not found")
     text = text.replace(night_mode_import, night_mode_import + theme_type_import, 1)
-if 'sHeliumThemeTimingId' not in text:
-    class_match = re.search(r'\bclass ChromeActivity\b', text)
-    if class_match is None:
-        raise SystemExit("ChromeActivity class anchor not found")
-    class_pos = class_match.start()
-    class_open = text.find('{', class_pos)
-    if class_open < 0:
-        raise SystemExit("ChromeActivity class opening brace not found")
-    timing_helpers = '''
+def strip_helium_theme_timing(body):
+    anchor = '    private static long sHeliumThemeTimingId;'
+    start = body.find(anchor)
+    if start < 0:
+        return body
+    draw = body.find(
+            '    public static synchronized void recordHeliumThemeDrawUnblocked() {',
+            start)
+    if draw < 0:
+        raise SystemExit('ChromeActivity theme timing block end not found')
+    brace = body.find('{', draw)
+    depth = 0
+    end = None
+    for idx in range(brace, len(body)):
+        if body[idx] == '{':
+            depth += 1
+        elif body[idx] == '}':
+            depth -= 1
+            if depth == 0:
+                end = idx + 1
+                break
+    if end is None:
+        raise SystemExit('ChromeActivity theme timing block end not found')
+    while end < len(body) and body[end] == '\n':
+        end += 1
+    return body[:start] + body[end:]
+
+# Replacing the whole block keeps fresh and already patched trees identical.
+text = strip_helium_theme_timing(text)
+class_match = re.search(r'\bclass ChromeActivity\b', text)
+if class_match is None:
+    raise SystemExit("ChromeActivity class anchor not found")
+class_open = text.find('{', class_match.start())
+if class_open < 0:
+    raise SystemExit("ChromeActivity class opening brace not found")
+timing_helpers = """
     private static long sHeliumThemeTimingId;
     private static long sHeliumThemeClickAt;
     private static long sHeliumThemePreferenceAt = -1;
-    private static long sHeliumThemeRecreatedAt = -1;
     private static long sHeliumThemeStoppedAt = -1;
     private static long sHeliumThemeDestroyedAt = -1;
+    private static long sHeliumThemeRecreatedAt = -1;
     private static int sHeliumThemeTimingTheme;
     private static boolean sHeliumThemeTimingPending;
 
@@ -616,9 +643,9 @@ if 'sHeliumThemeTimingId' not in text:
         sHeliumThemeTimingId = now;
         sHeliumThemeClickAt = now;
         sHeliumThemePreferenceAt = -1;
-        sHeliumThemeRecreatedAt = -1;
         sHeliumThemeStoppedAt = -1;
         sHeliumThemeDestroyedAt = -1;
+        sHeliumThemeRecreatedAt = -1;
         sHeliumThemeTimingTheme = theme;
         sHeliumThemeTimingPending = true;
         appendHeliumThemeTiming(
@@ -628,15 +655,32 @@ if 'sHeliumThemeTimingId' not in text:
 
     public static synchronized void recordHeliumThemeTiming(
             String phase, long timingId, int theme) {
-        if (sHeliumThemeTimingPending && timingId == sHeliumThemeTimingId
-                && "preference-written".equals(phase)) {
-            sHeliumThemePreferenceAt = android.os.SystemClock.elapsedRealtime();
-            appendHeliumThemeTiming(
-                    "theme-switch id=" + sHeliumThemeTimingId
-                            + " phase=preference-written theme=" + theme
-                            + " at=" + sHeliumThemePreferenceAt
-                            + " duration=" + (sHeliumThemePreferenceAt - sHeliumThemeClickAt));
+        if (!sHeliumThemeTimingPending || timingId != sHeliumThemeTimingId) return;
+        long now = android.os.SystemClock.elapsedRealtime();
+        if ("preference-written".equals(phase)) {
+            sHeliumThemePreferenceAt = now;
+        } else if ("activity-stopped".equals(phase)) {
+            sHeliumThemeStoppedAt = now;
+        } else if ("activity-destroyed".equals(phase)) {
+            sHeliumThemeDestroyedAt = now;
         }
+        appendHeliumThemeTiming(
+                "theme-switch id=" + sHeliumThemeTimingId
+                        + " phase=" + phase + " theme=" + theme
+                        + " at=" + now
+                        + " duration=" + (now - sHeliumThemeClickAt));
+    }
+
+    public static synchronized void recordHeliumThemeStopped() {
+        if (!sHeliumThemeTimingPending) return;
+        recordHeliumThemeTiming(
+                "activity-stopped", sHeliumThemeTimingId, sHeliumThemeTimingTheme);
+    }
+
+    public static synchronized void recordHeliumThemeDestroyed() {
+        if (!sHeliumThemeTimingPending) return;
+        recordHeliumThemeTiming(
+                "activity-destroyed", sHeliumThemeTimingId, sHeliumThemeTimingTheme);
     }
 
     public static synchronized void recordHeliumThemeActivityRecreated() {
@@ -656,6 +700,8 @@ if 'sHeliumThemeTimingId' not in text:
         final long timingId = sHeliumThemeTimingId;
         final long clickAt = sHeliumThemeClickAt;
         final long preferenceAt = sHeliumThemePreferenceAt;
+        final long stoppedAt = sHeliumThemeStoppedAt;
+        final long destroyedAt = sHeliumThemeDestroyedAt;
         final long recreatedAt = sHeliumThemeRecreatedAt;
         final int theme = sHeliumThemeTimingTheme;
         sHeliumThemeTimingPending = false;
@@ -664,97 +710,23 @@ if 'sHeliumThemeTimingId' not in text:
                         + " phase=draw-unblocked theme=" + theme
                         + " click=" + clickAt
                         + " preference=" + preferenceAt
+                        + " activity_stopped=" + stoppedAt
+                        + " activity_destroyed=" + destroyedAt
                         + " activity_recreated=" + recreatedAt
                         + " at=" + drawAt
                         + " click_to_preference_ms="
                         + (preferenceAt >= 0 ? preferenceAt - clickAt : -1)
+                        + " click_to_stop_ms="
+                        + (stoppedAt >= 0 ? stoppedAt - clickAt : -1)
+                        + " click_to_destroy_ms="
+                        + (destroyedAt >= 0 ? destroyedAt - clickAt : -1)
                         + " click_to_recreate_ms="
                         + (recreatedAt >= 0 ? recreatedAt - clickAt : -1)
                         + " click_to_draw_ms=" + (drawAt - clickAt));
     }
-'''
-    text = text[:class_open + 1] + timing_helpers + text[class_open + 1:]
-# Upgrade a tree that already carries an older helper block in place.
-if 'sHeliumThemeStoppedAt' not in text:
-    text = text.replace(
-            '    private static long sHeliumThemeRecreatedAt = -1;\n',
-            '    private static long sHeliumThemeRecreatedAt = -1;\n'
-            '    private static long sHeliumThemeStoppedAt = -1;\n'
-            '    private static long sHeliumThemeDestroyedAt = -1;\n',
-            1)
-    old_record = '''        if (sHeliumThemeTimingPending && timingId == sHeliumThemeTimingId
-                && "preference-written".equals(phase)) {
-            sHeliumThemePreferenceAt = android.os.SystemClock.elapsedRealtime();
-            appendHeliumThemeTiming(
-                    "theme-switch id=" + sHeliumThemeTimingId
-                            + " phase=preference-written theme=" + theme
-                            + " at=" + sHeliumThemePreferenceAt
-                            + " duration=" + (sHeliumThemePreferenceAt - sHeliumThemeClickAt));
-        }'''
-    new_record = '''        if (!sHeliumThemeTimingPending || timingId != sHeliumThemeTimingId) return;
-        long now = android.os.SystemClock.elapsedRealtime();
-        if ("preference-written".equals(phase)) {
-            sHeliumThemePreferenceAt = now;
-        } else if ("activity-stopped".equals(phase)) {
-            sHeliumThemeStoppedAt = now;
-        } else if ("activity-destroyed".equals(phase)) {
-            sHeliumThemeDestroyedAt = now;
-        }
-        appendHeliumThemeTiming(
-                "theme-switch id=" + sHeliumThemeTimingId
-                        + " phase=" + phase + " theme=" + theme
-                        + " at=" + now
-                        + " duration=" + (now - sHeliumThemeClickAt));'''
-    if old_record not in text:
-        raise SystemExit("ChromeActivity theme timing record anchor not found")
-    text = text.replace(old_record, new_record, 1)
+"""
+text = text[:class_open + 1] + timing_helpers + text[class_open + 1:]
 
-    stopped_helpers = '''    public static synchronized void recordHeliumThemeStopped() {
-        if (!sHeliumThemeTimingPending) return;
-        recordHeliumThemeTiming(
-                "activity-stopped", sHeliumThemeTimingId, sHeliumThemeTimingTheme);
-    }
-
-    public static synchronized void recordHeliumThemeDestroyed() {
-        if (!sHeliumThemeTimingPending) return;
-        recordHeliumThemeTiming(
-                "activity-destroyed", sHeliumThemeTimingId, sHeliumThemeTimingTheme);
-    }
-
-'''
-    recreated_anchor = '    public static synchronized void recordHeliumThemeActivityRecreated() {'
-    if recreated_anchor not in text:
-        raise SystemExit("ChromeActivity activity-recreated anchor not found")
-    text = text.replace(recreated_anchor, stopped_helpers + recreated_anchor, 1)
-
-    text = text.replace(
-            '        final long recreatedAt = sHeliumThemeRecreatedAt;\n',
-            '        final long recreatedAt = sHeliumThemeRecreatedAt;\n'
-            '        final long stoppedAt = sHeliumThemeStoppedAt;\n'
-            '        final long destroyedAt = sHeliumThemeDestroyedAt;\n',
-            1)
-    text = text.replace(
-            '                        + " activity_recreated=" + recreatedAt\n',
-            '                        + " activity_recreated=" + recreatedAt\n'
-            '                        + " activity_stopped=" + stoppedAt\n'
-            '                        + " activity_destroyed=" + destroyedAt\n',
-            1)
-    text = text.replace(
-            '                        + " click_to_recreate_ms="\n',
-            '                        + " click_to_stop_ms="\n'
-            '                        + (stoppedAt >= 0 ? stoppedAt - clickAt : -1)\n'
-            '                        + " click_to_destroy_ms="\n'
-            '                        + (destroyedAt >= 0 ? destroyedAt - clickAt : -1)\n'
-            '                        + " click_to_recreate_ms="\n',
-            1)
-
-if '        sHeliumThemeStoppedAt = -1;\n' not in text:
-    text = text.replace(
-            '        sHeliumThemeRecreatedAt = -1;\n',
-            '        sHeliumThemeRecreatedAt = -1;\n'
-            '        sHeliumThemeStoppedAt = -1;\n'
-            '        sHeliumThemeDestroyedAt = -1;\n',
-            1)
 if 'recordHeliumThemeStopped();' not in text:
     text = text.replace(
             '    public void onStop() {\n',
@@ -765,12 +737,6 @@ if 'recordHeliumThemeDestroyed();' not in text:
             '    protected final void onDestroy() {\n',
             '    protected final void onDestroy() {\n        recordHeliumThemeDestroyed();\n',
             1)
-text = text.replace(
-        "    private static synchronized long beginHeliumThemeTiming(int theme) {",
-        "    public static synchronized long beginHeliumThemeTiming(int theme) {")
-text = text.replace(
-        "    private static synchronized void recordHeliumThemeTiming(\n",
-        "    public static synchronized void recordHeliumThemeTiming(\n")
 text = re.sub(
         r'        if \(id == R\.id\.appearance_menu_id\) \{\n.*?        \}\n\n',
         '',
