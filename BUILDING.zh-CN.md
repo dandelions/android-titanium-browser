@@ -190,17 +190,28 @@ storePassword=your-store-password
 ```text
 /Android/data/app.vanadium.browser/files/logs/helium_boot.log
 /Android/data/app.vanadium.browser/files/logs/startup-logcat.txt
+/Android/data/app.vanadium.browser/files/logs/application-logcat.txt
 /Android/data/app.vanadium.browser/files/logs/warning-error-logcat.txt
 /Android/data/app.vanadium.browser/files/logs/crash_log.txt
 /Android/data/app.vanadium.browser/files/logs/native-crash.txt
 /Android/data/app.vanadium.browser/files/logs/logcat-error.txt
 ```
 
-`helium_boot.log` 记录启动时间、进程号、进程名和时间过滤器状态。`startup-logcat.txt` 保存应用主进程启动前后的主日志、系统日志与 crash buffer；采集器会重连以应对 logd 断开，并脱离应用进程组，避免应用退出时一起被杀。`warning-error-logcat.txt` 单独记录应用 UID 可读取的 `WARN`/`ERROR` 级日志。`crash_log.txt` 保存未捕获 Java 异常栈，`native-crash.txt` 只保存 tombstone 中命令行为 Helium 包名的 native 崩溃上下文，`logcat-error.txt` 保存非重复的采集错误。
+`helium_boot.log` 记录启动时间、进程号、进程名和时间过滤器状态。`startup-logcat.txt` 保存应用主进程启动前后的主日志、系统日志与 crash buffer；采集器会重连以应对 logd 断开，并脱离应用进程组，避免应用退出时一起被杀。`application-logcat.txt` 按应用 UID 采集 main、system 和 crash buffer，不设置日志级别过滤，并使用轮转限制文件大小。`warning-error-logcat.txt` 单独记录应用 UID 可读取的 `WARN`/`ERROR` 级日志。`crash_log.txt` 保存未捕获 Java 异常栈，`native-crash.txt` 只保存 tombstone 中命令行为 Helium 包名的 native 崩溃上下文，`logcat-error.txt` 保存采集错误。过滤掉的 `unexpected EOF` 只来自采集器 stderr，不会删除应用日志中的同名文本。
 
-主日志、告警日志各最多保留 3 个旧文件和 1 个当前文件，每个约 4 MiB。Android 普通应用不能读取完整系统或其他应用日志；隔离 UID 的 Chromium 子进程日志也不一定可读。设备实际安装包名不同的情况下，目录中的包名也会相应变化。
+主日志、完整应用日志和告警日志各最多保留 3 个旧文件和 1 个当前文件，每个约 4 MiB。Android 普通应用不能读取完整系统或其他应用日志；隔离 UID 的 Chromium 子进程日志也不一定可读。设备实际安装包名不同的情况下，目录中的包名也会相应变化。
 
 完成完整构建或应用 `hotfix_existing_src.sh` 并增量构建后，复现闪退，再从上述目录取出日志文件。
+
+设备有 root 权限时，可在复现前用电脑运行以下命令，单独保存完整设备日志。命令使用 UTC 起始时间过滤旧日志；运行期间复现扩展管理或网址打不开的问题，复现完成后按 `Ctrl+C` 停止采集：
+
+```bash
+mkdir -p logs
+START_TIME="$(date -u '+%m-%d %H:%M:%S.%3N')"
+adb exec-out su -c "logcat -b all -v threadtime -T '$START_TIME'" > logs/logcat-all.txt
+```
+
+`logs/logcat-all.txt` 包含 root 可读取的全部 logcat 缓冲区，不限应用 UID 或日志级别；文件会保留在运行命令的电脑当前目录下。
 
 ## 8. 基础验证
 

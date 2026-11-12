@@ -124,6 +124,26 @@ BODY = '''public static void postAttachBaseContext() {
                             "-r", "4096",
                             "-n", "3")
                     .start();
+
+            java.util.List<String> appLogCommand = new java.util.ArrayList<String>();
+            appLogCommand.add("/system/bin/logcat");
+            appLogCommand.add("-b");
+            appLogCommand.add("main,system,crash");
+            appLogCommand.add("-v");
+            appLogCommand.add("threadtime");
+            if (timeFilterSupported) {
+                appLogCommand.add("-T");
+                appLogCommand.add(sinceStamp);
+            }
+            appLogCommand.add("--uid=" + android.os.Process.myUid());
+            appLogCommand.add("-f");
+            appLogCommand.add(new java.io.File(logDirectory, "application-logcat.txt").getAbsolutePath());
+            appLogCommand.add("-r");
+            appLogCommand.add("4096");
+            appLogCommand.add("-n");
+            appLogCommand.add("3");
+            new ProcessBuilder(appLogCommand).start();
+
             java.io.File mainErrorTemp = new java.io.File(logDirectory, "logcat-main-stderr.tmp");
             java.io.File crashErrorTemp = new java.io.File(logDirectory, "logcat-crash-stderr.tmp");
             StringBuilder logcatLine = new StringBuilder(detach);
@@ -141,7 +161,7 @@ BODY = '''public static void postAttachBaseContext() {
                     .append(mainErrorTemp.getAbsolutePath())
                     .append("'; if [ -s '")
                     .append(mainErrorTemp.getAbsolutePath())
-                    .append("' ]; then sed '/Unexpected EOF!/d' '")
+                    .append("' ]; then sed '/[Uu]nexpected EOF!/d' '")
                     .append(mainErrorTemp.getAbsolutePath())
                     .append("' >> '")
                     .append(errorLog.getAbsolutePath())
@@ -172,7 +192,7 @@ BODY = '''public static void postAttachBaseContext() {
                             + "'Cmdline: io.github.jqssun.helium' 2>/dev/null");
             crashLine.append(" >>'").append(nativeCrashFile.getAbsolutePath()).append("'");
             crashLine.append("; if [ -s '").append(crashErrorTemp.getAbsolutePath());
-            crashLine.append("' ]; then sed '/Unexpected EOF!/d' '");
+            crashLine.append("' ]; then sed '/[Uu]nexpected EOF!/d' '");
             crashLine.append(crashErrorTemp.getAbsolutePath());
             crashLine.append("' >> '").append(errorLog.getAbsolutePath()).append("'");
             crashLine.append("; : > '").append(crashErrorTemp.getAbsolutePath()).append("'; fi");
