@@ -909,14 +909,32 @@ timing_helpers = """
                         + " duration=" + (now - sHeliumThemeClickAt));
     }
 
+    public static synchronized void recordHeliumThemeFallback() {
+        if (!sHeliumThemeTimingPending) return;
+        long now = android.os.SystemClock.elapsedRealtime();
+        appendHeliumThemeTiming(
+                "theme-switch id=" + sHeliumThemeTimingId
+                        + " phase=draw-fallback theme=" + sHeliumThemeTimingTheme
+                        + " at=" + now
+                        + " duration=" + (now - sHeliumThemeClickAt));
+    }
+
     public static synchronized void recordHeliumThemeStopped() {
         if (!sHeliumThemeTimingPending) return;
+        if (android.os.SystemClock.elapsedRealtime() - sHeliumThemeClickAt > 5000) {
+            sHeliumThemeTimingPending = false;
+            return;
+        }
         recordHeliumThemeTiming(
                 "activity-stopped", sHeliumThemeTimingId, sHeliumThemeTimingTheme);
     }
 
     public static synchronized void recordHeliumThemeDestroyed() {
         if (!sHeliumThemeTimingPending) return;
+        if (android.os.SystemClock.elapsedRealtime() - sHeliumThemeClickAt > 5000) {
+            sHeliumThemeTimingPending = false;
+            return;
+        }
         recordHeliumThemeTiming(
                 "activity-destroyed", sHeliumThemeTimingId, sHeliumThemeTimingTheme);
     }
@@ -2387,8 +2405,10 @@ new_block = """                if (isFromRecreating()) {
                     mHandler.postDelayed(
                             () -> {
                                 mAppLaunchDrawBlocker.onActiveTabAvailableForRecreation();
+                                // Safety net only: keep the timing open so the real
+                                // first frame is still recorded.
                                 org.chromium.chrome.browser.app.ChromeActivity
-                                        .recordHeliumThemeDrawUnblocked();
+                                        .recordHeliumThemeFallback();
                             },
                             100);
                 } else {
