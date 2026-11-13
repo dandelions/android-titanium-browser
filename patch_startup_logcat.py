@@ -17,14 +17,59 @@ LEGACY_CALLERS = (
 
 BODY = '''public static void postAttachBaseContext() {
         // Helium startup logcat capture
+        // Car head units mount storage in several ways, and getExternalFilesDir()
+        // can come back null or unwritable, which used to drop every log silently.
+        // Probe each candidate with a real write and keep the first working one.
+        java.io.File logDirectory = null;
+        StringBuilder attemptedDirectories = new StringBuilder();
         try {
-            java.io.File logDirectory =
-                    org.chromium.base.ContextUtils.getApplicationContext()
-                            .getExternalFilesDir("logs");
-            if (logDirectory == null || (!logDirectory.isDirectory() && !logDirectory.mkdirs())) {
-                android.util.Log.e(TAG, "Cannot create external startup log directory");
-                return;
+            android.content.Context context =
+                    org.chromium.base.ContextUtils.getApplicationContext();
+            java.util.List<java.io.File> candidates = new java.util.ArrayList<java.io.File>();
+            candidates.add(context.getExternalFilesDir("logs"));
+            java.io.File externalRoot = context.getExternalFilesDir(null);
+            if (externalRoot != null) {
+                candidates.add(new java.io.File(externalRoot, "helium-logs"));
             }
+            candidates.add(
+                    new java.io.File(
+                            android.os.Environment.getExternalStorageDirectory(),
+                            "Download/HeliumLogs"));
+            candidates.add(context.getDir("helium-logs", android.content.Context.MODE_PRIVATE));
+            for (java.io.File candidate : candidates) {
+                if (candidate == null) {
+                    continue;
+                }
+                attemptedDirectories.append(' ').append(candidate.getAbsolutePath());
+                if (!candidate.isDirectory() && !candidate.mkdirs()) {
+                    continue;
+                }
+                java.io.File probe = new java.io.File(candidate, ".helium-write-probe");
+                try {
+                    java.io.FileOutputStream probeStream =
+                            new java.io.FileOutputStream(probe, false);
+                    probeStream.write(0x48);
+                    probeStream.close();
+                    logDirectory = candidate;
+                    probe.delete();
+                    break;
+                } catch (Throwable ignored) {
+                    // Not writable; fall through to the next candidate.
+                }
+            }
+            if (logDirectory == null) {
+                android.util.Log.e(
+                        TAG, "No writable Helium log directory, tried:" + attemptedDirectories);
+            } else {
+                android.util.Log.i(TAG, "Helium logs at " + logDirectory.getAbsolutePath());
+            }
+        } catch (Throwable caught) {
+            android.util.Log.e(TAG, "Cannot resolve Helium log directory", caught);
+        }
+        if (logDirectory == null) {
+            return;
+        }
+        try {
             java.io.File bootLog = new java.io.File(logDirectory, "helium_boot.log");
             java.io.File errorLog = new java.io.File(logDirectory, "logcat-error.txt");
 

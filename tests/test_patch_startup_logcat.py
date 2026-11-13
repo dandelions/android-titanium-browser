@@ -107,6 +107,22 @@ class StartupLogcatPatchTest(unittest.TestCase):
         )
         self.assertLess(gate, result.index('new java.io.FileOutputStream(errorLog, false)'))
 
+    def test_log_directory_falls_back_to_writable_locations(self):
+        # Car head units can expose an external files dir that is missing or
+        # read-only; the capture then produced nothing at all.
+        PATCH.patch_source_tree(self.root)
+        result = self.hook_path.read_text()
+        self.assertIn('"Download/HeliumLogs"', result)
+        self.assertIn('new java.io.File(externalRoot, "helium-logs")', result)
+        self.assertIn('context.getDir("helium-logs", android.content.Context.MODE_PRIVATE)', result)
+        self.assertIn('".helium-write-probe"', result)
+        self.assertIn("No writable Helium log directory", result)
+        self.assertIn('"Helium logs at "', result)
+        self.assertLess(
+            result.index('getExternalFilesDir("logs")'),
+            result.index('"Download/HeliumLogs"'),
+        )
+
     def test_reads_diagnostic_switches_from_the_app_files_dir(self):
         PATCH.patch_source_tree(self.root)
         result = self.hook_path.read_text()
