@@ -553,6 +553,10 @@ bool StartSandbox() {
             patched_seccomp = seccomp_file.read_text(encoding="utf-8")
             self.assertIn("HeliumSigSysAfterSandbox", patched_seccomp)
             self.assertIn('"sandbox blocked syscall=%d errno=%d pid=%d"', patched_seccomp)
+            # The handler must actually be installed, otherwise it is dead code.
+            self.assertIn(
+                "helium_action.sa_sigaction = &HeliumSigSysAfterSandbox;", patched_seccomp
+            )
 
             # Idempotent
             patch_sigsys_logger(str(tmppath))

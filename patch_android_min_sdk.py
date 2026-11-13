@@ -2949,8 +2949,8 @@ def patch_sigsys_logger(src_dir: str) -> None:
         1,
     )
     new_content = new_content.replace(
-        "  sandbox.StartSandbox(SandboxBPF::SeccompLevel::MULTI_THREADED));\n",
-        "  sandbox.StartSandbox(SandboxBPF::SeccompLevel::MULTI_THREADED));\n"
+        "  CHECK(sandbox.StartSandbox(SandboxBPF::SeccompLevel::MULTI_THREADED));\n",
+        "  CHECK(sandbox.StartSandbox(SandboxBPF::SeccompLevel::MULTI_THREADED));\n"
         "  struct sigaction helium_action = {};\n"
         "  helium_action.sa_sigaction = &HeliumSigSysAfterSandbox;\n"
         "  helium_action.sa_flags = SA_SIGINFO;\n"
