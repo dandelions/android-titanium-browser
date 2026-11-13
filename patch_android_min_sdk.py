@@ -2005,18 +2005,33 @@ def patch_bind_isolated_service_compat(src_dir: str) -> None:
                 new_content = re.sub(old_bind_pattern, new_bind_block, new_content)
 
         # 2. 守卫 updateServiceGroup 调用：API 29+ 引入
-        if "context.updateServiceGroup(" in new_content and "try {\n        context.updateServiceGroup" not in new_content:
-            old_update_pattern = (
-                r'([ \t]*)context\.updateServiceGroup\s*\(\s*connection\s*,\s*group\s*,\s*importanceInGroup\s*\)\s*;'
+        if "context.updateServiceGroup(" in new_content:
+            over_nested_pattern = (
+                r'([ \t]*)if\s*\(\s*android\.os\.Build\.VERSION\.SDK_INT\s*>=\s*29\s*\)\s*\{\s*\n'
+                r'(?:[ \t]*try\s*\{\s*\n[ \t]*if\s*\(\s*android\.os\.Build\.VERSION\.SDK_INT\s*>=\s*29\s*\)\s*\{\s*\n)+'
+                r'[ \t]*try\s*\{\s*\n'
+                r'[ \t]*context\.updateServiceGroup\s*\(\s*connection\s*,\s*group\s*,\s*importanceInGroup\s*\)\s*;\s*\n'
+                r'(?:[ \t]*\}\s*catch\s*\(\s*Throwable\s+ignored\s*\)\s*\{\s*\}\s*\n[ \t]*\}\s*\n)+'
+                r'[ \t]*\}\s*catch\s*\(\s*Throwable\s+ignored\s*\)\s*\{\s*\}\s*\n'
+                r'[ \t]*\}'
             )
-            new_update_block = (
+            clean_update_block = (
                 r'\1if (android.os.Build.VERSION.SDK_INT >= 29) {\n'
                 r'\1    try {\n'
                 r'\1        context.updateServiceGroup(connection, group, importanceInGroup);\n'
                 r'\1    } catch (Throwable ignored) {}\n'
                 r'\1}'
             )
-            new_content = re.sub(old_update_pattern, new_update_block, new_content)
+            new_content = re.sub(over_nested_pattern, clean_update_block, new_content)
+
+            old_update_pattern = (
+                r'([ \t]*)context\.updateServiceGroup\s*\(\s*connection\s*,\s*group\s*,\s*importanceInGroup\s*\)\s*;'
+            )
+            if not re.search(
+                r'if\s*\(\s*android\.os\.Build\.VERSION\.SDK_INT\s*>=\s*29\s*\)\s*\{\s*\n\s*try\s*\{\s*\n\s*context\.updateServiceGroup',
+                new_content,
+            ):
+                new_content = re.sub(old_update_pattern, clean_update_block, new_content)
 
         # 3. 守卫 doRebindService 中对 Context.BindServiceFlags (API 34+) 的类解析
         if "Context.BindServiceFlags bindServiceFlags" in new_content and "Build.VERSION.SDK_INT < 34" not in new_content:
@@ -2406,6 +2421,93 @@ def patch_zlib_fcntl_cloexec_compat(src_dir: str) -> None:
     print(f"Patched zlib F_SETFD close-on-exec flag for API 28 compat in: {target}")
 
 
+def patch_kill_child_uncaught_exception_compat(src_dir: str) -> None:
+    # Upstream KillChildUncaughtExceptionHandler replaces Thread.getDefaultUncaughtExceptionHandler()
+    # in child processes and immediately invokes Process.killProcess(myPid) on uncaught exceptions
+    # without logging or chaining the previous handler. This silently swallows any early Java crashes
+    # during child process startup (such as missing classes or methods on Android 9) and starves
+    # crash_log.txt and logcat. Chain the previous handler and log to Log.e before killing.
+    target_files = [
+        os.path.join(
+            src_dir,
+            "content/public/android/java/src/org/chromium/content/app/KillChildUncaughtExceptionHandler.java",
+        ),
+        os.path.join(
+            src_dir,
+            "chromium/src/content/public/android/java/src/org/chromium/content/app/KillChildUncaughtExceptionHandler.java",
+        ),
+        os.path.join(
+            src_dir,
+            "src/content/public/android/java/src/org/chromium/content/app/KillChildUncaughtExceptionHandler.java",
+        ),
+    ]
+
+    for sub in ["content/public/android", "content"]:
+        scan_path = os.path.join(src_dir, sub)
+        if os.path.isdir(scan_path):
+            for root, _, files in os.walk(scan_path):
+                for f in files:
+                    if f == "KillChildUncaughtExceptionHandler.java":
+                        full_f = os.path.join(root, f)
+                        if full_f not in target_files:
+                            target_files.append(full_f)
+
+    for target in target_files:
+        if not os.path.isfile(target):
+            continue
+        with open(target, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        if "mParentHandler" in content:
+            continue
+
+        broken_install = "Thread.setDefaultUncaughtExceptionHandler(new KillChildUncaughtExceptionHandler());"
+        fixed_install = (
+            "Thread.setDefaultUncaughtExceptionHandler(\n"
+            "                new KillChildUncaughtExceptionHandler(Thread.getDefaultUncaughtExceptionHandler()));"
+        )
+        broken_class = (
+            "class KillChildUncaughtExceptionHandler implements Thread.UncaughtExceptionHandler {\n"
+            "    private boolean mCrashing;"
+        )
+        fixed_class = (
+            "class KillChildUncaughtExceptionHandler implements Thread.UncaughtExceptionHandler {\n"
+            "    private final Thread.UncaughtExceptionHandler mParentHandler;\n"
+            "    private boolean mCrashing;\n\n"
+            "    KillChildUncaughtExceptionHandler(Thread.UncaughtExceptionHandler parentHandler) {\n"
+            "        mParentHandler = parentHandler;\n"
+            "    }"
+        )
+        broken_uncaught = (
+            "        if (mCrashing) return;\n"
+            "        mCrashing = true;\n\n"
+            "        // Copied from Android KillApplicationHandler in RuntimeInit.java."
+        )
+        fixed_uncaught = (
+            "        if (mCrashing) return;\n"
+            "        mCrashing = true;\n\n"
+            "        android.util.Log.e(\n"
+            "                \"KillChildUncaughtException\",\n"
+            "                \"Uncaught exception in child process \" + Process.myPid(),\n"
+            "                e);\n"
+            "        if (mParentHandler != null) {\n"
+            "            mParentHandler.uncaughtException(t, e);\n"
+            "        }\n\n"
+            "        // Copied from Android KillApplicationHandler in RuntimeInit.java."
+        )
+
+        new_content = content
+        if broken_install in new_content and broken_class in new_content and broken_uncaught in new_content:
+            new_content = new_content.replace(broken_class, fixed_class)
+            new_content = new_content.replace(broken_install, fixed_install)
+            new_content = new_content.replace(broken_uncaught, fixed_uncaught)
+
+        if new_content != content:
+            with open(target, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            print(f"Patched KillChildUncaughtExceptionHandler for child crash logging in: {target}")
+
+
 def main() -> None:
     src_dir = sys.argv[1] if len(sys.argv) > 1 else "."
 
@@ -2494,6 +2596,7 @@ def main() -> None:
     patch_advanced_protection_api28_compat(src_dir)
     patch_accessibility_contrast_api28_compat(src_dir)
     patch_zlib_fcntl_cloexec_compat(src_dir)
+    patch_kill_child_uncaught_exception_compat(src_dir)
 
     print("SDK version patch (minSdk: 28) & car-compat checks complete.")
 

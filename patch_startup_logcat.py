@@ -132,6 +132,7 @@ BODY = '''public static void postAttachBaseContext() {
                     java.io.BufferedReader switchReader =
                             new java.io.BufferedReader(new java.io.FileReader(switchFile));
                     String switchLine;
+                    java.util.List<String> loadedSwitches = new java.util.ArrayList<String>();
                     while ((switchLine = switchReader.readLine()) != null) {
                         switchLine = switchLine.trim();
                         while (switchLine.startsWith("-")) {
@@ -141,8 +142,17 @@ BODY = '''public static void postAttachBaseContext() {
                             continue;
                         }
                         org.chromium.base.CommandLine.getInstance().appendSwitch(switchLine);
+                        loadedSwitches.add(switchLine);
                     }
                     switchReader.close();
+                    if (!loadedSwitches.isEmpty()) {
+                        android.util.Log.i(
+                                TAG,
+                                "Applied diagnostic switches from "
+                                        + switchFile.getName()
+                                        + ": "
+                                        + loadedSwitches);
+                    }
                 }
             } catch (Throwable ignored) {
                 // Diagnostics must never block startup.

@@ -116,13 +116,14 @@ class StartupLogcatPatchTest(unittest.TestCase):
         self.assertLess(switches, result.index("StringBuilder logcatLine"))
         block = result[
             result.index("java.io.File externalDir =") : result.index(
-                "CommandLine.getInstance().appendSwitch", switches
+                "catch (Throwable ignored)", switches
             )
-            + 200
+            + 40
         ]
         self.assertIn("CommandLine.isInitialized()", block)
         self.assertIn("getExternalFilesDir(null)", block)
         self.assertIn("catch (Throwable ignored)", block)
+        self.assertIn("Applied diagnostic switches from", block)
 
     def test_native_crash_capture_filters_to_helium_tombstones(self):
         PATCH.patch_source_tree(self.root)

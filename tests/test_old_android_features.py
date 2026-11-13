@@ -139,6 +139,9 @@ class OldAndroidFeatureConfigurationTest(unittest.TestCase):
             patched_alloc = allocator_file.read_text(encoding="utf-8")
             self.assertIn("(Build.VERSION.SDK_INT < 29)", patched_alloc)
 
+            patch_bind_isolated_service_compat(str(tmppath))
+            self.assertEqual(patched_bind, bind_service_file.read_text(encoding="utf-8"))
+
     def test_patch_zlib_fcntl_cloexec_compat(self):
         import tempfile
         from patch_android_min_sdk import patch_zlib_fcntl_cloexec_compat
@@ -162,6 +165,58 @@ class OldAndroidFeatureConfigurationTest(unittest.TestCase):
 
             patch_zlib_fcntl_cloexec_compat(str(tmppath))
             self.assertEqual(patched, zlib_file.read_text(encoding="utf-8"))
+
+    def test_patch_kill_child_uncaught_exception_compat(self):
+        import tempfile
+        from patch_android_min_sdk import patch_kill_child_uncaught_exception_compat
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmppath = pathlib.Path(tmpdir)
+            handler_file = (
+                tmppath
+                / "content/public/android/java/src/org/chromium/content/app/KillChildUncaughtExceptionHandler.java"
+            )
+            handler_file.parent.mkdir(parents=True, exist_ok=True)
+            handler_file.write_text(
+                """package org.chromium.content.app;
+
+import android.os.Process;
+import org.chromium.base.AndroidInfo;
+import org.chromium.build.annotations.NullMarked;
+
+@NullMarked
+class KillChildUncaughtExceptionHandler implements Thread.UncaughtExceptionHandler {
+    private boolean mCrashing;
+
+    static void maybeInstallHandler() {
+        if (AndroidInfo.isDebugAndroid()) return;
+        Thread.setDefaultUncaughtExceptionHandler(new KillChildUncaughtExceptionHandler());
+    }
+
+    @Override
+    public void uncaughtException(Thread t, Throwable e) {
+        if (mCrashing) return;
+        mCrashing = true;
+
+        // Copied from Android KillApplicationHandler in RuntimeInit.java. This is how the default
+        // Android handler kills this process.
+        Process.killProcess(Process.myPid());
+        System.exit(10);
+    }
+}
+""",
+                encoding="utf-8",
+            )
+
+            patch_kill_child_uncaught_exception_compat(str(tmppath))
+            patched = handler_file.read_text(encoding="utf-8")
+            self.assertIn("mParentHandler", patched)
+            self.assertIn("KillChildUncaughtException", patched)
+            self.assertIn("mParentHandler.uncaughtException(t, e)", patched)
+
+            # Idempotent
+            patch_kill_child_uncaught_exception_compat(str(tmppath))
+            self.assertEqual(patched, handler_file.read_text(encoding="utf-8"))
 
     def test_patch_advanced_protection_api28_compat(self):
         import tempfile
