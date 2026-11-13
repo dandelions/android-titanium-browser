@@ -2725,6 +2725,61 @@ def patch_zip_installer_diagnostics(src_dir: str) -> None:
         print(f"Patched zip installer failure reasons for head-unit diagnostics in: {target}")
 
 
+def patch_zip_installer_in_process(src_dir: str) -> None:
+    # 车机上的沙箱 utility 进程不稳定时，解压服务（components/services/unzip）
+    # 作为独立 utility 进程启动会失败，安装 zip 扩展直接报 "Could not unzip extension"。
+    # 这里把 zip 安装改成进程内解压：仍然在后台序列执行，只是不再跨进程。
+    source = os.path.join(src_dir, "extensions/browser/zipfile_installer.cc")
+    gn = os.path.join(src_dir, "extensions/browser/BUILD.gn")
+    if not os.path.isfile(source):
+        return
+
+    with open(source, "r", encoding="utf-8") as f:
+        content = f.read()
+    new_content = content
+    if "components/services/unzip/in_process_unzipper.h" not in new_content:
+        new_content = new_content.replace(
+            '#include "components/services/unzip/public/cpp/unzip.h"',
+            '#include "components/services/unzip/in_process_unzipper.h"\n'
+            '#include "components/services/unzip/public/cpp/unzip.h"',
+            1,
+        )
+    new_content = new_content.replace(
+        "unzip::LaunchUnzipper()", "unzip::LaunchInProcessUnzipper()"
+    )
+
+    if new_content != content:
+        with open(source, "w", encoding="utf-8") as f:
+            f.write(new_content)
+        print(f"Patched in-process extension unzip for head-unit installs in: {source}")
+
+    if not os.path.isfile(gn):
+        return
+    with open(gn, "r", encoding="utf-8") as f:
+        gn_content = f.read()
+    needle = (
+        '    "//components/services/unzip/content",\n'
+        '    "//components/services/unzip/public/cpp",\n'
+    )
+    gn_new = gn_content
+    index = gn_content.find(needle)
+    if index >= 0:
+        already_added = (
+            '"//components/services/unzip:in_process",'
+            in gn_content[max(0, index - 120) : index]
+        )
+        if not already_added:
+            gn_new = gn_content.replace(
+                needle,
+                '    "//components/services/unzip:in_process",\n' + needle,
+                1,
+            )
+    if gn_new != gn_content:
+        with open(gn, "w", encoding="utf-8") as f:
+            f.write(gn_new)
+        print(f"Added in-process unzipper dependency in: {gn}")
+
+
 def main() -> None:
     src_dir = sys.argv[1] if len(sys.argv) > 1 else "."
 
@@ -2816,6 +2871,7 @@ def main() -> None:
     patch_kill_child_uncaught_exception_compat(src_dir)
     patch_android_dns_fallback(src_dir)
     patch_zip_installer_diagnostics(src_dir)
+    patch_zip_installer_in_process(src_dir)
 
     print("SDK version patch (minSdk: 28) & car-compat checks complete.")
 

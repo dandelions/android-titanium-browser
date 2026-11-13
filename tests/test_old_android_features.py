@@ -493,6 +493,50 @@ void ZipFileInstaller::UnzipDone(bool success) {
             patch_zip_installer_diagnostics(str(tmppath))
             self.assertEqual(patched, installer.read_text(encoding="utf-8"))
 
+    def test_patch_zip_installer_in_process(self):
+        import tempfile
+        from patch_android_min_sdk import patch_zip_installer_in_process
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmppath = pathlib.Path(tmpdir)
+            source = tmppath / "extensions/browser/zipfile_installer.cc"
+            source.parent.mkdir(parents=True, exist_ok=True)
+            source.write_text(
+                """#include "components/services/unzip/public/cpp/unzip.h"
+
+void ZipFileInstaller::Unzip() {
+  unzip::Unzip(unzip::LaunchUnzipper(), zip_file_, unzip_dir, options, filter,
+               base::DoNothing(), callback);
+}
+""",
+                encoding="utf-8",
+            )
+            gn = tmppath / "extensions/browser/BUILD.gn"
+            gn.write_text(
+                """source_set("browser_sources") {
+  deps = [
+    "//components/services/unzip/content",
+    "//components/services/unzip/public/cpp",
+  ]
+}
+""",
+                encoding="utf-8",
+            )
+
+            patch_zip_installer_in_process(str(tmppath))
+            patched_source = source.read_text(encoding="utf-8")
+            self.assertIn("components/services/unzip/in_process_unzipper.h", patched_source)
+            self.assertNotIn("unzip::LaunchUnzipper()", patched_source)
+            self.assertIn("unzip::LaunchInProcessUnzipper()", patched_source)
+
+            patched_gn = gn.read_text(encoding="utf-8")
+            self.assertIn('"//components/services/unzip:in_process"', patched_gn)
+
+            # Idempotent
+            patch_zip_installer_in_process(str(tmppath))
+            self.assertEqual(patched_source, source.read_text(encoding="utf-8"))
+            self.assertEqual(patched_gn, gn.read_text(encoding="utf-8"))
+
     def test_patch_android_dns_fallback(self):
         import tempfile
         from patch_android_min_sdk import patch_android_dns_fallback
