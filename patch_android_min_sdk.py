@@ -2510,6 +2510,122 @@ def patch_kill_child_uncaught_exception_compat(src_dir: str) -> None:
             print(f"Patched KillChildUncaughtExceptionHandler for child crash logging in: {target}")
 
 
+DNS_HELPER_METHODS = '''    /** Helium: netd keeps publishing name servers as properties when LinkProperties is empty. */
+    private static java.util.List<InetAddress> dnsServersFromSystemProperties() {
+        java.util.List<InetAddress> servers = new java.util.ArrayList<InetAddress>();
+        for (String name : new String[] {"net.dns1", "net.dns2", "net.dns3"}) {
+            String value = readSystemProperty(name);
+            if (value == null || value.isEmpty()) continue;
+            try {
+                InetAddress address = InetAddress.getByName(value);
+                if (address != null && !servers.contains(address)) servers.add(address);
+            } catch (IOException e) {
+                // Ignore malformed property values.
+            }
+        }
+        if (!servers.isEmpty()) {
+            Log.i(TAG, "Helium: DNS servers from system properties " + servers);
+        }
+        return servers;
+    }
+
+    private static @Nullable String readSystemProperty(String key) {
+        try {
+            Class<?> properties = Class.forName("android.os.SystemProperties");
+            java.lang.reflect.Method get = properties.getMethod("get", String.class);
+            Object value = get.invoke(null, key);
+            return value instanceof String ? (String) value : null;
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+'''
+
+
+def patch_android_dns_fallback(src_dir: str) -> None:
+    # 车机/容器化 Android 上 ConnectivityManager 可能没有 active network，
+    # 或返回的 LinkProperties 里没有 DNS 服务器，Chromium 会直接记录
+    # "Failed to read DnsConfig."，随后所有域名解析失败（页面打不开，但 chrome:// 页面正常）。
+    # 这里在系统查询失败时依次回退到：任一已连接网络 -> netd 的系统属性 DNS。
+    target_files = [
+        os.path.join(src_dir, "net/android/java/src/org/chromium/net/AndroidNetworkLibrary.java"),
+    ]
+    for sub in ["net/android"]:
+        scan_path = os.path.join(src_dir, sub)
+        if os.path.isdir(scan_path):
+            for root, _, files in os.walk(scan_path):
+                for f in files:
+                    if f == "AndroidNetworkLibrary.java":
+                        full_f = os.path.join(root, f)
+                        if full_f not in target_files:
+                            target_files.append(full_f)
+
+    broken_network_guard = (
+        "        if (network == null) {\n"
+        "            network = connectivityManager.getActiveNetwork();\n"
+        "        }\n"
+        "        if (network == null) {\n"
+        "            return null;\n"
+        "        }\n"
+    )
+    fixed_network_guard = (
+        "        if (network == null) {\n"
+        "            network = connectivityManager.getActiveNetwork();\n"
+        "        }\n"
+        "        if (network == null) {\n"
+        "            // Helium: head units and container runtimes can hide the active network.\n"
+        "            Network[] allNetworks = connectivityManager.getAllNetworks();\n"
+        "            if (allNetworks != null) {\n"
+        "                for (Network candidate : allNetworks) {\n"
+        "                    NetworkInfo info = connectivityManager.getNetworkInfo(candidate);\n"
+        "                    if (info != null && info.isConnected()) {\n"
+        "                        network = candidate;\n"
+        "                        Log.i(TAG, \"Helium: using fallback network \" + candidate);\n"
+        "                        break;\n"
+        "                    }\n"
+        "                }\n"
+        "            }\n"
+        "        }\n"
+        "        if (network == null) {\n"
+        "            Log.w(TAG, \"Helium: no network available while reading DNS config\");\n"
+        "            return null;\n"
+        "        }\n"
+    )
+    broken_dns_list = "        List<InetAddress> dnsServersList = linkProperties.getDnsServers();\n"
+    fixed_dns_list = (
+        "        List<InetAddress> dnsServersList = linkProperties.getDnsServers();\n"
+        "        if (dnsServersList.isEmpty()) {\n"
+        "            dnsServersList = dnsServersFromSystemProperties();\n"
+        "        }\n"
+    )
+    helper_anchor = (
+        "    /**\n"
+        "     * Returns object representing the DNS configuration for the provided\n"
+    )
+
+    for target in target_files:
+        if not os.path.isfile(target):
+            continue
+        with open(target, "r", encoding="utf-8") as f:
+            content = f.read()
+        if "Helium: DNS servers from system properties" in content:
+            continue
+
+        new_content = content
+        if broken_network_guard in new_content:
+            new_content = new_content.replace(broken_network_guard, fixed_network_guard, 1)
+        if broken_dns_list in new_content:
+            new_content = new_content.replace(broken_dns_list, fixed_dns_list, 1)
+        if helper_anchor in new_content and DNS_HELPER_METHODS not in new_content:
+            new_content = new_content.replace(helper_anchor, DNS_HELPER_METHODS + helper_anchor, 1)
+
+        if new_content != content:
+            with open(target, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            print(f"Patched DNS config fallback for head-unit networking in: {target}")
+
+
 def main() -> None:
     src_dir = sys.argv[1] if len(sys.argv) > 1 else "."
 
@@ -2599,6 +2715,7 @@ def main() -> None:
     patch_accessibility_contrast_api28_compat(src_dir)
     patch_zlib_fcntl_cloexec_compat(src_dir)
     patch_kill_child_uncaught_exception_compat(src_dir)
+    patch_android_dns_fallback(src_dir)
 
     print("SDK version patch (minSdk: 28) & car-compat checks complete.")
 

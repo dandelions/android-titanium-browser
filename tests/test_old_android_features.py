@@ -426,6 +426,51 @@ public class OsAdditionalSecurityProvider {
             patch_motion_event_input_compat(str(tmppath))
             self.assertEqual(patched, forwarder_file.read_text(encoding="utf-8"))
 
+    def test_patch_android_dns_fallback(self):
+        import tempfile
+        from patch_android_min_sdk import patch_android_dns_fallback
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmppath = pathlib.Path(tmpdir)
+            library_file = (
+                tmppath
+                / "net/android/java/src/org/chromium/net/AndroidNetworkLibrary.java"
+            )
+            library_file.parent.mkdir(parents=True, exist_ok=True)
+            library_file.write_text(
+                """public class AndroidNetworkLibrary {
+    private static final String TAG = "AndroidNetworkLibrary";
+
+    /**
+     * Returns object representing the DNS configuration for the provided
+     * network. If |network| is null, uses the active network.
+     */
+    public static DnsStatus getDnsStatus(Network network) {
+        if (network == null) {
+            network = connectivityManager.getActiveNetwork();
+        }
+        if (network == null) {
+            return null;
+        }
+        List<InetAddress> dnsServersList = linkProperties.getDnsServers();
+        return new DnsStatus(dnsServersList, false, "", "");
+    }
+}
+""",
+                encoding="utf-8",
+            )
+
+            patch_android_dns_fallback(str(tmppath))
+            patched = library_file.read_text(encoding="utf-8")
+            self.assertIn("connectivityManager.getAllNetworks()", patched)
+            self.assertIn("dnsServersFromSystemProperties()", patched)
+            self.assertIn('"net.dns1"', patched)
+            self.assertIn("Helium: no network available while reading DNS config", patched)
+
+            # Idempotent
+            patch_android_dns_fallback(str(tmppath))
+            self.assertEqual(patched, library_file.read_text(encoding="utf-8"))
+
     def test_clean_manifest_disables_isolated_process(self):
         import tempfile
         from patch_android_min_sdk import clean_manifest_zygote_and_modern_attributes
