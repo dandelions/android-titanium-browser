@@ -2626,6 +2626,105 @@ def patch_android_dns_fallback(src_dir: str) -> None:
             print(f"Patched DNS config fallback for head-unit networking in: {target}")
 
 
+ZIP_INSTALLER_REPLACEMENTS = (
+    (
+        """  std::string zip_contents;
+  if (!base::ReadFileToString(zip_file, &zip_contents)) {
+    return ZipResultVariant{std::string(kExtensionHandlerFileUnzipError)};
+  }
+""",
+        """  std::string zip_contents;
+  if (!base::ReadFileToString(zip_file, &zip_contents)) {
+    return ZipResultVariant{
+        std::string("Helium: cannot read the extension archive for install.")};
+  }
+""",
+    ),
+    (
+        """  if (!success) {
+    ReportFailure(kExtensionHandlerFileUnzipError);
+    return;
+  }
+
+  io_task_runner_->PostTaskAndReplyWithResult(
+""",
+        """  if (!success) {
+    ReportFailure(
+        "Helium: unzip service failed while extracting the extension manifest.");
+    return;
+  }
+
+  io_task_runner_->PostTaskAndReplyWithResult(
+""",
+    ),
+    (
+        """  if (!manifest_content) {
+    ReportFailure(std::string(kExtensionHandlerFileUnzipError));
+    return;
+  }
+""",
+        """  if (!manifest_content) {
+    ReportFailure(
+        std::string("Helium: unzipped archive has no readable manifest."));
+    return;
+  }
+""",
+    ),
+    (
+        """  if (!result || !result->is_dict()) {
+    ReportFailure(std::string(kExtensionHandlerFileUnzipError));
+    return;
+  }
+""",
+        """  if (!result || !result->is_dict()) {
+    ReportFailure(std::string("Helium: unzipped manifest is not valid JSON."));
+    return;
+  }
+""",
+    ),
+    (
+        """  if (!success) {
+    ReportFailure(kExtensionHandlerFileUnzipError);
+    return;
+  }
+
+  std::move(done_callback_).Run(
+""",
+        """  if (!success) {
+    ReportFailure(
+        "Helium: unzip service failed while extracting extension files.");
+    return;
+  }
+
+  std::move(done_callback_).Run(
+""",
+    ),
+)
+
+
+def patch_zip_installer_diagnostics(src_dir: str) -> None:
+    # 安装 zip/crx 时所有失败路径都复用同一句 "Could not unzip extension for install."，
+    # 无法区分是读不到文件、解压服务（utility 进程）失败，还是 manifest 异常。
+    # 这里给每条失败路径单独的文案，日志里能直接看出卡在哪一步。
+    target = os.path.join(src_dir, "extensions/browser/zipfile_installer.cc")
+    if not os.path.isfile(target):
+        return
+    with open(target, "r", encoding="utf-8") as f:
+        content = f.read()
+    if "Helium: unzip service failed" in content:
+        return
+
+    new_content = content
+    for old, new in ZIP_INSTALLER_REPLACEMENTS:
+        if old in new_content:
+            new_content = new_content.replace(old, new, 1)
+
+    if new_content != content:
+        with open(target, "w", encoding="utf-8") as f:
+            f.write(new_content)
+        print(f"Patched zip installer failure reasons for head-unit diagnostics in: {target}")
+
+
 def main() -> None:
     src_dir = sys.argv[1] if len(sys.argv) > 1 else "."
 
@@ -2716,6 +2815,7 @@ def main() -> None:
     patch_zlib_fcntl_cloexec_compat(src_dir)
     patch_kill_child_uncaught_exception_compat(src_dir)
     patch_android_dns_fallback(src_dir)
+    patch_zip_installer_diagnostics(src_dir)
 
     print("SDK version patch (minSdk: 28) & car-compat checks complete.")
 

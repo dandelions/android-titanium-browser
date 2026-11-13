@@ -426,6 +426,73 @@ public class OsAdditionalSecurityProvider {
             patch_motion_event_input_compat(str(tmppath))
             self.assertEqual(patched, forwarder_file.read_text(encoding="utf-8"))
 
+    def test_patch_zip_installer_diagnostics(self):
+        import tempfile
+        from patch_android_min_sdk import patch_zip_installer_diagnostics
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmppath = pathlib.Path(tmpdir)
+            installer = tmppath / "extensions/browser/zipfile_installer.cc"
+            installer.parent.mkdir(parents=True, exist_ok=True)
+            installer.write_text(
+                """  std::string zip_contents;
+  if (!base::ReadFileToString(zip_file, &zip_contents)) {
+    return ZipResultVariant{std::string(kExtensionHandlerFileUnzipError)};
+  }
+}
+
+void ZipFileInstaller::ManifestUnzipped(bool success) {
+  if (!success) {
+    ReportFailure(kExtensionHandlerFileUnzipError);
+    return;
+  }
+
+  io_task_runner_->PostTaskAndReplyWithResult(
+}
+
+void ZipFileInstaller::ManifestRead(std::optional<std::string> manifest_content) {
+  if (!manifest_content) {
+    ReportFailure(std::string(kExtensionHandlerFileUnzipError));
+    return;
+  }
+
+  if (!result || !result->is_dict()) {
+    ReportFailure(std::string(kExtensionHandlerFileUnzipError));
+    return;
+  }
+}
+
+void ZipFileInstaller::UnzipDone(bool success) {
+  if (!success) {
+    ReportFailure(kExtensionHandlerFileUnzipError);
+    return;
+  }
+
+  std::move(done_callback_).Run(
+}
+""",
+                encoding="utf-8",
+            )
+
+            patch_zip_installer_diagnostics(str(tmppath))
+            patched = installer.read_text(encoding="utf-8")
+            self.assertIn("Helium: cannot read the extension archive for install.", patched)
+            self.assertIn(
+                "Helium: unzip service failed while extracting the extension manifest.",
+                patched,
+            )
+            self.assertIn("Helium: unzipped archive has no readable manifest.", patched)
+            self.assertIn("Helium: unzipped manifest is not valid JSON.", patched)
+            self.assertIn(
+                "Helium: unzip service failed while extracting extension files.",
+                patched,
+            )
+            self.assertNotIn("ReportFailure(kExtensionHandlerFileUnzipError);", patched)
+
+            # Idempotent
+            patch_zip_installer_diagnostics(str(tmppath))
+            self.assertEqual(patched, installer.read_text(encoding="utf-8"))
+
     def test_patch_android_dns_fallback(self):
         import tempfile
         from patch_android_min_sdk import patch_android_dns_fallback
