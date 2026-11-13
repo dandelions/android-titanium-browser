@@ -493,6 +493,142 @@ void ZipFileInstaller::UnzipDone(bool success) {
             patch_zip_installer_diagnostics(str(tmppath))
             self.assertEqual(patched, installer.read_text(encoding="utf-8"))
 
+    def test_patch_sigsys_logger(self):
+        import tempfile
+        from patch_android_min_sdk import patch_sigsys_logger
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmppath = pathlib.Path(tmpdir)
+            main_file = tmppath / "content/app/android/content_main_android.cc"
+            main_file.parent.mkdir(parents=True, exist_ok=True)
+            main_file.write_text(
+                """#include "content/app/android/content_main_android.h"
+
+#include <cpu-features.h>
+
+namespace content {
+
+namespace {
+
+ContentMainRunner* GetContentMainRunner() {
+  return nullptr;
+}
+
+}  // namespace
+
+static int32_t JNI_ContentMain_Start(JNIEnv* env, bool start_minimal_browser) {
+  return StartContentMain(start_minimal_browser);
+}
+
+}  // namespace content
+""",
+                encoding="utf-8",
+            )
+            seccomp_file = (
+                tmppath / "sandbox/linux/seccomp-bpf-helpers/seccomp_starter_android.cc"
+            )
+            seccomp_file.parent.mkdir(parents=True, exist_ok=True)
+            seccomp_file.write_text(
+                """#include <signal.h>
+
+namespace sandbox {
+
+bool StartSandbox() {
+  CHECK(sandbox.StartSandbox(SandboxBPF::SeccompLevel::MULTI_THREADED));
+  return true;
+}
+
+}  // namespace sandbox
+""",
+                encoding="utf-8",
+            )
+
+            patch_sigsys_logger(str(tmppath))
+            patched_main = main_file.read_text(encoding="utf-8")
+            self.assertIn("HeliumSigSysLogger", patched_main)
+            self.assertIn("HeliumInstallSigSysLogger();", patched_main)
+            self.assertIn('"blocked syscall=%d errno=%d pid=%d"', patched_main)
+            self.assertIn("info->si_syscall", patched_main)
+
+            patched_seccomp = seccomp_file.read_text(encoding="utf-8")
+            self.assertIn("HeliumSigSysAfterSandbox", patched_seccomp)
+            self.assertIn('"sandbox blocked syscall=%d errno=%d pid=%d"', patched_seccomp)
+
+            # Idempotent
+            patch_sigsys_logger(str(tmppath))
+            self.assertEqual(patched_main, main_file.read_text(encoding="utf-8"))
+            self.assertEqual(patched_seccomp, seccomp_file.read_text(encoding="utf-8"))
+
+    def test_patch_android_dns_fallback_paths(self):
+        import tempfile
+        from patch_android_min_sdk import (
+            patch_android_dns_fallback,
+            patch_android_dns_fallback_paths,
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmppath = pathlib.Path(tmpdir)
+            library_file = (
+                tmppath
+                / "net/android/java/src/org/chromium/net/AndroidNetworkLibrary.java"
+            )
+            library_file.parent.mkdir(parents=True, exist_ok=True)
+            library_file.write_text(
+                """public class AndroidNetworkLibrary {
+    private static final String TAG = "AndroidNetworkLibrary";
+
+    /**
+     * Returns object representing the DNS configuration for the provided
+     * network. If |network| is null, uses the active network.
+     */
+    public static @Nullable DnsStatus getDnsStatus(@Nullable Network network) {
+        if (!haveAccessNetworkState()) {
+            return null;
+        }
+        ConnectivityManager connectivityManager = getConnectivityManager();
+        if (connectivityManager == null) {
+            return null;
+        }
+        if (network == null) {
+            network = connectivityManager.getActiveNetwork();
+        }
+        if (network == null) {
+            return null;
+        }
+        LinkProperties linkProperties;
+        try {
+            linkProperties = connectivityManager.getLinkProperties(network);
+        } catch (RuntimeException e) {
+            return null;
+        }
+        if (linkProperties == null) {
+            return null;
+        }
+        List<InetAddress> dnsServersList = linkProperties.getDnsServers();
+        return new DnsStatus(dnsServersList, false, "", "");
+    }
+}
+""",
+                encoding="utf-8",
+            )
+
+            patch_android_dns_fallback(str(tmppath))
+            patch_android_dns_fallback_paths(str(tmppath))
+            patched = library_file.read_text(encoding="utf-8")
+            self.assertIn("fallbackDnsStatus", patched)
+            for reason in (
+                "no ACCESS_NETWORK_STATE",
+                "no ConnectivityManager",
+                "no active network",
+                "getLinkProperties failed",
+                "no LinkProperties",
+            ):
+                self.assertIn(f'fallbackDnsStatus("{reason}")', patched)
+
+            # Idempotent
+            patch_android_dns_fallback_paths(str(tmppath))
+            self.assertEqual(patched, library_file.read_text(encoding="utf-8"))
+
     def test_patch_zip_installer_in_process(self):
         import tempfile
         from patch_android_min_sdk import patch_zip_installer_in_process

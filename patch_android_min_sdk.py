@@ -2780,6 +2780,189 @@ def patch_zip_installer_in_process(src_dir: str) -> None:
         print(f"Added in-process unzipper dependency in: {gn}")
 
 
+DNS_FALLBACK_HELPER = '''    /** Helium: builds a usable DNS status when the platform lookup fails entirely. */
+    private static @Nullable DnsStatus fallbackDnsStatus(String reason) {
+        java.util.List<InetAddress> servers = dnsServersFromSystemProperties();
+        Log.w(TAG, "Helium: system DNS config unavailable (" + reason + "): " + servers);
+        if (servers.isEmpty()) return null;
+        return new DnsStatus(servers, false, "", "");
+    }
+
+'''
+
+
+def patch_android_dns_fallback_paths(src_dir: str) -> None:
+    # 上一版只在 "有网络但 DNS 列表为空" 时回退。车机上更常见的是
+    # haveAccessNetworkState()/ConnectivityManager/LinkProperties 直接不可用，
+    # 这些分支仍然返回 null，Chromium 照旧打 "Failed to read DnsConfig."。
+    # 这里让所有失败分支都走同一套系统属性回退，并打印失败原因。
+    target = os.path.join(src_dir, "net/android/java/src/org/chromium/net/AndroidNetworkLibrary.java")
+    if not os.path.isfile(target):
+        return
+    with open(target, "r", encoding="utf-8") as f:
+        content = f.read()
+    if "fallbackDnsStatus" in content:
+        return
+
+    replacements = (
+        (
+            "        if (!haveAccessNetworkState()) {\n            return null;\n        }\n",
+            "        if (!haveAccessNetworkState()) {\n"
+            '            return fallbackDnsStatus("no ACCESS_NETWORK_STATE");\n'
+            "        }\n",
+        ),
+        (
+            "        if (connectivityManager == null) {\n            return null;\n        }\n",
+            "        if (connectivityManager == null) {\n"
+            '            return fallbackDnsStatus("no ConnectivityManager");\n'
+            "        }\n",
+        ),
+        (
+            "        if (network == null) {\n"
+            '            Log.w(TAG, "Helium: no network available while reading DNS config");\n'
+            "            return null;\n"
+            "        }\n",
+            "        if (network == null) {\n"
+            '            return fallbackDnsStatus("no active network");\n'
+            "        }\n",
+        ),
+        (
+            "            linkProperties = connectivityManager.getLinkProperties(network);\n"
+            "        } catch (RuntimeException e) {\n"
+            "            return null;\n"
+            "        }\n",
+            "            linkProperties = connectivityManager.getLinkProperties(network);\n"
+            "        } catch (RuntimeException e) {\n"
+            '            return fallbackDnsStatus("getLinkProperties failed");\n'
+            "        }\n",
+        ),
+        (
+            "        if (linkProperties == null) {\n            return null;\n        }\n",
+            "        if (linkProperties == null) {\n"
+            '            return fallbackDnsStatus("no LinkProperties");\n'
+            "        }\n",
+        ),
+    )
+
+    new_content = content
+    for old, new in replacements:
+        if old in new_content:
+            new_content = new_content.replace(old, new, 1)
+
+    helper_anchor = (
+        "    /** Helium: netd keeps publishing name servers as properties when LinkProperties is empty. */\n"
+    )
+    if helper_anchor in new_content:
+        new_content = new_content.replace(helper_anchor, DNS_FALLBACK_HELPER + helper_anchor, 1)
+
+    if new_content != content:
+        with open(target, "w", encoding="utf-8") as f:
+            f.write(new_content)
+        print(f"Patched DNS fallback for every platform lookup failure in: {target}")
+
+
+SIGSYS_HELPER = '''// Helium: record which syscall a seccomp filter rejected before dying.
+void HeliumSigSysLogger(int, siginfo_t* info, void*) {
+  if (info) {
+    __android_log_print(ANDROID_LOG_ERROR, "HeliumSigSys",
+                        "blocked syscall=%d errno=%d pid=%d", info->si_syscall,
+                        info->si_errno, static_cast<int>(getpid()));
+  }
+  signal(SIGSYS, SIG_DFL);
+  raise(SIGSYS);
+}
+
+void HeliumInstallSigSysLogger() {
+  struct sigaction action = {};
+  action.sa_sigaction = &HeliumSigSysLogger;
+  action.sa_flags = SA_SIGINFO;
+  sigaction(SIGSYS, &action, nullptr);
+}
+
+'''
+
+
+def patch_sigsys_logger(src_dir: str) -> None:
+    # 渲染进程在车机上被 SIGSYS 静默杀掉（zygote 日志只写 "exited due to signal (31)"），
+    # 没有任何堆栈。这里装一个只记录 si_syscall 的处理器，再按默认动作退出，
+    # 行为不变，但日志里能直接看到被拦下的系统调用号。
+    main_file = os.path.join(src_dir, "content/app/android/content_main_android.cc")
+    if os.path.isfile(main_file):
+        with open(main_file, "r", encoding="utf-8") as f:
+            content = f.read()
+        if "HeliumSigSysLogger" not in content:
+            new_content = content
+            new_content = new_content.replace(
+                "#include <cpu-features.h>\n",
+                "#include <android/log.h>\n#include <cpu-features.h>\n"
+                "#include <signal.h>\n#include <unistd.h>\n",
+                1,
+            )
+            new_content = new_content.replace(
+                "ContentMainRunner* GetContentMainRunner() {",
+                SIGSYS_HELPER + "ContentMainRunner* GetContentMainRunner() {",
+                1,
+            )
+            new_content = new_content.replace(
+                "static int32_t JNI_ContentMain_Start(JNIEnv* env, bool start_minimal_browser) {\n"
+                "  return StartContentMain(start_minimal_browser);",
+                "static int32_t JNI_ContentMain_Start(JNIEnv* env, bool start_minimal_browser) {\n"
+                "  HeliumInstallSigSysLogger();\n"
+                "  return StartContentMain(start_minimal_browser);",
+                1,
+            )
+            if new_content != content:
+                with open(main_file, "w", encoding="utf-8") as f:
+                    f.write(new_content)
+                print(f"Patched SIGSYS logging into the content entry point: {main_file}")
+
+    seccomp_file = os.path.join(
+        src_dir, "sandbox/linux/seccomp-bpf-helpers/seccomp_starter_android.cc"
+    )
+    if not os.path.isfile(seccomp_file):
+        return
+    with open(seccomp_file, "r", encoding="utf-8") as f:
+        content = f.read()
+    if "HeliumSigSysAfterSandbox" in content:
+        return
+
+    new_content = content.replace(
+        "#include <signal.h>\n",
+        "#include <android/log.h>\n#include <signal.h>\n#include <unistd.h>\n",
+        1,
+    )
+    new_content = new_content.replace(
+        "namespace sandbox {\n",
+        "namespace sandbox {\n\n"
+        "namespace {\n"
+        "void HeliumSigSysAfterSandbox(int, siginfo_t* info, void*) {\n"
+        "  if (info) {\n"
+        "    __android_log_print(ANDROID_LOG_ERROR, \"HeliumSigSys\",\n"
+        "                        \"sandbox blocked syscall=%d errno=%d pid=%d\",\n"
+        "                        info->si_syscall, info->si_errno,\n"
+        "                        static_cast<int>(getpid()));\n"
+        "  }\n"
+        "  signal(SIGSYS, SIG_DFL);\n"
+        "  raise(SIGSYS);\n"
+        "}\n"
+        "}  // namespace\n",
+        1,
+    )
+    new_content = new_content.replace(
+        "  sandbox.StartSandbox(SandboxBPF::SeccompLevel::MULTI_THREADED));\n",
+        "  sandbox.StartSandbox(SandboxBPF::SeccompLevel::MULTI_THREADED));\n"
+        "  struct sigaction helium_action = {};\n"
+        "  helium_action.sa_sigaction = &HeliumSigSysAfterSandbox;\n"
+        "  helium_action.sa_flags = SA_SIGINFO;\n"
+        "  sigaction(SIGSYS, &helium_action, nullptr);\n",
+        1,
+    )
+    if new_content != content:
+        with open(seccomp_file, "w", encoding="utf-8") as f:
+            f.write(new_content)
+        print(f"Patched SIGSYS logging after the renderer sandbox starts: {seccomp_file}")
+
+
 def main() -> None:
     src_dir = sys.argv[1] if len(sys.argv) > 1 else "."
 
@@ -2870,8 +3053,10 @@ def main() -> None:
     patch_zlib_fcntl_cloexec_compat(src_dir)
     patch_kill_child_uncaught_exception_compat(src_dir)
     patch_android_dns_fallback(src_dir)
+    patch_android_dns_fallback_paths(src_dir)
     patch_zip_installer_diagnostics(src_dir)
     patch_zip_installer_in_process(src_dir)
+    patch_sigsys_logger(src_dir)
 
     print("SDK version patch (minSdk: 28) & car-compat checks complete.")
 
