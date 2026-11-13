@@ -141,6 +141,64 @@ class StartupLogcatPatchTest(unittest.TestCase):
         self.assertIn("catch (Throwable ignored)", block)
         self.assertIn("Applied diagnostic switches from", block)
 
+    def test_child_process_service_reports_how_far_startup_reached(self):
+        service = (
+            self.root
+            / "base/android/java/src/org/chromium/base/process_launcher/ChildProcessService.java"
+        )
+        service.parent.mkdir(parents=True)
+        service.write_text(
+            """class ChildProcessService {
+    public void setupConnection(
+            IChildProcessArgs args, IParentProcess parentProcess, List<IBinder> callbacks)
+            throws RemoteException {
+        assert mServiceBound;
+        synchronized (mBinderLock) {
+            return;
+        }
+    }
+
+    private void mainThreadMain() {
+        try {
+            assert mServiceBound;
+            CommandLine.init(mChildProcessArgs.commandLine);
+            EarlyTraceEvent.onCommandLineAvailableInChildProcess();
+            mDelegate.loadNativeLibrary(getApplicationContext());
+            mDelegate.onBeforeMain();
+        } catch (Throwable e) {
+            try {
+                mParentProcess.reportExceptionInInit("");
+            } catch (RemoteException re) {
+                Log.e(TAG, "Failed to call reportExceptionInInit.", re);
+            }
+        }
+        mDelegate.runMain();
+    }
+}
+"""
+        )
+
+        self.assertTrue(PATCH.patch_source_tree(self.root))
+        patched = service.read_text()
+        for step in (
+            "Helium trace: setupConnection",
+            "Helium trace: main thread has args",
+            "Helium trace: loading native library",
+            "Helium trace: native library loaded",
+            "Helium trace: child process ready",
+            "Helium trace: entering child main",
+            'Log.e(TAG, "Helium trace: child process init failed", e);',
+        ):
+            self.assertIn(step, patched)
+        self.assertLess(
+            patched.index("Helium trace: setupConnection"),
+            patched.index("Helium trace: main thread has args"),
+        )
+
+        # Re-running must not stack duplicate trace statements.
+        PATCH.patch_source_tree(self.root)
+        self.assertEqual(patched, service.read_text())
+
     def test_native_crash_capture_filters_to_helium_tombstones(self):
         PATCH.patch_source_tree(self.root)
         result = self.hook_path.read_text()

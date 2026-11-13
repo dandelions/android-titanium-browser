@@ -327,6 +327,100 @@ def patch_hook(path: Path) -> bool:
     return True
 
 
+CHILD_SERVICE = "base/android/java/src/org/chromium/base/process_launcher/ChildProcessService.java"
+
+def _insert_after_line(lines, anchor, statement, after_marker=None):
+    """Insert |statement| after the first |anchor| line at or following |after_marker|."""
+    start = 0
+    if after_marker is not None:
+        for index, line in enumerate(lines):
+            if line.strip() == after_marker:
+                start = index
+                break
+    for index in range(start, len(lines)):
+        if lines[index].strip() == anchor:
+            indent = lines[index][: len(lines[index]) - len(lines[index].lstrip())]
+            lines.insert(index + 1, indent + statement + "\n")
+            return True
+    return False
+
+
+def _insert_before_line(lines, anchor, statement, after_marker=None):
+    """Insert |statement| before the first |anchor| line at or following |after_marker|."""
+    start = 0
+    if after_marker is not None:
+        for index, line in enumerate(lines):
+            if line.strip() == after_marker:
+                start = index
+                break
+    for index in range(start, len(lines)):
+        if lines[index].strip() == anchor:
+            indent = lines[index][: len(lines[index]) - len(lines[index].lstrip())]
+            lines.insert(index, indent + statement + "\n")
+            return True
+    return False
+
+
+def patch_child_process_service_trace(source_root: Path) -> bool:
+    """Trace how far a child process gets before it dies.
+
+    Renderers and utility processes disappear on the Android 9 target without any
+    Java stack trace, so the launcher only reports TERMINATION_STATUS_LAUNCH_FAILED.
+    These log lines land in the UID-filtered capture and pin down the failing step.
+    """
+    path = source_root / CHILD_SERVICE
+    if not path.is_file():
+        return False
+    text = path.read_text()
+    if "Helium trace:" in text:
+        return False
+    lines = text.splitlines(keepends=True)
+
+    _insert_after_line(
+        lines,
+        "assert mServiceBound;",
+        'Log.i(TAG, "Helium trace: setupConnection pid=%d", Process.myPid());',
+        after_marker="public void setupConnection(",
+    )
+    _insert_before_line(
+        lines,
+        "CommandLine.init(mChildProcessArgs.commandLine);",
+        'Log.i(TAG, "Helium trace: main thread has args pid=%d", Process.myPid());',
+    )
+    _insert_before_line(
+        lines,
+        "mDelegate.loadNativeLibrary(getApplicationContext());",
+        'Log.i(TAG, "Helium trace: loading native library pid=%d", Process.myPid());',
+    )
+    _insert_after_line(
+        lines,
+        "mDelegate.loadNativeLibrary(getApplicationContext());",
+        'Log.i(TAG, "Helium trace: native library loaded pid=%d", Process.myPid());',
+    )
+    _insert_before_line(
+        lines,
+        "mDelegate.onBeforeMain();",
+        'Log.i(TAG, "Helium trace: child process ready pid=%d", Process.myPid());',
+    )
+    _insert_after_line(
+        lines,
+        "} catch (Throwable e) {",
+        'Log.e(TAG, "Helium trace: child process init failed", e);',
+        after_marker="mDelegate.onBeforeMain();",
+    )
+    _insert_before_line(
+        lines,
+        "mDelegate.runMain();",
+        'Log.i(TAG, "Helium trace: entering child main pid=%d", Process.myPid());',
+    )
+
+    patched = "".join(lines)
+    if patched == text or "Helium trace:" not in patched:
+        return False
+    path.write_text(patched)
+    return True
+
+
 def patch_source_tree(source_root: Path) -> bool:
     candidates = (
         source_root / "helium/chromium_src/chrome/android/java/src/org/chromium/chrome/browser/ChromeApplicationImplHooks.java",
@@ -337,7 +431,10 @@ def patch_source_tree(source_root: Path) -> bool:
         raise RuntimeError(
             "ChromeApplicationImplHooks.java not found under helium/chromium_src or vanadium/chromium_src"
         )
-    return patch_hook(hook_path)
+    changed = patch_hook(hook_path)
+    if patch_child_process_service_trace(source_root):
+        changed = True
+    return changed
 
 
 def strip_legacy_car_logger(source_root: Path) -> bool:
