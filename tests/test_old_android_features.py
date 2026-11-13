@@ -426,6 +426,35 @@ public class OsAdditionalSecurityProvider {
             patch_motion_event_input_compat(str(tmppath))
             self.assertEqual(patched, forwarder_file.read_text(encoding="utf-8"))
 
+    def test_clean_manifest_disables_isolated_process(self):
+        import tempfile
+        from patch_android_min_sdk import clean_manifest_zygote_and_modern_attributes
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            manifest_file = pathlib.Path(tmpdir) / "chrome/android/java/AndroidManifest.xml"
+            manifest_file.parent.mkdir(parents=True, exist_ok=True)
+            manifest_file.write_text(
+                """<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <service android:name="org.chromium.content.app.SandboxedProcessService0"
+            android:isolatedProcess="true"
+            android:useAppZygote="true" />
+    </application>
+</manifest>
+""",
+                encoding="utf-8",
+            )
+
+            clean_manifest_zygote_and_modern_attributes(tmpdir)
+            patched = manifest_file.read_text(encoding="utf-8")
+            self.assertIn('android:isolatedProcess="false"', patched)
+            self.assertNotIn('android:isolatedProcess="true"', patched)
+            self.assertIn('android:useAppZygote="false"', patched)
+
+            # Idempotent
+            clean_manifest_zygote_and_modern_attributes(tmpdir)
+            self.assertEqual(patched, manifest_file.read_text(encoding="utf-8"))
+
 
 if __name__ == "__main__":
     unittest.main()

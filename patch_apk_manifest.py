@@ -28,6 +28,7 @@ RES_GLES_VERSION = 0x01010281
 RES_EXTRACT_NATIVE_LIBS = 0x010104EA
 RES_ISOLATED_SPLITS = (0x01010543, 0x0101054B)
 RES_MEMTAG_MODE = 0x01010624
+RES_ISOLATED_PROCESS = 0x010103A9
 
 
 def extract_resource_ids(data: bytearray):
@@ -68,6 +69,7 @@ def patch_axml_bytes(data: bytearray, min_sdk=28, target_sdk=34, compile_sdk=34,
     extract_native_libs_idx = res_to_idx.get(RES_EXTRACT_NATIVE_LIBS, -1)
     isolated_splits_indices = {res_to_idx[r] for r in RES_ISOLATED_SPLITS if r in res_to_idx}
     memtag_idx = res_to_idx.get(RES_MEMTAG_MODE, -1)
+    isolated_process_idx = res_to_idx.get(RES_ISOLATED_PROCESS, -1)
 
     # 1. Attribute-level scan:
     # Each attribute is 20 bytes:
@@ -108,6 +110,13 @@ def patch_axml_bytes(data: bytearray, min_sdk=28, target_sdk=34, compile_sdk=34,
                     struct.pack_into("<I", data, i, 0)
                     modified = True
                     print(f"[patch_apk_manifest] Disabled memtagMode (0x{val:x} -> 0) at offset 0x{i:x}")
+
+            # E. Disable isolatedProcess -> set value to 0 (false) to prevent car head-unit isolated UID crashes
+            if isolated_process_idx != -1 and name_idx == isolated_process_idx:
+                if val != 0:
+                    struct.pack_into("<I", data, i, 0)
+                    modified = True
+                    print(f"[patch_apk_manifest] Disabled isolatedProcess (0x{val:x} -> 0) at offset 0x{i:x}")
 
             # E. TargetSdkVersion / MinSdkVersion / CompileSdkVersion
             if data_type in (0x10, 0x11):  # TYPE_INT_DEC or TYPE_INT_HEX

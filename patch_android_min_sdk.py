@@ -261,6 +261,8 @@ def clean_manifest_zygote_and_modern_attributes(src_dir: str) -> None:
         new_content = re.sub(r'[ \t]*android:enableOnBackInvokedCallback="[^"]*"', '', new_content)
         # 5. 移除 isolatedSplits，确保车机单体应用无需复杂 split 隔离
         new_content = re.sub(r'[ \t]*android:isolatedSplits="true"', '', new_content)
+        # 6. 将 isolatedProcess 调整为 false，避免车机系统/SELinux 拒绝 isolated UID 跨进程 memfd 与 IPC
+        new_content = re.sub(r'android:isolatedProcess="true"', 'android:isolatedProcess="false"', new_content)
 
         if new_content != content:
             with open(manifest_path, "w", encoding="utf-8") as f:
