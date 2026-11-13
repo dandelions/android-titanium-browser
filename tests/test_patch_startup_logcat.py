@@ -194,6 +194,10 @@ class StartupLogcatPatchTest(unittest.TestCase):
             patched.index("Helium trace: setupConnection"),
             patched.index("Helium trace: main thread has args"),
         )
+        # The failure log belongs to the catch body, not to the brace line.
+        self.assertIn(
+            '\n            Log.e(TAG, "Helium trace: child process init failed", e);', patched
+        )
 
         # Re-running must not stack duplicate trace statements.
         PATCH.patch_source_tree(self.root)

@@ -339,7 +339,11 @@ def _insert_after_line(lines, anchor, statement, after_marker=None):
                 break
     for index in range(start, len(lines)):
         if lines[index].strip() == anchor:
-            indent = lines[index][: len(lines[index]) - len(lines[index].lstrip())]
+            source = lines[index]
+            if source.rstrip().endswith("{") and index + 1 < len(lines):
+                # Statements inside a block follow the body indentation, not the brace.
+                source = lines[index + 1]
+            indent = source[: len(source) - len(source.lstrip())]
             lines.insert(index + 1, indent + statement + "\n")
             return True
     return False
