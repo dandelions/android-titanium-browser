@@ -98,6 +98,20 @@ class NewTabOverridePatchTest(unittest.TestCase):
         self.assertEqual(overrides_once, self.overrides_path.read_text())
         self.assertEqual(resolver_once, self.resolver_path.read_text())
 
+    def test_upgrades_a_tree_patched_by_the_first_revision(self):
+        PATCH.patch_source_tree(self.root)
+        broken = self.overrides_path.read_text()
+        broken = broken.replace(
+            "const std::string override_host(url.host());\n", ""
+        ).replace("find(override_host)", "find(url.host())")
+        self.overrides_path.write_text(broken)
+
+        self.assertTrue(PATCH.patch_source_tree(self.root))
+        result = self.overrides_path.read_text()
+        self.assertIn("const std::string override_host(url.host());", result)
+        self.assertIn("find(override_host)", result)
+        self.assertNotIn("find(url.host())", result)
+
     def test_missing_files_are_ignored(self):
         self.overrides_path.unlink()
         self.resolver_path.unlink()

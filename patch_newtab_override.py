@@ -42,12 +42,13 @@ PATCHED_LOOKUP = """  extensions::ExtensionRegistry* registry =
     // The pref list is only filled when an extension loads after the
     // registrar exists. On Android the registrar can be created after the
     // extensions load, so read the overrides from the enabled set instead.
+    const std::string override_host(url.host());
     std::vector<GURL> fallback;
     if (!profile->IsOffTheRecord()) {
       for (const auto& extension : extensions) {
         const URLOverrides::URLOverrideMap& extension_overrides =
             URLOverrides::GetChromeURLOverrides(extension.get());
-        auto override_iter = extension_overrides.find(url.host());
+        auto override_iter = extension_overrides.find(override_host);
         if (override_iter == extension_overrides.end() ||
             !override_iter->second.is_valid()) {
           continue;
@@ -87,6 +88,36 @@ PATCHED_NTP_URL = """    public String getNtpUrl() {
 """
 
 
+BROKEN_LOOKUP = """        auto override_iter = extension_overrides.find(url.host());
+"""
+
+BROKEN_FALLBACK_HEAD = """    std::vector<GURL> fallback;
+    if (!profile->IsOffTheRecord()) {
+"""
+
+FIXED_LOOKUP = """        auto override_iter = extension_overrides.find(override_host);
+"""
+
+FIXED_FALLBACK_HEAD = """    const std::string override_host(url.host());
+    std::vector<GURL> fallback;
+    if (!profile->IsOffTheRecord()) {
+"""
+
+
+def upgrade_previous_revision(path):
+    """Rewrite a tree patched by the first revision of this script."""
+    content = _read(path)
+    if BROKEN_LOOKUP not in content:
+        return False
+    new_content = content.replace(BROKEN_LOOKUP, FIXED_LOOKUP, 1)
+    new_content = new_content.replace(BROKEN_FALLBACK_HEAD, FIXED_FALLBACK_HEAD, 1)
+    if new_content == content:
+        return False
+    _write(path, new_content)
+    print(f"Upgraded new tab override fallback: {path}")
+    return True
+
+
 def _read(path):
     with open(path, "r", encoding="utf-8") as handle:
         return handle.read()
@@ -103,7 +134,7 @@ def patch_override_fallback(src_dir):
         return False
     content = _read(path)
     if "HeliumNtp: pref list missing" in content:
-        return False
+        return upgrade_previous_revision(path)
     if ORIGINAL_LOOKUP not in content:
         print(
             "Warning: could not find the chrome URL override lookup in "
