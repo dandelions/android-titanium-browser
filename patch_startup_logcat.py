@@ -103,6 +103,21 @@ BODY = '''public static void postAttachBaseContext() {
                         }
                     });
 
+            // Every renderer, GPU and utility process runs this hook too. Only the
+            // browser process may own the shared log files: the extra logcat readers
+            // flooded logd with "unexpected EOF", and each child truncated
+            // native-crash.txt while the browser was still appending to it.
+            String processName = android.app.Application.getProcessName();
+            if (processName != null
+                    && !processName.equals(
+                            org.chromium.base.ContextUtils.getApplicationContext()
+                                    .getPackageName())) {
+                return;
+            }
+
+            // A previous run's EOF notices are stale once the readers are back to one.
+            new java.io.FileOutputStream(errorLog, false).close();
+
             // Android kills a crashed app's process group, which used to take the
             // logcat children down before they could flush the tombstone. setsid
             // moves them into their own session so they outlive the app.

@@ -89,6 +89,24 @@ class StartupLogcatPatchTest(unittest.TestCase):
             )
         self.assertIn('+ "\\n");', result)
 
+    def test_only_the_browser_process_runs_the_logcat_readers(self):
+        # Renderer, GPU and utility processes run this hook too. Their extra logcat
+        # readers flooded logd with "unexpected EOF", and each child truncated
+        # native-crash.txt while the browser was still appending to it.
+        PATCH.patch_source_tree(self.root)
+        result = self.hook_path.read_text()
+        gate = result.index("String processName = android.app.Application.getProcessName();")
+        self.assertIn(
+            "org.chromium.base.ContextUtils.getApplicationContext()", result[gate:]
+        )
+        self.assertIn("return;", result[gate : gate + 400])
+        self.assertLess(result.index("setDefaultUncaughtExceptionHandler"), gate)
+        self.assertLess(gate, result.index("StringBuilder logcatLine"))
+        self.assertLess(
+            gate, result.index("new java.io.FileOutputStream(nativeCrashFile, false).close();")
+        )
+        self.assertLess(gate, result.index('new java.io.FileOutputStream(errorLog, false)'))
+
     def test_native_crash_capture_filters_to_helium_tombstones(self):
         PATCH.patch_source_tree(self.root)
         result = self.hook_path.read_text()
