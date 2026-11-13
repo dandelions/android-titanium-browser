@@ -8,6 +8,11 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 VERIFY = ROOT / "verify_old_android_features.py"
 
+NEWTAB_FILES = {
+    "chrome/browser/extensions/extension_url_overrides.cc": "HeliumNtp: pref list missing",
+    "chrome/browser/url_constants/android/java/src/org/chromium/chrome/browser/url_constants/UrlConstantResolver.java": 'Log.i("HeliumNtp",',
+}
+
 
 class VerifyOldAndroidFeaturesTest(unittest.TestCase):
     def test_accepts_required_feature_markers(self):
@@ -24,6 +29,7 @@ class VerifyOldAndroidFeaturesTest(unittest.TestCase):
                 "}"
             ),
         }
+        files.update(NEWTAB_FILES)
         with tempfile.TemporaryDirectory() as temp:
             root = pathlib.Path(temp)
             for relative, content in files.items():
@@ -41,6 +47,7 @@ class VerifyOldAndroidFeaturesTest(unittest.TestCase):
             "chrome/browser/ui/android/toolbar/java/res/layout/toolbar_phone.xml": '<ViewStub android:id="@+id/extensions_toolbar_container_stub"/>',
             "chrome/android/java/src/org/chromium/chrome/browser/toolbar/ToolbarManager.java": "mToolbarLayout,",
         }
+        files.update(NEWTAB_FILES)
         with tempfile.TemporaryDirectory() as temp:
             root = pathlib.Path(temp)
             for relative, content in files.items():
@@ -59,6 +66,7 @@ class VerifyOldAndroidFeaturesTest(unittest.TestCase):
             "chrome/browser/ui/android/toolbar/java/res/layout/toolbar_phone.xml": "<LinearLayout/>",
             "chrome/android/java/src/org/chromium/chrome/browser/toolbar/ToolbarManager.java": "mToolbarLayout,",
         }
+        files.update(NEWTAB_FILES)
         with tempfile.TemporaryDirectory() as temp:
             root = pathlib.Path(temp)
             for relative, content in files.items():
@@ -77,6 +85,7 @@ class VerifyOldAndroidFeaturesTest(unittest.TestCase):
             "chrome/browser/ui/android/toolbar/java/res/layout/toolbar_phone.xml": '<ViewStub android:id="@+id/extensions_toolbar_container_stub"/>',
             "chrome/android/java/src/org/chromium/chrome/browser/toolbar/ToolbarManager.java": "ExtensionsToolbarCoordinator.maybeCreate((ToolbarTablet) mToolbarLayout,",
         }
+        files.update(NEWTAB_FILES)
         with tempfile.TemporaryDirectory() as temp:
             root = pathlib.Path(temp)
             for relative, content in files.items():
@@ -102,6 +111,7 @@ class VerifyOldAndroidFeaturesTest(unittest.TestCase):
                 "}"
             ),
         }
+        files.update(NEWTAB_FILES)
         with tempfile.TemporaryDirectory() as temp:
             root = pathlib.Path(temp)
             for relative, content in files.items():
@@ -127,6 +137,27 @@ class VerifyOldAndroidFeaturesTest(unittest.TestCase):
                 "}"
             ),
         }
+        files.update(NEWTAB_FILES)
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            for relative, content in files.items():
+                path = root / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(content)
+            result = subprocess.run([sys.executable, str(VERIFY), str(root)])
+            self.assertNotEqual(result.returncode, 0)
+
+    def test_rejects_missing_newtab_override_fallback(self):
+        files = {
+            "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsToolbarCoordinatorImpl.java": "return !mIsWebApp;",
+            "chrome/android/java/src/org/chromium/chrome/browser/app/appmenu/AppMenuPropertiesDelegateImpl.java": "boolean shouldShowExtensionsItem() {\n        return true;\n    }",
+            "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/ToolbarPositionController.java": "Helium: follow the toolbar preference on the NTP and while editing",
+            "chrome/android/java/src/org/chromium/chrome/browser/ntp/NewTabPageCoordinator.java": "AddressBarPreference.isToolbarConfiguredToShowOnTop()",
+            "chrome/browser/ui/android/toolbar/java/res/layout/toolbar_phone.xml": '<ViewStub android:id="@+id/extensions_toolbar_container_stub"/>',
+            "chrome/android/java/src/org/chromium/chrome/browser/toolbar/ToolbarManager.java": "mToolbarLayout,",
+        }
+        files.update(NEWTAB_FILES)
+        files["chrome/browser/extensions/extension_url_overrides.cc"] = "no fallback"
         with tempfile.TemporaryDirectory() as temp:
             root = pathlib.Path(temp)
             for relative, content in files.items():

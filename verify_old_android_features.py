@@ -31,6 +31,11 @@ DEVICE_FORM_FACTOR = Path(
 EVENT_FORWARDER = Path(
     "ui/android/java/src/org/chromium/ui/base/EventForwarder.java"
 )
+NEWTAB_OVERRIDES = Path("chrome/browser/extensions/extension_url_overrides.cc")
+NTP_URL_RESOLVER = Path(
+    "chrome/browser/url_constants/android/java/src/org/chromium/chrome/browser/"
+    "url_constants/UrlConstantResolver.java"
+)
 
 
 def read(root, relative):
@@ -112,5 +117,23 @@ def verify(root):
     print("Verified old-android extension management and bottom address bar patches")
 
 
+def verify_newtab_override(root):
+    overrides_path, overrides = read(root, NEWTAB_OVERRIDES)
+    if "HeliumNtp: pref list missing" not in overrides:
+        raise SystemExit(
+            f"extension new tab override fallback patch is missing: {overrides_path}"
+        )
+
+    resolver_path, resolver = read(root, NTP_URL_RESOLVER)
+    if '"HeliumNtp"' not in resolver:
+        raise SystemExit(
+            f"new tab URL resolver logging patch is missing: {resolver_path}"
+        )
+
+    print("Verified old-android extension new tab page override patches")
+
+
 if __name__ == "__main__":
-    verify(Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve())
+    root = Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
+    verify(root)
+    verify_newtab_override(root)

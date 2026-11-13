@@ -207,6 +207,8 @@ storePassword=your-store-password
 
 排查子进程问题时，`application-logcat.txt` 中会出现 `Helium trace:` 前缀的跟踪行，依次为 `setupConnection`、`main thread has args`、`loading native library`、`native library loaded`、`child process ready`、`entering child main`。最后出现的那一行就是子进程卡住或退出前到达的位置；若子进程抛出 Java 异常，会额外记录 `Helium trace: child process init failed` 或 `Uncaught exception in child process` 及其堆栈。
 
+排查扩展接管主页失效时，日志中会出现 `HeliumNtp` 标签的行。`resolver ntp=<URL> overrideEnabled=<true|false>` 来自 Java 侧的 `UrlConstantResolver`，表示新建标签页/主页按钮解析出的 URL 以及扩展覆盖开关是否打开；`HeliumNtp: pref list missing, enabled overrides=<数量>` 或 `HeliumNtp: pref list entries=<数量>` 来自 C++ 侧，表示 `extensions.chrome_url_overrides` 首选项是否已经写入。扩展已启用但仍显示原生主页时，`pref list missing` 说明覆盖列表没有写入首选项，此时会直接按已启用扩展的清单回退读取覆盖地址。
+
 排查子进程或渲染进程问题时，可以在 `Android/data/<包名>/files/helium-switches.txt` 或 `Download/helium-switches.txt` 中按行写入 Chromium 命令行开关（每行一个，可带 `--` 前缀，`#` 开头为注释），浏览器进程启动时会追加到命令行，子进程继承同一套开关。两个位置都会被读取，`Download` 下的文件便于在 `Android/data` 不可见时使用。文件只在浏览器进程读取，删除或清空后重启即恢复默认行为；读取失败不会阻塞启动。生效的开关会以 `Applied diagnostic switches from <路径>: [...]` 写入 logcat。常用开关包括 `disable-seccomp-filter-sandbox`、`no-sandbox`、`single-process`。
 
 设备有 root 权限时，可在复现前用电脑运行以下命令，单独保存完整设备日志。命令使用 UTC 起始时间过滤旧日志；运行期间复现扩展管理或网址打不开的问题，复现完成后按 `Ctrl+C` 停止采集：
