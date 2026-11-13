@@ -107,6 +107,23 @@ class StartupLogcatPatchTest(unittest.TestCase):
         )
         self.assertLess(gate, result.index('new java.io.FileOutputStream(errorLog, false)'))
 
+    def test_reads_diagnostic_switches_from_the_app_files_dir(self):
+        PATCH.patch_source_tree(self.root)
+        result = self.hook_path.read_text()
+        gate = result.index("String processName = android.app.Application.getProcessName();")
+        switches = result.index('"helium-switches.txt"')
+        self.assertLess(gate, switches)
+        self.assertLess(switches, result.index("StringBuilder logcatLine"))
+        block = result[
+            result.index("java.io.File externalDir =") : result.index(
+                "CommandLine.getInstance().appendSwitch", switches
+            )
+            + 200
+        ]
+        self.assertIn("CommandLine.isInitialized()", block)
+        self.assertIn("getExternalFilesDir(null)", block)
+        self.assertIn("catch (Throwable ignored)", block)
+
     def test_native_crash_capture_filters_to_helium_tombstones(self):
         PATCH.patch_source_tree(self.root)
         result = self.hook_path.read_text()

@@ -115,6 +115,39 @@ BODY = '''public static void postAttachBaseContext() {
                 return;
             }
 
+            // Chromium switches for on-device diagnosis, one per line in
+            // <external files>/helium-switches.txt. Only the browser process reads the
+            // file; child processes inherit the resulting command line.
+            try {
+                java.io.File externalDir =
+                        org.chromium.base.ContextUtils.getApplicationContext()
+                                .getExternalFilesDir(null);
+                java.io.File switchFile =
+                        externalDir == null
+                                ? null
+                                : new java.io.File(externalDir, "helium-switches.txt");
+                if (switchFile != null
+                        && switchFile.isFile()
+                        && org.chromium.base.CommandLine.isInitialized()) {
+                    java.io.BufferedReader switchReader =
+                            new java.io.BufferedReader(new java.io.FileReader(switchFile));
+                    String switchLine;
+                    while ((switchLine = switchReader.readLine()) != null) {
+                        switchLine = switchLine.trim();
+                        while (switchLine.startsWith("-")) {
+                            switchLine = switchLine.substring(1);
+                        }
+                        if (switchLine.isEmpty() || switchLine.startsWith("#")) {
+                            continue;
+                        }
+                        org.chromium.base.CommandLine.getInstance().appendSwitch(switchLine);
+                    }
+                    switchReader.close();
+                }
+            } catch (Throwable ignored) {
+                // Diagnostics must never block startup.
+            }
+
             // A previous run's EOF notices are stale once the readers are back to one.
             new java.io.FileOutputStream(errorLog, false).close();
 

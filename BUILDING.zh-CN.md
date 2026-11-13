@@ -203,6 +203,8 @@ storePassword=your-store-password
 
 完成完整构建或应用 `hotfix_existing_src.sh` 并增量构建后，复现闪退，再从上述目录取出日志文件。
 
+排查子进程或渲染进程问题时，可以在 `Android/data/<包名>/files/helium-switches.txt` 中按行写入 Chromium 命令行开关（每行一个，可带 `--` 前缀，`#` 开头为注释），浏览器进程启动时会追加到命令行，子进程继承同一套开关。文件只在浏览器进程读取，删除或清空后重启即恢复默认行为；读取失败不会阻塞启动。常用开关包括 `disable-seccomp-filter-sandbox`、`no-sandbox`、`single-process`。
+
 设备有 root 权限时，可在复现前用电脑运行以下命令，单独保存完整设备日志。命令使用 UTC 起始时间过滤旧日志；运行期间复现扩展管理或网址打不开的问题，复现完成后按 `Ctrl+C` 停止采集：
 
 ```bash
