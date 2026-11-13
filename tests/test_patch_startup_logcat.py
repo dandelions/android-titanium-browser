@@ -140,6 +140,7 @@ class StartupLogcatPatchTest(unittest.TestCase):
         self.assertIn("getExternalFilesDir(null)", block)
         self.assertIn("catch (Throwable ignored)", block)
         self.assertIn("Applied diagnostic switches from", block)
+        self.assertIn('"Download/helium-switches.txt"', result)
 
     def test_child_process_service_reports_how_far_startup_reached(self):
         service = (

@@ -203,7 +203,11 @@ storePassword=your-store-password
 
 完成完整构建或应用 `hotfix_existing_src.sh` 并增量构建后，复现闪退，再从上述目录取出日志文件。
 
-排查子进程或渲染进程问题时，可以在 `Android/data/<包名>/files/helium-switches.txt` 中按行写入 Chromium 命令行开关（每行一个，可带 `--` 前缀，`#` 开头为注释），浏览器进程启动时会追加到命令行，子进程继承同一套开关。文件只在浏览器进程读取，删除或清空后重启即恢复默认行为；读取失败不会阻塞启动。常用开关包括 `disable-seccomp-filter-sandbox`、`no-sandbox`、`single-process`。
+日志目录按顺序探测，第一个真正可写的目录生效：`Android/data/<包名>/files/logs`、`Android/data/<包名>/files/helium-logs`、`Download/HeliumLogs`、应用内部私有目录 `helium-logs`。每次探测都会真实写入一个临时文件，因此不会出现"目录存在但写不进去、日志全部丢失"的情况。选中的目录会以 `Helium logs at <路径>` 写入 logcat，标签为 `ChromeApplicationImplHooks`；如果所有候选目录都不可写，会打印 `No writable Helium log directory, tried: ...`。车机把 `Android/data` 对文件管理器隐藏时，日志会出现在文件管理器可见的 `Download/HeliumLogs`。
+
+排查子进程问题时，`application-logcat.txt` 中会出现 `Helium trace:` 前缀的跟踪行，依次为 `setupConnection`、`main thread has args`、`loading native library`、`native library loaded`、`child process ready`、`entering child main`。最后出现的那一行就是子进程卡住或退出前到达的位置；若子进程抛出 Java 异常，会额外记录 `Helium trace: child process init failed` 或 `Uncaught exception in child process` 及其堆栈。
+
+排查子进程或渲染进程问题时，可以在 `Android/data/<包名>/files/helium-switches.txt` 或 `Download/helium-switches.txt` 中按行写入 Chromium 命令行开关（每行一个，可带 `--` 前缀，`#` 开头为注释），浏览器进程启动时会追加到命令行，子进程继承同一套开关。两个位置都会被读取，`Download` 下的文件便于在 `Android/data` 不可见时使用。文件只在浏览器进程读取，删除或清空后重启即恢复默认行为；读取失败不会阻塞启动。生效的开关会以 `Applied diagnostic switches from <路径>: [...]` 写入 logcat。常用开关包括 `disable-seccomp-filter-sandbox`、`no-sandbox`、`single-process`。
 
 设备有 root 权限时，可在复现前用电脑运行以下命令，单独保存完整设备日志。命令使用 UTC 起始时间过滤旧日志；运行期间复现扩展管理或网址打不开的问题，复现完成后按 `Ctrl+C` 停止采集：
 

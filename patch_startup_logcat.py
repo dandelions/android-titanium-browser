@@ -160,43 +160,52 @@ BODY = '''public static void postAttachBaseContext() {
                 return;
             }
 
-            // Chromium switches for on-device diagnosis, one per line in
-            // <external files>/helium-switches.txt. Only the browser process reads the
-            // file; child processes inherit the resulting command line.
+            // Chromium switches for on-device diagnosis, one per line. Two locations
+            // are read because a head unit may hide Android/data from the user:
+            // <external files>/helium-switches.txt and Download/helium-switches.txt.
+            // Only the browser process reads them; children inherit the command line.
             try {
                 java.io.File externalDir =
                         org.chromium.base.ContextUtils.getApplicationContext()
                                 .getExternalFilesDir(null);
-                java.io.File switchFile =
-                        externalDir == null
-                                ? null
-                                : new java.io.File(externalDir, "helium-switches.txt");
-                if (switchFile != null
-                        && switchFile.isFile()
-                        && org.chromium.base.CommandLine.isInitialized()) {
-                    java.io.BufferedReader switchReader =
-                            new java.io.BufferedReader(new java.io.FileReader(switchFile));
-                    String switchLine;
-                    java.util.List<String> loadedSwitches = new java.util.ArrayList<String>();
-                    while ((switchLine = switchReader.readLine()) != null) {
-                        switchLine = switchLine.trim();
-                        while (switchLine.startsWith("-")) {
-                            switchLine = switchLine.substring(1);
-                        }
-                        if (switchLine.isEmpty() || switchLine.startsWith("#")) {
+                java.util.List<java.io.File> switchFiles = new java.util.ArrayList<java.io.File>();
+                if (externalDir != null) {
+                    switchFiles.add(new java.io.File(externalDir, "helium-switches.txt"));
+                }
+                switchFiles.add(
+                        new java.io.File(
+                                android.os.Environment.getExternalStorageDirectory(),
+                                "Download/helium-switches.txt"));
+                if (org.chromium.base.CommandLine.isInitialized()) {
+                    for (java.io.File switchFile : switchFiles) {
+                        if (switchFile == null || !switchFile.isFile()) {
                             continue;
                         }
-                        org.chromium.base.CommandLine.getInstance().appendSwitch(switchLine);
-                        loadedSwitches.add(switchLine);
-                    }
-                    switchReader.close();
-                    if (!loadedSwitches.isEmpty()) {
-                        android.util.Log.i(
-                                TAG,
-                                "Applied diagnostic switches from "
-                                        + switchFile.getName()
-                                        + ": "
-                                        + loadedSwitches);
+                        java.io.BufferedReader switchReader =
+                                new java.io.BufferedReader(new java.io.FileReader(switchFile));
+                        String switchLine;
+                        java.util.List<String> loadedSwitches =
+                                new java.util.ArrayList<String>();
+                        while ((switchLine = switchReader.readLine()) != null) {
+                            switchLine = switchLine.trim();
+                            while (switchLine.startsWith("-")) {
+                                switchLine = switchLine.substring(1);
+                            }
+                            if (switchLine.isEmpty() || switchLine.startsWith("#")) {
+                                continue;
+                            }
+                            org.chromium.base.CommandLine.getInstance().appendSwitch(switchLine);
+                            loadedSwitches.add(switchLine);
+                        }
+                        switchReader.close();
+                        if (!loadedSwitches.isEmpty()) {
+                            android.util.Log.i(
+                                    TAG,
+                                    "Applied diagnostic switches from "
+                                            + switchFile.getAbsolutePath()
+                                            + ": "
+                                            + loadedSwitches);
+                        }
                     }
                 }
             } catch (Throwable ignored) {
