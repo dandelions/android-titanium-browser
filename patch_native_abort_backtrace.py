@@ -35,6 +35,24 @@ HeliumPrevSignalAction g_helium_prev_bus;
 HeliumPrevSignalAction g_helium_prev_ill;
 HeliumPrevSignalAction g_helium_prev_fpe;
 
+// Helium: load bias of libchrome.so, so crash addresses stay symbolizable.
+// Android randomizes the load address per process, so a raw address in the
+// log cannot be mapped to a symbol without it.
+uintptr_t g_helium_libchrome_base = 0;
+
+// Helium: log an address together with its offset inside libchrome.so.
+void HeliumLogFrameAddress(const char* label, int index, uintptr_t address) {
+  const uintptr_t offset = address - g_helium_libchrome_base;
+  if (g_helium_libchrome_base != 0 && offset < 0x20000000) {
+    __android_log_print(ANDROID_LOG_FATAL, "HeliumNativeCrash", "%s%d %#lx+%#lx",
+                        label, index, static_cast<unsigned long>(g_helium_libchrome_base),
+                        static_cast<unsigned long>(offset));
+  } else {
+    __android_log_print(ANDROID_LOG_FATAL, "HeliumNativeCrash", "%s%d %#lx",
+                        label, index, static_cast<unsigned long>(address));
+  }
+}
+
 // Helium: walk the frame-pointer chain recorded in the signal context.
 // base::debug::StackTrace() starts unwinding from the handler itself, so it
 // reports the handler and the signal trampoline instead of the interrupted
@@ -60,6 +78,8 @@ void HeliumLogInterruptedStack(void* context) {
                       static_cast<unsigned long>(link_register),
                       static_cast<unsigned long>(stack_pointer),
                       static_cast<unsigned long>(frame));
+  HeliumLogFrameAddress("pc", 0, interrupted->uc_mcontext.pc);
+  HeliumLogFrameAddress("lr", 0, link_register);
   for (int depth = 0; depth < 32; ++depth) {
     // A frame outside the interrupted stack cannot be read without faulting.
     if ((frame & 0x7) != 0 || frame < stack_pointer ||
@@ -75,8 +95,7 @@ void HeliumLogInterruptedStack(void* context) {
     if (return_address < 0x1000) {
       break;
     }
-    __android_log_print(ANDROID_LOG_FATAL, "HeliumNativeCrash", "#%02d %#lx",
-                        depth, static_cast<unsigned long>(return_address));
+    HeliumLogFrameAddress("#", depth, return_address);
     if (next_frame <= frame) {
       break;
     }
@@ -129,6 +148,16 @@ void HeliumInstallOneFatalSignalLogger(int sig,
 }
 
 void HeliumInstallFatalSignalLogger() {
+  // Resolve the load bias here rather than in the handler: dladdr takes the
+  // linker lock, which is not safe to acquire from a signal handler.
+  Dl_info module = {};
+  if (dladdr(reinterpret_cast<void*>(&HeliumInstallFatalSignalLogger), &module) &&
+      module.dli_fbase) {
+    g_helium_libchrome_base = reinterpret_cast<uintptr_t>(module.dli_fbase);
+    __android_log_print(ANDROID_LOG_INFO, "HeliumNativeCrash",
+                        "libchrome base %#lx",
+                        static_cast<unsigned long>(g_helium_libchrome_base));
+  }
   HeliumInstallOneFatalSignalLogger(SIGABRT, &g_helium_prev_abrt);
   HeliumInstallOneFatalSignalLogger(SIGSEGV, &g_helium_prev_segv);
   HeliumInstallOneFatalSignalLogger(SIGBUS, &g_helium_prev_bus);
@@ -149,9 +178,10 @@ OLD_CALL = "  HeliumInstallAbortLogger();\n"
 
 HELPER_START = "// Helium: dump a native stack before a fatal signal kills the process.\n"
 # Revisions before the stack walker logged the previous-action records as an
-# array, or without any way to unwind past the handler.
+# array, or without any way to unwind past the handler and map its addresses
+# back to libchrome.so.
 ARRAY_MARKER = "HeliumPrevSignalAction g_helium_prev_actions[5];"
-STACK_WALKER_MARKER = "HeliumLogInterruptedStack"
+STACK_WALKER_MARKER = "g_helium_libchrome_base"
 
 
 def _read(path):
@@ -176,6 +206,12 @@ def _ensure_includes(content):
         content = content.replace(
             "#include <signal.h>\n",
             "#include <signal.h>\n#include <stdint.h>\n#include <ucontext.h>\n",
+            1,
+        )
+    if '#include <dlfcn.h>' not in content:
+        content = content.replace(
+            "#include <android/log.h>\n",
+            "#include <android/log.h>\n#include <dlfcn.h>\n",
             1,
         )
     if '#include "base/compiler_specific.h"' not in content:
