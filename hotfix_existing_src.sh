@@ -4344,6 +4344,7 @@ if is_old_version_branch; then
 python3 "$SCRIPT_DIR/patch_renderer_mprotect.py" "$SRC_DIR"
 python3 "$SCRIPT_DIR/patch_linker_reservation_size.py" "$SRC_DIR"
 python3 "$SCRIPT_DIR/patch_linker_relro_sharing.py" "$SRC_DIR"
+python3 "$SCRIPT_DIR/patch_child_main_diagnostics.py" "$SRC_DIR"
 python3 "$SCRIPT_DIR/patch_native_abort_backtrace.py" "$SRC_DIR"
     python3 "$SCRIPT_DIR/verify_old_android_features.py" "$SRC_DIR"
 else
