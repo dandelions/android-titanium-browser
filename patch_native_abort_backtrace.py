@@ -41,14 +41,15 @@ HeliumPrevSignalAction g_helium_prev_fpe;
 uintptr_t g_helium_libchrome_base = 0;
 
 // Helium: log an address together with its offset inside libchrome.so.
-void HeliumLogFrameAddress(const char* label, int index, uintptr_t address) {
+void HeliumLogFrameAddress(char label, int index, uintptr_t address) {
   const uintptr_t offset = address - g_helium_libchrome_base;
   if (g_helium_libchrome_base != 0 && offset < 0x20000000) {
-    __android_log_print(ANDROID_LOG_FATAL, "HeliumNativeCrash", "%s%d %#lx+%#lx",
-                        label, index, static_cast<unsigned long>(g_helium_libchrome_base),
+    __android_log_print(ANDROID_LOG_FATAL, "HeliumNativeCrash",
+                        "%c%d %#lx+%#lx", label, index,
+                        static_cast<unsigned long>(g_helium_libchrome_base),
                         static_cast<unsigned long>(offset));
   } else {
-    __android_log_print(ANDROID_LOG_FATAL, "HeliumNativeCrash", "%s%d %#lx",
+    __android_log_print(ANDROID_LOG_FATAL, "HeliumNativeCrash", "%c%d %#lx",
                         label, index, static_cast<unsigned long>(address));
   }
 }
@@ -78,8 +79,8 @@ void HeliumLogInterruptedStack(void* context) {
                       static_cast<unsigned long>(link_register),
                       static_cast<unsigned long>(stack_pointer),
                       static_cast<unsigned long>(frame));
-  HeliumLogFrameAddress("pc", 0, interrupted->uc_mcontext.pc);
-  HeliumLogFrameAddress("lr", 0, link_register);
+  HeliumLogFrameAddress('P', 0, interrupted->uc_mcontext.pc);
+  HeliumLogFrameAddress('L', 0, link_register);
   for (int depth = 0; depth < 32; ++depth) {
     // A frame outside the interrupted stack cannot be read without faulting.
     if ((frame & 0x7) != 0 || frame < stack_pointer ||
@@ -95,7 +96,7 @@ void HeliumLogInterruptedStack(void* context) {
     if (return_address < 0x1000) {
       break;
     }
-    HeliumLogFrameAddress("#", depth, return_address);
+    HeliumLogFrameAddress('#', depth, return_address);
     if (next_frame <= frame) {
       break;
     }
