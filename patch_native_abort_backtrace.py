@@ -22,6 +22,7 @@ import sys
 MAIN_FILE = "content/app/android/content_main_android.cc"
 
 FATAL_HELPER = '''// Helium: dump a native stack before a fatal signal kills the process.
+// Helium stack walker revision: 3
 std::atomic<bool> g_helium_fatal_logged{false};
 
 struct HeliumPrevSignalAction {
@@ -180,9 +181,10 @@ OLD_CALL = "  HeliumInstallAbortLogger();\n"
 HELPER_START = "// Helium: dump a native stack before a fatal signal kills the process.\n"
 # Revisions before the stack walker logged the previous-action records as an
 # array, or without any way to unwind past the handler and map its addresses
-# back to libchrome.so.
+# back to libchrome.so. Bump the revision comment whenever the generated code
+# changes so an already patched tree gets rewritten.
 ARRAY_MARKER = "HeliumPrevSignalAction g_helium_prev_actions[5];"
-STACK_WALKER_MARKER = "g_helium_libchrome_base"
+STACK_WALKER_MARKER = "// Helium stack walker revision: 3"
 
 
 def _read(path):

@@ -138,6 +138,7 @@ class NativeAbortBacktracePatchTest(unittest.TestCase):
         PATCH.patch_source_tree(self.root)
         older = self.path.read_text()
         older = older.replace("    HeliumLogInterruptedStack(context);\n", "")
+        older = older.replace("// Helium stack walker revision: 3\n", "")
         walker_start = older.index("// Helium: load bias of libchrome.so")
         walker_end = older.index("void HeliumFatalSignalLogger", walker_start)
         older = older[:walker_start] + older[walker_end:]
