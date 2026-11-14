@@ -11,6 +11,8 @@ VERIFY = ROOT / "verify_old_android_features.py"
 NEWTAB_FILES = {
     "chrome/browser/extensions/extension_url_overrides.cc": "HeliumNtp: pref list missing",
     "chrome/browser/url_constants/android/java/src/org/chromium/chrome/browser/url_constants/UrlConstantResolver.java": 'Log.i("HeliumNtp",',
+    "sandbox/policy/linux/bpf_renderer_policy_linux.cc": "jitless mode is forced on",
+    "content/renderer/renderer_main_platform_delegate_android.cc": "Helium sandbox: renderer policy=",
 }
 
 

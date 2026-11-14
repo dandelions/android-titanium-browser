@@ -32,6 +32,8 @@ EVENT_FORWARDER = Path(
     "ui/android/java/src/org/chromium/ui/base/EventForwarder.java"
 )
 NEWTAB_OVERRIDES = Path("chrome/browser/extensions/extension_url_overrides.cc")
+RENDERER_POLICY = Path("sandbox/policy/linux/bpf_renderer_policy_linux.cc")
+RENDERER_DELEGATE = Path("content/renderer/renderer_main_platform_delegate_android.cc")
 NTP_URL_RESOLVER = Path(
     "chrome/browser/url_constants/android/java/src/org/chromium/chrome/browser/"
     "url_constants/UrlConstantResolver.java"
@@ -133,7 +135,24 @@ def verify_newtab_override(root):
     print("Verified old-android extension new tab page override patches")
 
 
+def verify_renderer_mprotect(root):
+    policy_path, policy = read(root, RENDERER_POLICY)
+    if "jitless mode is forced on" not in policy:
+        raise SystemExit(
+            f"renderer mprotect policy patch is missing: {policy_path}"
+        )
+
+    delegate_path, delegate = read(root, RENDERER_DELEGATE)
+    if "Helium sandbox: renderer policy=" not in delegate:
+        raise SystemExit(
+            f"renderer sandbox policy patch is missing: {delegate_path}"
+        )
+
+    print("Verified old-android renderer sandbox mprotect patches")
+
+
 if __name__ == "__main__":
     root = Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
     verify(root)
     verify_newtab_override(root)
+    verify_renderer_mprotect(root)
