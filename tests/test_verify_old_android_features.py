@@ -13,7 +13,7 @@ NEWTAB_FILES = {
     "chrome/browser/url_constants/android/java/src/org/chromium/chrome/browser/url_constants/UrlConstantResolver.java": 'Log.i("HeliumNtp",',
     "sandbox/policy/linux/bpf_renderer_policy_linux.cc": "jitless mode is forced on",
     "content/renderer/renderer_main_platform_delegate_android.cc": "Helium sandbox: renderer policy=",
-    "content/app/android/content_main_android.cc": "void HeliumAbortLogger(int sig, siginfo_t*, void*) {}\n  HeliumInstallAbortLogger();",
+    "content/app/android/content_main_android.cc": "void HeliumFatalSignalLogger(int sig, siginfo_t* info, void*) {}\n  HeliumInstallFatalSignalLogger();",
 }
 
 

@@ -52,24 +52,31 @@ class NativeAbortBacktracePatchTest(unittest.TestCase):
     def tearDown(self):
         self.temporary_directory.cleanup()
 
-    def test_installs_an_abort_handler_that_dumps_a_stack(self):
+    def test_installs_fatal_signal_handlers_that_dump_a_stack(self):
         self.assertTrue(PATCH.patch_source_tree(self.root))
         result = self.path.read_text()
-        self.assertIn("void HeliumAbortLogger(int sig, siginfo_t*, void*) {", result)
+        self.assertIn(
+            "void HeliumFatalSignalLogger(int sig, siginfo_t* info, void*) {", result
+        )
         self.assertIn("base::debug::StackTrace trace;", result)
         self.assertIn('"HeliumNativeCrash"', result)
-        self.assertIn("signal(sig, SIG_DFL);", result)
-        self.assertIn("  HeliumInstallAbortLogger();", result)
+        for signal_name in ("SIGABRT", "SIGSEGV", "SIGBUS", "SIGILL", "SIGFPE"):
+            self.assertIn(signal_name, result)
+        self.assertIn("  HeliumInstallFatalSignalLogger();", result)
+        # The previous handler must be restored before re-raising, otherwise the
+        # process would spin on the same fault.
+        self.assertIn("sigaction(sig, &previous.action, nullptr);", result)
+        self.assertIn("raise(sig);", result)
         self.assertIn('#include "base/debug/stack_trace.h"', result)
         self.assertIn("#include <atomic>", result)
         self.assertIn("#include <string>", result)
         self.assertLess(
-            result.index("void HeliumAbortLogger"),
+            result.index("void HeliumFatalSignalLogger"),
             result.index("ContentMainRunner* GetContentMainRunner()"),
         )
         self.assertLess(
             result.index("HeliumInstallSigSysLogger();"),
-            result.index("HeliumInstallAbortLogger();"),
+            result.index("HeliumInstallFatalSignalLogger();"),
         )
 
     def test_repeated_runs_are_no_ops(self):
@@ -77,6 +84,31 @@ class NativeAbortBacktracePatchTest(unittest.TestCase):
         once = self.path.read_text()
         self.assertFalse(PATCH.patch_source_tree(self.root))
         self.assertEqual(once, self.path.read_text())
+
+    def test_upgrades_the_abort_only_revision(self):
+        self.path.write_text(
+            SOURCE.replace(
+                "ContentMainRunner* GetContentMainRunner() {",
+                '// Helium: dump a native stack before an abort kills the process.\n'
+                "std::atomic<bool> g_helium_abort_logged{false};\n\n"
+                "void HeliumAbortLogger(int sig, siginfo_t*, void*) {\n"
+                "  signal(sig, SIG_DFL);\n"
+                "  raise(sig);\n"
+                "}\n\n"
+                "void HeliumInstallAbortLogger() {\n"
+                "  sigaction(SIGABRT, nullptr, nullptr);\n"
+                "}\n\n"
+                "ContentMainRunner* GetContentMainRunner() {",
+            ).replace(
+                "  HeliumInstallSigSysLogger();",
+                "  HeliumInstallSigSysLogger();\n  HeliumInstallAbortLogger();",
+            )
+        )
+        self.assertTrue(PATCH.patch_source_tree(self.root))
+        result = self.path.read_text()
+        self.assertIn("HeliumFatalSignalLogger", result)
+        self.assertNotIn("HeliumAbortLogger", result)
+        self.assertNotIn("HeliumInstallAbortLogger();", result)
 
     def test_missing_file_is_ignored(self):
         self.path.unlink()

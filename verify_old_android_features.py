@@ -154,11 +154,11 @@ def verify_renderer_mprotect(root):
 
 def verify_native_abort_backtrace(root):
     main_path, main = read(root, CONTENT_MAIN_ANDROID)
-    if "HeliumAbortLogger" not in main:
+    if "HeliumFatalSignalLogger" not in main:
         raise SystemExit(
             f"native abort backtrace patch is missing: {main_path}"
         )
-    if "HeliumInstallAbortLogger();" not in main:
+    if "HeliumInstallFatalSignalLogger();" not in main:
         raise SystemExit(
             f"native abort backtrace handler is not installed: {main_path}"
         )
