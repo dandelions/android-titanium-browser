@@ -35,6 +35,7 @@ NEWTAB_OVERRIDES = Path("chrome/browser/extensions/extension_url_overrides.cc")
 RENDERER_POLICY = Path("sandbox/policy/linux/bpf_renderer_policy_linux.cc")
 RENDERER_DELEGATE = Path("content/renderer/renderer_main_platform_delegate_android.cc")
 CONTENT_MAIN_ANDROID = Path("content/app/android/content_main_android.cc")
+LINKER_HEADER = Path("base/android/linker/linker_jni.h")
 NTP_URL_RESOLVER = Path(
     "chrome/browser/url_constants/android/java/src/org/chromium/chrome/browser/"
     "url_constants/UrlConstantResolver.java"
@@ -166,9 +167,19 @@ def verify_native_abort_backtrace(root):
     print("Verified old-android native abort backtrace patches")
 
 
+def verify_linker_reservation_size(root):
+    header_path, header = read(root, LINKER_HEADER)
+    if "320 * 1024 * 1024" not in header:
+        raise SystemExit(
+            f"linker address space reservation patch is missing: {header_path}"
+        )
+
+    print("Verified old-android linker address space reservation patch")
+
 if __name__ == "__main__":
     root = Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
     verify(root)
     verify_newtab_override(root)
     verify_renderer_mprotect(root)
+    verify_linker_reservation_size(root)
     verify_native_abort_backtrace(root)
