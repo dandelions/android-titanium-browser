@@ -207,6 +207,8 @@ storePassword=your-store-password
 
 排查子进程问题时，`application-logcat.txt` 中会出现 `Helium trace:` 前缀的跟踪行，依次为 `setupConnection`、`main thread has args`、`loading native library`、`native library loaded`、`child process ready`、`entering child main`。最后出现的那一行就是子进程卡住或退出前到达的位置；若子进程抛出 Java 异常，会额外记录 `Helium trace: child process init failed` 或 `Uncaught exception in child process` 及其堆栈。
 
+进程因 `abort()` 退出时（例如 `F/libc: FORTIFY: fcntl(F_SETFD) passed non-FD_CLOEXEC flag` 这类 fortify 失败），日志里会出现 `HeliumNativeCrash` 标签：先打印信号与进程号，随后是 `#00 0x... libchrome.so+0x...` 形式的原生调用栈。栈里的模块偏移可以直接用同一份构建产物里的 `libchrome.so` 反查函数名，用于定位崩溃点。
+
 排查网页打不开时，先看渲染进程是否被 seccomp 杀掉：日志里出现 `HeliumSigSys: sandbox blocked syscall=226`（aarch64 上 226 是 `mprotect`）后紧跟 `onServiceDisconnected (crash or killed by oom)` 和 `primaryMainFrameRenderProcessGone() ... termination status: 6`，说明渲染进程在建立页面时被沙箱终止。渲染进程启动时还会打印 `Helium sandbox: renderer policy=1 jit_disabled=<true|false> js_flags=<...>`，用于确认实际生效的沙箱策略和 V8 的 jitless 状态。
 
 排查扩展接管主页失效时，日志中会出现 `HeliumNtp` 标签的行。`resolver ntp=<URL> overrideEnabled=<true|false>` 来自 Java 侧的 `UrlConstantResolver`，表示新建标签页/主页按钮解析出的 URL 以及扩展覆盖开关是否打开；`HeliumNtp: pref list missing, enabled overrides=<数量>` 或 `HeliumNtp: pref list entries=<数量>` 来自 C++ 侧，表示 `extensions.chrome_url_overrides` 首选项是否已经写入。扩展已启用但仍显示原生主页时，`pref list missing` 说明覆盖列表没有写入首选项，此时会直接按已启用扩展的清单回退读取覆盖地址。

@@ -34,6 +34,7 @@ EVENT_FORWARDER = Path(
 NEWTAB_OVERRIDES = Path("chrome/browser/extensions/extension_url_overrides.cc")
 RENDERER_POLICY = Path("sandbox/policy/linux/bpf_renderer_policy_linux.cc")
 RENDERER_DELEGATE = Path("content/renderer/renderer_main_platform_delegate_android.cc")
+CONTENT_MAIN_ANDROID = Path("content/app/android/content_main_android.cc")
 NTP_URL_RESOLVER = Path(
     "chrome/browser/url_constants/android/java/src/org/chromium/chrome/browser/"
     "url_constants/UrlConstantResolver.java"
@@ -151,8 +152,23 @@ def verify_renderer_mprotect(root):
     print("Verified old-android renderer sandbox mprotect patches")
 
 
+def verify_native_abort_backtrace(root):
+    main_path, main = read(root, CONTENT_MAIN_ANDROID)
+    if "HeliumAbortLogger" not in main:
+        raise SystemExit(
+            f"native abort backtrace patch is missing: {main_path}"
+        )
+    if "HeliumInstallAbortLogger();" not in main:
+        raise SystemExit(
+            f"native abort backtrace handler is not installed: {main_path}"
+        )
+
+    print("Verified old-android native abort backtrace patches")
+
+
 if __name__ == "__main__":
     root = Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
     verify(root)
     verify_newtab_override(root)
     verify_renderer_mprotect(root)
+    verify_native_abort_backtrace(root)

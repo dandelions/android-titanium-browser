@@ -4078,6 +4078,7 @@ if is_old_version_branch; then
     fi
     python3 "$SCRIPT_DIR/patch_newtab_override.py" .
 python3 "$SCRIPT_DIR/patch_renderer_mprotect.py" .
+python3 "$SCRIPT_DIR/patch_native_abort_backtrace.py" .
     python3 "$SCRIPT_DIR/verify_old_android_features.py" .
 else
     restore_modern_android_sdk_baseline .
