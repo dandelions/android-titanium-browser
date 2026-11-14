@@ -36,6 +36,7 @@ RENDERER_POLICY = Path("sandbox/policy/linux/bpf_renderer_policy_linux.cc")
 RENDERER_DELEGATE = Path("content/renderer/renderer_main_platform_delegate_android.cc")
 CONTENT_MAIN_ANDROID = Path("content/app/android/content_main_android.cc")
 LINKER_HEADER = Path("base/android/linker/linker_jni.h")
+LINKER_JAVA = Path("base/android/java/src/org/chromium/base/library_loader/Linker.java")
 NTP_URL_RESOLVER = Path(
     "chrome/browser/url_constants/android/java/src/org/chromium/chrome/browser/"
     "url_constants/UrlConstantResolver.java"
@@ -176,10 +177,24 @@ def verify_linker_reservation_size(root):
 
     print("Verified old-android linker address space reservation patch")
 
+def verify_linker_relro_sharing(root):
+    linker_path, linker = read(root, LINKER_JAVA)
+    if "attemptLoadLibraryLocked(library, RelroSharingMode.NO_SHARING);" not in linker:
+        raise SystemExit(
+            f"linker RELRO sharing patch is missing: {linker_path}"
+        )
+    if "mRelroProducer ? RelroSharingMode.PRODUCE" in linker:
+        raise SystemExit(
+            f"linker still selects shared RELRO: {linker_path}"
+        )
+
+    print("Verified old-android linker RELRO sharing is disabled")
+
 if __name__ == "__main__":
     root = Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
     verify(root)
     verify_newtab_override(root)
     verify_renderer_mprotect(root)
     verify_linker_reservation_size(root)
+    verify_linker_relro_sharing(root)
     verify_native_abort_backtrace(root)
