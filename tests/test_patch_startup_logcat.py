@@ -40,22 +40,17 @@ class StartupLogcatPatchTest(unittest.TestCase):
         self.assertIn('getExternalFilesDir("logs")', result)
         self.assertIn('"startup-logcat.txt"', result)
         self.assertIn('"warning-error-logcat.txt"', result)
-        self.assertIn('"--uid=" + android.os.Process.myUid()', result)
-        self.assertIn('"*:W"', result)
         self.assertIn('"application-logcat.txt"', result)
-        self.assertIn('appLogCommand.add("main,system,crash")', result)
-        self.assertIn('appLogCommand.add("--uid=" + android.os.Process.myUid())', result)
-        app_log_start = result.index('java.util.List<String> appLogCommand')
-        app_log_end = result.index('java.io.File mainErrorTemp', app_log_start)
-        app_log_block = result[app_log_start:app_log_end]
-        self.assertNotIn('"*:W"', app_log_block)
-        self.assertIn('appLogCommand.add("-T")', app_log_block)
-        self.assertIn('appLogCommand.add("4096")', app_log_block)
-        self.assertIn('appLogCommand.add("3")', app_log_block)
+        self.assertIn("'*:W'", result)
         self.assertIn("/system/bin/logcat -b main,system,crash -v threadtime", result)
         self.assertIn('" --pid="', result)
         self.assertIn("android.os.Process.myPid()", result)
-        self.assertIn("-r 4096 -n 3", result)
+        # --uid is not implemented by this device's logcat, and its -f/-r/-n
+        # combination stopped writing a second after startup.
+        self.assertNotIn('"--uid=" + android.os.Process.myUid()', result)
+        self.assertNotIn("appLogCommand", result)
+        self.assertNotIn('"-r", "4096"', result)
+        self.assertIn(">>'", result)
         self.assertLess(result.index("Helium startup logcat capture"), result.index("public static void onCreate()") if "public static void onCreate()" in result else len(result))
 
     def test_captures_detach_from_the_app_process_group(self):
@@ -216,18 +211,21 @@ class StartupLogcatPatchTest(unittest.TestCase):
         self.assertIn("Cmdline: io.github.jqssun.helium", block)
         self.assertNotIn("--pid=", block)
 
-    def test_both_captures_start_after_process_start(self):
-        # Without -T logcat replays whatever the system buffers still hold, which
-        # is why a fresh crash log used to contain entries from hours before.
+    def test_captures_append_through_the_shell(self):
+        # logcat's -f/-r/-n stopped writing about a second after startup on this
+        # device, and -T compared its stamp against a mismatched clock, so every
+        # capture now appends through the shell instead.
         PATCH.patch_source_tree(self.root)
         result = self.hook_path.read_text()
         self.assertIn('"MM-dd HH:mm:ss.SSS", java.util.Locale.US', result)
         for name, buffer in (("logcatLine", "-b main,system,crash"), ("crashLine", "-b crash")):
             start = result.index(f"StringBuilder {name} = ")
             block = result[start : result.index(".start();", start)]
-            self.assertIn("if (timeFilterSupported) {", block)
-            self.assertIn('append(" -T \'").append(sinceStamp)', block)
             self.assertIn(buffer, block)
+            self.assertNotIn("if (timeFilterSupported) {", block)
+            self.assertNotIn('append(" -T \'")', block)
+            self.assertNotIn('" -f \'")', block)
+            self.assertNotIn('" -r 4096 -n 3"', block)
 
     def test_time_filter_stamp_is_utc(self):
         # The device reads the -T wall clock as UTC; a local-time stamp pushed the

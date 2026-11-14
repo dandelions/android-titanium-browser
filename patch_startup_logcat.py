@@ -226,50 +226,48 @@ BODY = '''public static void postAttachBaseContext() {
             java.io.File logFile = new java.io.File(logDirectory, "startup-logcat.txt");
             java.io.File warningLogFile =
                     new java.io.File(logDirectory, "warning-error-logcat.txt");
+            // --uid is not implemented by this device's logcat, so select by level
+            // instead and append through the shell.
             new ProcessBuilder(
-                            "/system/bin/logcat",
-                            "-b", "all",
-                            "-v", "threadtime",
-                            "--uid=" + android.os.Process.myUid(),
-                            "*:W",
-                            "-f", warningLogFile.getAbsolutePath(),
-                            "-r", "4096",
-                            "-n", "3")
+                            "/system/bin/sh",
+                            "-c",
+                            "while :; do "
+                                    + detach
+                                    + "/system/bin/logcat -b main,system -v threadtime '*:W'"
+                                    + " >>'"
+                                    + warningLogFile.getAbsolutePath()
+                                    + "' 2>/dev/null; sleep 1; done &")
                     .start();
 
-            java.util.List<String> appLogCommand = new java.util.ArrayList<String>();
-            appLogCommand.add("/system/bin/logcat");
-            appLogCommand.add("-b");
-            appLogCommand.add("main,system,crash");
-            appLogCommand.add("-v");
-            appLogCommand.add("threadtime");
-            if (timeFilterSupported) {
-                appLogCommand.add("-T");
-                appLogCommand.add(sinceStamp);
-            }
-            appLogCommand.add("--uid=" + android.os.Process.myUid());
-            appLogCommand.add("-f");
-            appLogCommand.add(new java.io.File(logDirectory, "application-logcat.txt").getAbsolutePath());
-            appLogCommand.add("-r");
-            appLogCommand.add("4096");
-            appLogCommand.add("-n");
-            appLogCommand.add("3");
-            new ProcessBuilder(appLogCommand).start();
+            // Keep the system and crash buffers next to the app log so a crash has
+            // context even though the app cannot filter them by uid.
+            java.io.File appLogFile = new java.io.File(logDirectory, "application-logcat.txt");
+            new ProcessBuilder(
+                            "/system/bin/sh",
+                            "-c",
+                            "while :; do "
+                                    + detach
+                                    + "/system/bin/logcat -b system,crash -v threadtime"
+                                    + " >>'"
+                                    + appLogFile.getAbsolutePath()
+                                    + "' 2>/dev/null; sleep 1; done &")
+                    .start();
 
             java.io.File mainErrorTemp = new java.io.File(logDirectory, "logcat-main-stderr.tmp");
             java.io.File crashErrorTemp = new java.io.File(logDirectory, "logcat-crash-stderr.tmp");
             StringBuilder logcatLine = new StringBuilder(detach);
             // Skip the events buffer: it is high volume and made logcat fall behind
             // logd enough to die with "Unexpected EOF" before writing anything.
+            //
+            // Append through the shell instead of logcat's -f/-r/-n: on this device
+            // that combination stops writing about a second after the process starts.
+            // -T is not used either, because its stamp is compared against a clock
+            // that does not match the timestamps logcat prints here.
             logcatLine.append("/system/bin/logcat -b main,system,crash -v threadtime");
-            if (timeFilterSupported) {
-                logcatLine.append(" -T '").append(sinceStamp).append("'");
-            }
             logcatLine.append(" --pid=").append(android.os.Process.myPid());
-            logcatLine.append(" -f '").append(logFile.getAbsolutePath()).append("'");
-            logcatLine.append(" -r 4096 -n 3");
+            logcatLine.append(" >>'").append(logFile.getAbsolutePath()).append("'");
             logcatLine
-                    .append(" >/dev/null 2>'")
+                    .append(" 2>'")
                     .append(mainErrorTemp.getAbsolutePath())
                     .append("'; if [ -s '")
                     .append(mainErrorTemp.getAbsolutePath())
@@ -295,9 +293,6 @@ BODY = '''public static void postAttachBaseContext() {
             new java.io.FileOutputStream(nativeCrashFile, false).close();
             StringBuilder crashLine = new StringBuilder(detach);
             crashLine.append("/system/bin/logcat -b crash -v threadtime");
-            if (timeFilterSupported) {
-                crashLine.append(" -T '").append(sinceStamp).append("'");
-            }
             crashLine.append(" 2>'").append(crashErrorTemp.getAbsolutePath()).append("'");
             crashLine.append(
                     " | /system/bin/grep -F -B 20 -A 120 "
