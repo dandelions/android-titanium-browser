@@ -11,6 +11,10 @@ Linux/Android), so the process gets no diagnostic at all.
 Install one handler for the fatal signals that logs a native stack and then
 restores the previous action and re-raises, so crash reporting and the app's
 restart behaviour stay unchanged.
+
+The stack is walked from the frame-pointer chain recorded in the signal
+context. ``base::debug::StackTrace()`` unwinds from the handler itself, so on
+its own it only ever reports the handler and the signal trampoline.
 """
 import os
 import sys
@@ -31,13 +35,66 @@ HeliumPrevSignalAction g_helium_prev_bus;
 HeliumPrevSignalAction g_helium_prev_ill;
 HeliumPrevSignalAction g_helium_prev_fpe;
 
-void HeliumFatalSignalLogger(int sig, siginfo_t* info, void*) {
+// Helium: walk the frame-pointer chain recorded in the signal context.
+// base::debug::StackTrace() starts unwinding from the handler itself, so it
+// reports the handler and the signal trampoline instead of the interrupted
+// code.
+void HeliumLogInterruptedStack(void* context) {
+#if defined(__aarch64__)
+  const auto* interrupted = static_cast<const ucontext_t*>(context);
+  if (!interrupted) {
+    return;
+  }
+  const uintptr_t stack_pointer = interrupted->uc_mcontext.sp;
+  uintptr_t link_register = 0;
+  uintptr_t frame = 0;
+  // SAFETY: the aarch64 signal context always carries the 31 general purpose
+  // registers; x29 holds the frame pointer and x30 the link register.
+  UNSAFE_BUFFERS({
+    frame = interrupted->uc_mcontext.regs[29];
+    link_register = interrupted->uc_mcontext.regs[30];
+  });
+  __android_log_print(ANDROID_LOG_FATAL, "HeliumNativeCrash",
+                      "pc=%#lx lr=%#lx sp=%#lx fp=%#lx",
+                      static_cast<unsigned long>(interrupted->uc_mcontext.pc),
+                      static_cast<unsigned long>(link_register),
+                      static_cast<unsigned long>(stack_pointer),
+                      static_cast<unsigned long>(frame));
+  for (int depth = 0; depth < 32; ++depth) {
+    // A frame outside the interrupted stack cannot be read without faulting.
+    if ((frame & 0x7) != 0 || frame < stack_pointer ||
+        frame - stack_pointer > (1u << 20)) {
+      break;
+    }
+    uintptr_t next_frame = 0;
+    uintptr_t return_address = 0;
+    memcpy(&next_frame, reinterpret_cast<const void*>(frame),
+           sizeof(next_frame));
+    memcpy(&return_address, reinterpret_cast<const void*>(frame + 8),
+           sizeof(return_address));
+    if (return_address < 0x1000) {
+      break;
+    }
+    __android_log_print(ANDROID_LOG_FATAL, "HeliumNativeCrash", "#%02d %#lx",
+                        depth, static_cast<unsigned long>(return_address));
+    if (next_frame <= frame) {
+      break;
+    }
+    frame = next_frame;
+  }
+#else
+  (void)context;
+#endif
+}
+
+void HeliumFatalSignalLogger(int sig, siginfo_t* info, void* context) {
   if (!g_helium_fatal_logged.exchange(true)) {
     __android_log_print(ANDROID_LOG_FATAL, "HeliumNativeCrash",
                         "signal=%d code=%d addr=%p pid=%d", sig,
                         info ? info->si_code : 0,
                         info ? info->si_addr : nullptr,
                         static_cast<int>(getpid()));
+    HeliumLogInterruptedStack(context);
     base::debug::StackTrace trace;
     std::string text = trace.ToString();
     __android_log_print(ANDROID_LOG_FATAL, "HeliumNativeCrash", "%s",
@@ -90,6 +147,12 @@ OLD_ABORT_HELPER_START = "// Helium: dump a native stack before an abort kills t
 OLD_ABORT_HELPER_END = "void HeliumInstallAbortLogger() {\n"
 OLD_CALL = "  HeliumInstallAbortLogger();\n"
 
+HELPER_START = "// Helium: dump a native stack before a fatal signal kills the process.\n"
+# Revisions before the stack walker logged the previous-action records as an
+# array, or without any way to unwind past the handler.
+ARRAY_MARKER = "HeliumPrevSignalAction g_helium_prev_actions[5];"
+STACK_WALKER_MARKER = "HeliumLogInterruptedStack"
+
 
 def _read(path):
     with open(path, "r", encoding="utf-8") as handle:
@@ -101,6 +164,35 @@ def _write(path, content):
         handle.write(content)
 
 
+def _ensure_includes(content):
+    """Add the headers the fatal signal logger needs."""
+    if '#include <atomic>' not in content:
+        content = content.replace(
+            "#include <memory>\n",
+            "#include <atomic>\n#include <cstring>\n#include <memory>\n#include <string>\n",
+            1,
+        )
+    if '#include <ucontext.h>' not in content:
+        content = content.replace(
+            "#include <signal.h>\n",
+            "#include <signal.h>\n#include <stdint.h>\n#include <ucontext.h>\n",
+            1,
+        )
+    if '#include "base/compiler_specific.h"' not in content:
+        content = content.replace(
+            '#include "base/lazy_instance.h"\n',
+            '#include "base/compiler_specific.h"\n#include "base/lazy_instance.h"\n',
+            1,
+        )
+    if '#include "base/debug/stack_trace.h"' not in content:
+        content = content.replace(
+            '#include "base/lazy_instance.h"\n',
+            '#include "base/debug/stack_trace.h"\n#include "base/lazy_instance.h"\n',
+            1,
+        )
+    return content
+
+
 def _upgrade_abort_only(path, content):
     """Replace the SIGABRT-only handler written by the first revision."""
     start = content.find(OLD_ABORT_HELPER_START)
@@ -110,23 +202,19 @@ def _upgrade_abort_only(path, content):
     block_end = content.index("\n}\n\n", end) + len("\n}\n\n")
     new_content = content[:start] + FATAL_HELPER + content[block_end:]
     new_content = new_content.replace(OLD_CALL, CALL_ADDED, 1)
-    _write(path, new_content)
+    _write(path, _ensure_includes(new_content))
     print(f"Upgraded native crash backtrace logging: {path}")
     return True
 
 
-HELPER_START = "// Helium: dump a native stack before a fatal signal kills the process.\n"
-ARRAY_MARKER = "HeliumPrevSignalAction g_helium_prev_actions[5];"
-
-
-def _upgrade_array_revision(path, content):
-    """Replace the array-indexed revision rejected by -Wunsafe-buffer-usage."""
+def _replace_helper_block(path, content):
+    """Rewrite an older revision of the handler with the current one."""
     start = content.find(HELPER_START)
     end = content.find(ANCHOR, start)
     if start < 0 or end < 0:
         return False
     new_content = content[:start] + FATAL_HELPER + content[end:]
-    _write(path, new_content)
+    _write(path, _ensure_includes(new_content))
     print(f"Upgraded native crash backtrace logging: {path}")
     return True
 
@@ -137,9 +225,11 @@ def patch_source_tree(src_dir):
         return False
     content = _read(path)
     if ARRAY_MARKER in content:
-        return _upgrade_array_revision(path, content)
+        return _replace_helper_block(path, content)
     if "HeliumFatalSignalLogger" in content:
-        return False
+        if STACK_WALKER_MARKER in content:
+            return False
+        return _replace_helper_block(path, content)
     if "HeliumAbortLogger" in content:
         return _upgrade_abort_only(path, content)
     if ANCHOR not in content or CALL_ANCHOR not in content:
@@ -151,19 +241,7 @@ def patch_source_tree(src_dir):
 
     new_content = content.replace(ANCHOR, FATAL_HELPER + ANCHOR, 1)
     new_content = new_content.replace(CALL_ANCHOR, CALL_ADDED, 1)
-    if '#include <atomic>' not in new_content:
-        new_content = new_content.replace(
-            "#include <memory>\n",
-            "#include <atomic>\n#include <memory>\n#include <string>\n",
-            1,
-        )
-    if '#include "base/debug/stack_trace.h"' not in new_content:
-        new_content = new_content.replace(
-            '#include "base/lazy_instance.h"\n',
-            '#include "base/debug/stack_trace.h"\n#include "base/lazy_instance.h"\n',
-            1,
-        )
-    _write(path, new_content)
+    _write(path, _ensure_includes(new_content))
     print(f"Patched native crash backtrace logging: {path}")
     return True
 

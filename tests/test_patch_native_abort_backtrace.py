@@ -56,9 +56,14 @@ class NativeAbortBacktracePatchTest(unittest.TestCase):
         self.assertTrue(PATCH.patch_source_tree(self.root))
         result = self.path.read_text()
         self.assertIn(
-            "void HeliumFatalSignalLogger(int sig, siginfo_t* info, void*) {", result
+            "void HeliumFatalSignalLogger(int sig, siginfo_t* info, void* context) {",
+            result,
         )
         self.assertIn("base::debug::StackTrace trace;", result)
+        self.assertIn("    HeliumLogInterruptedStack(context);", result)
+        self.assertIn("#include <ucontext.h>", result)
+        self.assertIn("#include <cstring>", result)
+        self.assertIn('#include "base/compiler_specific.h"', result)
         self.assertIn('"HeliumNativeCrash"', result)
         for signal_name in ("SIGABRT", "SIGSEGV", "SIGBUS", "SIGILL", "SIGFPE"):
             self.assertIn(signal_name, result)
@@ -125,6 +130,20 @@ class NativeAbortBacktracePatchTest(unittest.TestCase):
         result = self.path.read_text()
         self.assertNotIn("g_helium_prev_actions[5]", result)
         self.assertIn("HeliumPrevSignalAction g_helium_prev_abrt;", result)
+
+    def test_upgrades_the_revision_without_a_stack_walker(self):
+        PATCH.patch_source_tree(self.root)
+        older = self.path.read_text()
+        older = older.replace("    HeliumLogInterruptedStack(context);\n", "")
+        walker_start = older.index("// Helium: walk the frame-pointer chain")
+        walker_end = older.index("void HeliumFatalSignalLogger", walker_start)
+        older = older[:walker_start] + older[walker_end:]
+        self.assertNotIn("HeliumLogInterruptedStack", older)
+        self.path.write_text(older)
+        self.assertTrue(PATCH.patch_source_tree(self.root))
+        result = self.path.read_text()
+        self.assertIn("HeliumLogInterruptedStack", result)
+        self.assertEqual(1, result.count("void HeliumFatalSignalLogger"))
 
     def test_missing_file_is_ignored(self):
         self.path.unlink()
