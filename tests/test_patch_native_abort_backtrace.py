@@ -65,8 +65,11 @@ class NativeAbortBacktracePatchTest(unittest.TestCase):
         self.assertIn("  HeliumInstallFatalSignalLogger();", result)
         # The previous handler must be restored before re-raising, otherwise the
         # process would spin on the same fault.
-        self.assertIn("sigaction(sig, &previous.action, nullptr);", result)
+        self.assertIn("sigaction(sig, &previous->action, nullptr);", result)
         self.assertIn("raise(sig);", result)
+        # Signal args must not be indexed: the build treats unsafe buffer
+        # access as an error.
+        self.assertNotIn("signals[i]", result)
         self.assertIn('#include "base/debug/stack_trace.h"', result)
         self.assertIn("#include <atomic>", result)
         self.assertIn("#include <string>", result)
@@ -109,6 +112,19 @@ class NativeAbortBacktracePatchTest(unittest.TestCase):
         self.assertIn("HeliumFatalSignalLogger", result)
         self.assertNotIn("HeliumAbortLogger", result)
         self.assertNotIn("HeliumInstallAbortLogger();", result)
+
+    def test_upgrades_the_array_indexed_revision(self):
+        PATCH.patch_source_tree(self.root)
+        broken = self.path.read_text()
+        broken = broken.replace(
+            "HeliumPrevSignalAction g_helium_prev_abrt;",
+            "HeliumPrevSignalAction g_helium_prev_actions[5];",
+        )
+        self.path.write_text(broken)
+        self.assertTrue(PATCH.patch_source_tree(self.root))
+        result = self.path.read_text()
+        self.assertNotIn("g_helium_prev_actions[5]", result)
+        self.assertIn("HeliumPrevSignalAction g_helium_prev_abrt;", result)
 
     def test_missing_file_is_ignored(self):
         self.path.unlink()

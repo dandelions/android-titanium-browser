@@ -25,7 +25,11 @@ struct HeliumPrevSignalAction {
   struct sigaction action;
 };
 
-HeliumPrevSignalAction g_helium_prev_actions[5];
+HeliumPrevSignalAction g_helium_prev_abrt;
+HeliumPrevSignalAction g_helium_prev_segv;
+HeliumPrevSignalAction g_helium_prev_bus;
+HeliumPrevSignalAction g_helium_prev_ill;
+HeliumPrevSignalAction g_helium_prev_fpe;
 
 void HeliumFatalSignalLogger(int sig, siginfo_t* info, void*) {
   if (!g_helium_fatal_logged.exchange(true)) {
@@ -39,24 +43,40 @@ void HeliumFatalSignalLogger(int sig, siginfo_t* info, void*) {
     __android_log_print(ANDROID_LOG_FATAL, "HeliumNativeCrash", "%s",
                         text.c_str());
   }
-  for (auto& previous : g_helium_prev_actions) {
-    if (previous.signal_number == sig) {
-      sigaction(sig, &previous.action, nullptr);
-      break;
-    }
+  HeliumPrevSignalAction* previous = &g_helium_prev_abrt;
+  if (previous->signal_number != sig) {
+    previous = &g_helium_prev_segv;
+  }
+  if (previous->signal_number != sig) {
+    previous = &g_helium_prev_bus;
+  }
+  if (previous->signal_number != sig) {
+    previous = &g_helium_prev_ill;
+  }
+  if (previous->signal_number != sig) {
+    previous = &g_helium_prev_fpe;
+  }
+  if (previous->signal_number == sig) {
+    sigaction(sig, &previous->action, nullptr);
   }
   raise(sig);
 }
 
+void HeliumInstallOneFatalSignalLogger(int sig,
+                                       HeliumPrevSignalAction* previous) {
+  previous->signal_number = sig;
+  struct sigaction action = {};
+  action.sa_sigaction = &HeliumFatalSignalLogger;
+  action.sa_flags = SA_SIGINFO;
+  sigaction(sig, &action, &previous->action);
+}
+
 void HeliumInstallFatalSignalLogger() {
-  const int signals[] = {SIGABRT, SIGSEGV, SIGBUS, SIGILL, SIGFPE};
-  for (size_t i = 0; i < sizeof(signals) / sizeof(signals[0]); ++i) {
-    g_helium_prev_actions[i].signal_number = signals[i];
-    struct sigaction action = {};
-    action.sa_sigaction = &HeliumFatalSignalLogger;
-    action.sa_flags = SA_SIGINFO;
-    sigaction(signals[i], &action, &g_helium_prev_actions[i].action);
-  }
+  HeliumInstallOneFatalSignalLogger(SIGABRT, &g_helium_prev_abrt);
+  HeliumInstallOneFatalSignalLogger(SIGSEGV, &g_helium_prev_segv);
+  HeliumInstallOneFatalSignalLogger(SIGBUS, &g_helium_prev_bus);
+  HeliumInstallOneFatalSignalLogger(SIGILL, &g_helium_prev_ill);
+  HeliumInstallOneFatalSignalLogger(SIGFPE, &g_helium_prev_fpe);
 }
 
 '''
@@ -95,11 +115,29 @@ def _upgrade_abort_only(path, content):
     return True
 
 
+HELPER_START = "// Helium: dump a native stack before a fatal signal kills the process.\n"
+ARRAY_MARKER = "HeliumPrevSignalAction g_helium_prev_actions[5];"
+
+
+def _upgrade_array_revision(path, content):
+    """Replace the array-indexed revision rejected by -Wunsafe-buffer-usage."""
+    start = content.find(HELPER_START)
+    end = content.find(ANCHOR, start)
+    if start < 0 or end < 0:
+        return False
+    new_content = content[:start] + FATAL_HELPER + content[end:]
+    _write(path, new_content)
+    print(f"Upgraded native crash backtrace logging: {path}")
+    return True
+
+
 def patch_source_tree(src_dir):
     path = os.path.join(src_dir, MAIN_FILE)
     if not os.path.isfile(path):
         return False
     content = _read(path)
+    if ARRAY_MARKER in content:
+        return _upgrade_array_revision(path, content)
     if "HeliumFatalSignalLogger" in content:
         return False
     if "HeliumAbortLogger" in content:
