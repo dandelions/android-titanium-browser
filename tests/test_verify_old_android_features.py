@@ -16,6 +16,8 @@ NEWTAB_FILES = {
     "content/app/android/content_main_android.cc": "void HeliumFatalSignalLogger(int sig, siginfo_t* info, void*) {}\n  HeliumInstallFatalSignalLogger();",
     "base/android/linker/linker_jni.h": "static const size_t kAddressSpaceReservationSize = 320 * 1024 * 1024;",
     "base/android/java/src/org/chromium/base/library_loader/Linker.java": "attemptLoadLibraryLocked(library, RelroSharingMode.NO_SHARING);",
+    "third_party/libunwindstack/src/libunwindstack/Memory.cpp": "fcntl(helium_fd, F_SETFD, FD_CLOEXEC)",
+    "third_party/libunwindstack/src/libprocinfo/include/procinfo/process_map.h": "fcntl(fd, F_SETFD, FD_CLOEXEC)",
 }
 
 

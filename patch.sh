@@ -4081,6 +4081,7 @@ python3 "$SCRIPT_DIR/patch_renderer_mprotect.py" .
 python3 "$SCRIPT_DIR/patch_linker_reservation_size.py" .
 python3 "$SCRIPT_DIR/patch_linker_relro_sharing.py" .
 python3 "$SCRIPT_DIR/patch_child_main_diagnostics.py" .
+python3 "$SCRIPT_DIR/patch_unwindstack_cloexec.py" .
 python3 "$SCRIPT_DIR/patch_native_abort_backtrace.py" .
     python3 "$SCRIPT_DIR/verify_old_android_features.py" .
 else

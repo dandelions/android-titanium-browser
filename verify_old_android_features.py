@@ -37,6 +37,10 @@ RENDERER_DELEGATE = Path("content/renderer/renderer_main_platform_delegate_andro
 CONTENT_MAIN_ANDROID = Path("content/app/android/content_main_android.cc")
 LINKER_HEADER = Path("base/android/linker/linker_jni.h")
 LINKER_JAVA = Path("base/android/java/src/org/chromium/base/library_loader/Linker.java")
+UNWINDSTACK_MEMORY = Path("third_party/libunwindstack/src/libunwindstack/Memory.cpp")
+UNWINDSTACK_PROCESS_MAP = Path(
+    "third_party/libunwindstack/src/libprocinfo/include/procinfo/process_map.h"
+)
 NTP_URL_RESOLVER = Path(
     "chrome/browser/url_constants/android/java/src/org/chromium/chrome/browser/"
     "url_constants/UrlConstantResolver.java"
@@ -190,6 +194,29 @@ def verify_linker_relro_sharing(root):
 
     print("Verified old-android linker RELRO sharing is disabled")
 
+def verify_unwindstack_cloexec(root):
+    memory_path, memory = read(root, UNWINDSTACK_MEMORY)
+    if "fcntl(helium_fd, F_SETFD, FD_CLOEXEC)" not in memory:
+        raise SystemExit(
+            f"unwindstack FD_CLOEXEC patch is missing: {memory_path}"
+        )
+    if "O_RDONLY | O_CLOEXEC" in memory:
+        raise SystemExit(
+            f"unwindstack still opens with O_CLOEXEC: {memory_path}"
+        )
+
+    map_path, process_map = read(root, UNWINDSTACK_PROCESS_MAP)
+    if "fcntl(fd, F_SETFD, FD_CLOEXEC)" not in process_map:
+        raise SystemExit(
+            f"unwindstack process map FD_CLOEXEC patch is missing: {map_path}"
+        )
+    if "open(map_file, O_RDONLY | O_CLOEXEC)" in process_map:
+        raise SystemExit(
+            f"unwindstack still opens the process map with O_CLOEXEC: {map_path}"
+        )
+
+    print("Verified old-android unwindstack close-on-exec patches")
+
 if __name__ == "__main__":
     root = Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
     verify(root)
@@ -197,4 +224,5 @@ if __name__ == "__main__":
     verify_renderer_mprotect(root)
     verify_linker_reservation_size(root)
     verify_linker_relro_sharing(root)
+    verify_unwindstack_cloexec(root)
     verify_native_abort_backtrace(root)
