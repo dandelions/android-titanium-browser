@@ -9,97 +9,79 @@ up on the sad-tab page.
 ``logd`` on that device dies repeatedly, so an in-app ``logcat`` capture stops
 producing output exactly when the failure happens. Log through both LOG and a
 direct append to ``<app data>/helium-nav.log`` so the stages survive logd being
-dead, and cover the URL loader stages so a stall between "throttles passed" and
+dead, and cover the response stage so a stall between "throttles passed" and
 "renderer committed" is attributable to a specific step.
 """
 import os
 import sys
 
 NAVIGATION_REQUEST = "content/browser/renderer_host/navigation_request.cc"
-NAVIGATION_URL_LOADER = "content/browser/loader/navigation_url_loader_impl.cc"
+
+TRACE_MARK = "Helium nav trace revision: 2"
+BEGIN_SIG = "void NavigationRequest::BeginNavigation() {"
 
 HELPER = '''// Helium: navigation stage trace that survives logd being unavailable.
 // Helium nav trace revision: 2
 void HeliumNavTrace(const char* stage, const GURL& url, int value) {
   std::string line = base::StringPrintf("Helium nav: %s url=%s value=%d\\n",
-                                        stage, url.possibly_invalid_spec().c_str(),
+                                        stage,
+                                        url.possibly_invalid_spec().c_str(),
                                         value);
   LOG(WARNING) << line;
   base::FilePath path;
   if (!base::PathService::Get(base::DIR_ANDROID_APP_DATA, &path)) return;
-  path = path.AppendASCII("helium-nav.log");
-  base::AppendToFile(path, line);
+  base::AppendToFile(path.AppendASCII("helium-nav.log"), line);
 }
 
 '''
 
-BEGIN_ORIGINAL = """void NavigationRequest::BeginNavigation() {
-  begin_navigation_time_ = base::TimeTicks::Now();
-"""
+EXTRA_INCLUDES = (
+    "base/files/file_util.h",
+    "base/path_service.h",
+    "base/base_paths_android.h",
+)
 
-BEGIN_PATCHED = """void NavigationRequest::BeginNavigation() {
-  HeliumNavTrace("begin", GetURL(), 0);
-  begin_navigation_time_ = base::TimeTicks::Now();
-"""
-
-CHECKS_ORIGINAL = """void NavigationRequest::OnStartChecksComplete(
-    NavigationThrottle::ThrottleCheckResult result) {
-"""
-
-CHECKS_PATCHED = """void NavigationRequest::OnStartChecksComplete(
-    NavigationThrottle::ThrottleCheckResult result) {
-  HeliumNavTrace("checks-complete", GetURL(), static_cast<int>(result.action()));
-"""
-
-RESPONSE_ORIGINAL = """void NavigationRequest::OnResponseStarted(
-    network::mojom::URLLoaderClientEndpointsPtr url_loader_client_endpoints,
-"""
-
-RESPONSE_PATCHED = """void NavigationRequest::OnResponseStarted(
-    network::mojom::URLLoaderClientEndpointsPtr url_loader_client_endpoints,
-"""
-HELPER_RESPONSE_INJECT = """  HeliumNavTrace("response", GetURL(), 0);
-"""
-
-COMMIT_ORIGINAL = """void NavigationRequest::DidCommitNavigation(
-    const mojom::DidCommitProvisionalLoadParams& params,
-    bool navigation_entry_committed,
-    bool did_replace_entry,
-    const GURL& previous_main_frame_url) {
-"""
-
-COMMIT_PATCHED = """void NavigationRequest::DidCommitNavigation(
-    const mojom::DidCommitProvisionalLoadParams& params,
-    bool navigation_entry_committed,
-    bool did_replace_entry,
-    const GURL& previous_main_frame_url) {
-  HeliumNavTrace("commit", GetURL(), 0);
-"""
-
-FAIL_ORIGINAL = """void NavigationRequest::OnRequestFailedInternal(
-    const network::URLLoaderCompletionStatus& status,
-    bool skip_throttles,
-    const std::optional<std::string>& error_page_content,
-    bool collapse_frame) {
-"""
-
-FAIL_PATCHED = """void NavigationRequest::OnRequestFailedInternal(
-    const network::URLLoaderCompletionStatus& status,
-    bool skip_throttles,
-    const std::optional<std::string>& error_page_content,
-    bool collapse_frame) {
-  HeliumNavTrace("failed", GetURL(), status.error_code);
-"""
-
-LOADER_ORIGINAL = """void NavigationURLLoaderImpl::OnReceiveResponse(
-    network::mojom::URLResponseHeadPtr head,
-"""
-
-LOADER_PATCHED = """void NavigationURLLoaderImpl::OnReceiveResponse(
-    network::mojom::URLResponseHeadPtr head,
-"""
-LOADER_BODY_INJECT = """  HeliumNavTrace("loader-response", request_url_, 0);
-"""
+# (signature of the function, statement to insert, stage name)
+STAGES = (
+    (
+        "void NavigationRequest::OnStartChecksComplete(\n"
+        "    NavigationThrottle::ThrottleCheckResult result)",
+        'HeliumNavTrace("checks-complete", GetURL(),'
+        " static_cast<int>(result.action()));",
+        "checks-complete",
+    ),
+    (
+        "void NavigationRequest::OnResponseStarted(\n"
+        "    network::mojom::URLLoaderClientEndpointsPtr url_loader_client_endpoints,\n"
+        "    network::mojom::URLResponseHeadPtr response_head,\n"
+        "    mojo::ScopedDataPipeConsumerHandle response_body,\n"
+        "    GlobalRequestID request_id,\n"
+        "    bool is_download,\n"
+        "    net::NetworkAnonymizationKey network_anonymization_key,\n"
+        "    SubresourceLoaderParams subresource_loader_params,\n"
+        "    EarlyHints early_hints)",
+        'HeliumNavTrace("response", GetURL(), 0);',
+        "response",
+    ),
+    (
+        "void NavigationRequest::DidCommitNavigation(\n"
+        "    const mojom::DidCommitProvisionalLoadParams& params,\n"
+        "    bool navigation_entry_committed,\n"
+        "    bool did_replace_entry,\n"
+        "    const GURL& previous_main_frame_url)",
+        'HeliumNavTrace("commit", GetURL(), 0);',
+        "commit",
+    ),
+    (
+        "void NavigationRequest::OnRequestFailedInternal(\n"
+        "    const network::URLLoaderCompletionStatus& status,\n"
+        "    bool skip_throttles,\n"
+        "    const std::optional<std::string>& error_page_content,\n"
+        "    bool collapse_frame)",
+        'HeliumNavTrace("failed", GetURL(), status.error_code);',
+        "failed",
+    ),
+)
 
 
 def _read(path):
@@ -112,114 +94,64 @@ def _write(path, content):
         handle.write(content)
 
 
-def _replace_once(path, original, patched, label):
-    if not os.path.isfile(path):
-        return False
-    content = _read(path)
-    if patched in content:
-        return False
-    if original not in content:
-        print(f"Warning: could not find {label} in {path}", file=sys.stderr)
-        return False
-    _write(path, content.replace(original, patched, 1))
-    print(f"Patched {label}: {path}")
-    return True
+def _add_includes(content):
+    extra = ""
+    for header in EXTRA_INCLUDES:
+        include = f'#include "{header}"\n'
+        if include not in content:
+            extra += include
+    if not extra:
+        return content
+    anchor = '#include "base/containers/span.h"\n'
+    if anchor in content:
+        return content.replace(anchor, anchor + extra, 1)
+    return extra + content
 
 
-def _insert_after_signature(path, signature, body, label):
-    """Insert a statement right after a function signature's closing brace."""
-    if not os.path.isfile(path):
-        return False
-    content = _read(path)
-    if body in content:
-        return False
+def _ensure_stage(content, signature, statement, stage):
+    """Insert the trace statement after the function's opening brace."""
+    if f'HeliumNavTrace("{stage}"' in content:
+        return content, False
     marker = signature + " {\n"
     if marker not in content:
-        print(f"Warning: could not find signature for {label} in {path}", file=sys.stderr)
-        return False
-    _write(path, content.replace(marker, marker + body, 1))
-    print(f"Patched {label}: {path}")
-    return True
+        print(
+            f"Warning: could not find the {stage} signature in "
+            f"{NAVIGATION_REQUEST}",
+            file=sys.stderr,
+        )
+        return content, False
+    return content.replace(marker, marker + "  " + statement + "\n", 1), True
 
 
 def patch_source_tree(src_dir):
     nav_path = os.path.join(src_dir, NAVIGATION_REQUEST)
-    loader_path = os.path.join(src_dir, NAVIGATION_URL_LOADER)
+    if not os.path.isfile(nav_path):
+        return False
+
+    content = _read(nav_path)
+    original = content
     changed = False
 
-    # 1. Install the trace helper above BeginNavigation().
-    if os.path.isfile(nav_path):
-        content = _read(nav_path)
-        if "Helium nav trace revision: 2" not in content and BEGIN_ORIGINAL in content:
-            extra_includes = ""
-            for header in (
-                "base/files/file_util.h",
-                "base/path_service.h",
-                "base/base_paths_android.h",
-            ):
-                include = f'#include "{header}"\n'
-                if include not in content:
-                    extra_includes += include
-            if extra_includes:
-                content = content.replace(
-                    '#include "base/containers/span.h"\n',
-                    '#include "base/containers/span.h"\n' + extra_includes,
-                    1,
-                )
-            content = content.replace(BEGIN_ORIGINAL, HELPER + BEGIN_PATCHED, 1)
-            _write(nav_path, content)
-            print(f"Patched navigation trace helper: {nav_path}")
-            changed = True
-
-    # 2. Remaining stages.
-    if _insert_after_signature(
-        nav_path,
-        "void NavigationRequest::OnStartChecksComplete(\n"
-        "    NavigationThrottle::ThrottleCheckResult result)",
-        '  HeliumNavTrace("checks-complete", GetURL(),'
-        " static_cast<int>(result.action()));\n",
-        "navigation checks-complete logging",
-    ):
+    if TRACE_MARK not in content and BEGIN_SIG in content:
+        content = _add_includes(content)
+        content = content.replace(BEGIN_SIG, HELPER + BEGIN_SIG, 1)
         changed = True
 
-    if _insert_after_signature(
-        nav_path,
-        "void NavigationRequest::DidCommitNavigation(\n"
-        "    const mojom::DidCommitProvisionalLoadParams& params,\n"
-        "    bool navigation_entry_committed,\n"
-        "    bool did_replace_entry,\n"
-        "    const GURL& previous_main_frame_url)",
-        '  HeliumNavTrace("commit", GetURL(), 0);\n',
-        "navigation commit logging",
-    ):
-        changed = True
+    content, inserted = _ensure_stage(
+        content,
+        "void NavigationRequest::BeginNavigation()",
+        'HeliumNavTrace("begin", GetURL(), 0);',
+        "begin",
+    )
+    changed = changed or inserted
 
-    if _insert_after_signature(
-        nav_path,
-        "void NavigationRequest::OnRequestFailedInternal(\n"
-        "    const network::URLLoaderCompletionStatus& status,\n"
-        "    bool skip_throttles,\n"
-        "    const std::optional<std::string>& error_page_content,\n"
-        "    bool collapse_frame)",
-        '  HeliumNavTrace("failed", GetURL(), status.error_code);\n',
-        "navigation failure logging",
-    ):
-        changed = True
+    for signature, statement, stage in STAGES:
+        content, inserted = _ensure_stage(content, signature, statement, stage)
+        changed = changed or inserted
 
-    if _insert_after_signature(
-        nav_path,
-        "void NavigationRequest::OnResponseStarted(\n"
-        "    network::mojom::URLLoaderClientEndpointsPtr url_loader_client_endpoints,\n"
-        "    network::mojom::URLResponseHeadPtr response_head,\n"
-        "    mojo::ScopedDataPipeConsumerHandle response_body,\n"
-        "    GlobalRequestID request_id,\n"
-        "    bool is_download,\n"
-        "    net::NetworkAnonymizationKey network_anonymization_key,\n"
-        "    SubresourceLoaderParams subresource_loader_params,\n"
-        "    EarlyHints early_hints)",
-        '  HeliumNavTrace("response", GetURL(), 0);\n',
-        "navigation response logging",
-    ):
+    if content != original:
+        _write(nav_path, content)
+        print(f"Patched navigation stage trace: {nav_path}")
         changed = True
 
     return changed
