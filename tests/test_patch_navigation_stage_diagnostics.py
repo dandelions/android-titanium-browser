@@ -14,12 +14,28 @@ SPEC.loader.exec_module(PATCH)
 
 NAV = PATCH.NAVIGATION_REQUEST
 
-SOURCE = """void NavigationRequest::BeginNavigation() {
+SOURCE = """#include "base/containers/span.h"
+#include "base/files/file_path.h"
+#include "base/strings/stringprintf.h"
+
+void NavigationRequest::BeginNavigation() {
   begin_navigation_time_ = base::TimeTicks::Now();
 }
 
 void NavigationRequest::OnStartChecksComplete(
     NavigationThrottle::ThrottleCheckResult result) {
+  CHECK(true);
+}
+
+void NavigationRequest::OnResponseStarted(
+    network::mojom::URLLoaderClientEndpointsPtr url_loader_client_endpoints,
+    network::mojom::URLResponseHeadPtr response_head,
+    mojo::ScopedDataPipeConsumerHandle response_body,
+    GlobalRequestID request_id,
+    bool is_download,
+    net::NetworkAnonymizationKey network_anonymization_key,
+    SubresourceLoaderParams subresource_loader_params,
+    EarlyHints early_hints) {
   CHECK(true);
 }
 
@@ -42,29 +58,33 @@ void NavigationRequest::OnRequestFailedInternal(
 
 
 class TestPatchNavigationStageDiagnostics(unittest.TestCase):
-    def test_patch_adds_all_four_stages(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / NAV
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(SOURCE, encoding="utf-8")
+    def _patch(self, tmp):
+        path = Path(tmp) / NAV
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(SOURCE, encoding="utf-8")
+        result = PATCH.patch_source_tree(tmp)
+        return path, result
 
-            self.assertTrue(PATCH.patch_source_tree(tmp))
+    def test_installs_file_backed_helper_and_stages(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path, changed = self._patch(tmp)
+            self.assertTrue(changed)
             out = path.read_text(encoding="utf-8")
-            for marker in (
-                '"Helium nav: begin url="',
-                '"Helium nav: checks-complete url="',
-                '"Helium nav: commit url="',
-                '"Helium nav: failed url="',
-                "net_error=",
+            self.assertIn("void HeliumNavTrace(const char* stage", out)
+            self.assertIn('path.AppendASCII("helium-nav.log")', out)
+            self.assertIn("base::AppendToFile(path, line)", out)
+            for header in (
+                "base/files/file_util.h",
+                "base/path_service.h",
+                "base/base_paths_android.h",
             ):
-                self.assertIn(marker, out)
+                self.assertIn(f'#include "{header}"', out)
+            for stage in ("begin", "checks-complete", "response", "commit", "failed"):
+                self.assertIn(f'HeliumNavTrace("{stage}"', out)
 
     def test_patch_is_idempotent(self):
         with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / NAV
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(SOURCE, encoding="utf-8")
-            PATCH.patch_source_tree(tmp)
+            path, _ = self._patch(tmp)
             first = path.read_text(encoding="utf-8")
             self.assertFalse(PATCH.patch_source_tree(tmp))
             self.assertEqual(first, path.read_text(encoding="utf-8"))

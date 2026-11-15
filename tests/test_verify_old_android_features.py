@@ -19,7 +19,7 @@ NEWTAB_FILES = {
     "third_party/libunwindstack/src/libunwindstack/Memory.cpp": "fcntl(helium_fd, F_SETFD, FD_CLOEXEC)",
     "third_party/libunwindstack/src/libprocinfo/include/procinfo/process_map.h": "fcntl(fd, F_SETFD, FD_CLOEXEC)",
     "ui/accessibility/android/java/src/org/chromium/ui/accessibility/AccessibilityStateDelegateImpl.java": "Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q\nint recommendedTimeout = nonA11yTimeout;",
-    "content/browser/renderer_host/navigation_request.cc": '"Helium nav: begin url="\n"Helium nav: checks-complete url="\n"Helium nav: commit url="\n"Helium nav: failed url="',
+    "content/browser/renderer_host/navigation_request.cc": 'HeliumNavTrace("begin"\nHeliumNavTrace("checks-complete"\nHeliumNavTrace("response"\nHeliumNavTrace("commit"\nHeliumNavTrace("failed"\nhelium-nav.log',
 }
 
 

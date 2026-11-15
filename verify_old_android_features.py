@@ -238,10 +238,12 @@ def verify_accessibility_recommended_timeout(root):
 def verify_navigation_stage_diagnostics(root):
     nav_path, nav = read(root, NAVIGATION_REQUEST)
     for marker in (
-        "Helium nav: begin url=",
-        "Helium nav: checks-complete url=",
-        "Helium nav: commit url=",
-        "Helium nav: failed url=",
+        'HeliumNavTrace("begin"',
+        'HeliumNavTrace("checks-complete"',
+        'HeliumNavTrace("response"',
+        'HeliumNavTrace("commit"',
+        'HeliumNavTrace("failed"',
+        "helium-nav.log",
     ):
         if marker not in nav:
             raise SystemExit(
