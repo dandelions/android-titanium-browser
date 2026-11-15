@@ -45,6 +45,10 @@ NTP_URL_RESOLVER = Path(
     "chrome/browser/url_constants/android/java/src/org/chromium/chrome/browser/"
     "url_constants/UrlConstantResolver.java"
 )
+ACCESSIBILITY_STATE_DELEGATE = Path(
+    "ui/accessibility/android/java/src/org/chromium/ui/accessibility/"
+    "AccessibilityStateDelegateImpl.java"
+)
 
 
 def read(root, relative):
@@ -217,6 +221,19 @@ def verify_unwindstack_cloexec(root):
 
     print("Verified old-android unwindstack close-on-exec patches")
 
+def verify_accessibility_recommended_timeout(root):
+    delegate_path, delegate = read(root, ACCESSIBILITY_STATE_DELEGATE)
+    if "Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q" not in delegate:
+        raise SystemExit(
+            f"accessibility recommended timeout API level guard is missing: {delegate_path}"
+        )
+    if "int recommendedTimeout = nonA11yTimeout;" not in delegate:
+        raise SystemExit(
+            f"accessibility recommended timeout fallback is missing: {delegate_path}"
+        )
+
+    print("Verified old-android accessibility recommended timeout guard")
+
 if __name__ == "__main__":
     root = Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
     verify(root)
@@ -226,3 +243,4 @@ if __name__ == "__main__":
     verify_linker_relro_sharing(root)
     verify_unwindstack_cloexec(root)
     verify_native_abort_backtrace(root)
+    verify_accessibility_recommended_timeout(root)

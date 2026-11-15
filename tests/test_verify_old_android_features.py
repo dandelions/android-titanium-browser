@@ -18,6 +18,7 @@ NEWTAB_FILES = {
     "base/android/java/src/org/chromium/base/library_loader/Linker.java": "attemptLoadLibraryLocked(library, RelroSharingMode.NO_SHARING);",
     "third_party/libunwindstack/src/libunwindstack/Memory.cpp": "fcntl(helium_fd, F_SETFD, FD_CLOEXEC)",
     "third_party/libunwindstack/src/libprocinfo/include/procinfo/process_map.h": "fcntl(fd, F_SETFD, FD_CLOEXEC)",
+    "ui/accessibility/android/java/src/org/chromium/ui/accessibility/AccessibilityStateDelegateImpl.java": "Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q\nint recommendedTimeout = nonA11yTimeout;",
 }
 
 
