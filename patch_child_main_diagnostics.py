@@ -51,6 +51,46 @@ EXTERNAL_STORAGE_PATCHED = """    public static @JniType("std::string") String g
     }"""
 
 
+SETUP_ORIGINAL = """                public void setupConnection(
+                        IChildProcessArgs args,
+                        IParentProcess parentProcess,
+                        List<IBinder> callbacks)
+                        throws RemoteException {"""
+
+SETUP_PATCHED = """                public void setupConnection(
+                        IChildProcessArgs args,
+                        IParentProcess parentProcess,
+                        List<IBinder> callbacks)
+                        throws RemoteException {
+                    // Helium: log what the browser actually handed over. The renderer
+                    // leaves ContentMain when this handshake does not complete, and the
+                    // browser only sees a disconnect.
+                    Log.i("HeliumTrace",
+                            "args bindToCaller=" + args.bindToCaller
+                                    + " cpuCount=" + args.cpuCount
+                                    + " cpuFeatures=" + args.cpuFeatures
+                                    + " callbacks=" + (callbacks == null ? -1 : callbacks.size()));"""
+
+CONNECTION_SETUP_FILE = (
+    "content/public/android/java/src/org/chromium/content/app/"
+    "ContentChildProcessServiceDelegate.java"
+)
+
+CONNECTION_SETUP_ORIGINAL = """        mCpuCount = args.cpuCount;
+        mCpuFeatures = args.cpuFeatures;
+        assert mCpuCount > 0;"""
+
+CONNECTION_SETUP_PATCHED = """        mCpuCount = args.cpuCount;
+        mCpuFeatures = args.cpuFeatures;
+        // Helium: the assertion below aborts the handshake when the browser sends
+        // no CPU count, which surfaces as a silent renderer exit.
+        Log.i("HeliumTrace",
+                "connection setup cpuCount=" + mCpuCount
+                        + " cpuFeatures=" + mCpuFeatures
+                        + " interfaces=" + (clientInterfaces == null ? -1 : clientInterfaces.size()));
+        assert mCpuCount > 0;"""
+
+
 def _read(path):
     with open(path, "r", encoding="utf-8") as handle:
         return handle.read()
@@ -82,6 +122,20 @@ def patch_source_tree(src_dir):
         RUN_MAIN_ORIGINAL,
         RUN_MAIN_PATCHED,
         "child process main return value logging",
+    ):
+        changed = True
+    if _replace_once(
+        os.path.join(src_dir, CHILD_SERVICE),
+        SETUP_ORIGINAL,
+        SETUP_PATCHED,
+        "child process setupConnection arguments logging",
+    ):
+        changed = True
+    if _replace_once(
+        os.path.join(src_dir, CONNECTION_SETUP_FILE),
+        CONNECTION_SETUP_ORIGINAL,
+        CONNECTION_SETUP_PATCHED,
+        "child process connection setup logging",
     ):
         changed = True
     if _replace_once(

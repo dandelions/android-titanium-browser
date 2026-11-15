@@ -22,6 +22,18 @@ CHILD_SERVICE_SOURCE = """    private void onBeforeMain() {
         }
         ChildProcessServiceJni.get().exitChildProcess();
     }
+
+    private final IChildProcessService.Stub mBinder = new IChildProcessService.Stub() {
+                @Override
+                public void setupConnection(
+                        IChildProcessArgs args,
+                        IParentProcess parentProcess,
+                        List<IBinder> callbacks)
+                        throws RemoteException {
+                    assert mServiceBound;
+                    parentProcess.finishSetupConnection(-1, 0, 0, null);
+                }
+    };
 """
 
 PATH_UTILS_SOURCE = """public class PathUtils {
@@ -33,6 +45,18 @@ PATH_UTILS_SOURCE = """public class PathUtils {
 }
 """
 
+CONNECTION_SETUP_SOURCE = """public class ContentChildProcessServiceDelegate {
+    @Override
+    public void onConnectionSetup(IChildProcessArgs args, List<IBinder> clientInterfaces) {
+        mGpuCallback = null;
+
+        mCpuCount = args.cpuCount;
+        mCpuFeatures = args.cpuFeatures;
+        assert mCpuCount > 0;
+    }
+}
+"""
+
 
 class ChildMainDiagnosticsPatchTest(unittest.TestCase):
     def setUp(self):
@@ -40,10 +64,13 @@ class ChildMainDiagnosticsPatchTest(unittest.TestCase):
         self.root = Path(self.temporary_directory.name)
         self.child_service = self.root / PATCH.CHILD_SERVICE
         self.path_utils = self.root / PATCH.PATH_UTILS
+        self.connection_setup = self.root / PATCH.CONNECTION_SETUP_FILE
         self.child_service.parent.mkdir(parents=True, exist_ok=True)
         self.path_utils.parent.mkdir(parents=True, exist_ok=True)
+        self.connection_setup.parent.mkdir(parents=True, exist_ok=True)
         self.child_service.write_text(CHILD_SERVICE_SOURCE)
         self.path_utils.write_text(PATH_UTILS_SOURCE)
+        self.connection_setup.write_text(CONNECTION_SETUP_SOURCE)
 
     def tearDown(self):
         self.temporary_directory.cleanup()
@@ -70,6 +97,19 @@ class ChildMainDiagnosticsPatchTest(unittest.TestCase):
             "return Environment.getExternalStorageDirectory().getAbsolutePath();", result
         )
 
+    def test_logs_the_connection_arguments(self):
+        self.assertTrue(PATCH.patch_source_tree(self.root))
+        child_service = self.child_service.read_text()
+        self.assertIn('"args bindToCaller=" + args.bindToCaller', child_service)
+        self.assertIn('" cpuCount=" + args.cpuCount', child_service)
+
+        connection_setup = self.connection_setup.read_text()
+        self.assertIn('"connection setup cpuCount=" + mCpuCount', connection_setup)
+        self.assertLess(
+            connection_setup.index('"connection setup cpuCount="'),
+            connection_setup.index("assert mCpuCount > 0;"),
+        )
+
     def test_repeated_runs_are_no_ops(self):
         self.assertTrue(PATCH.patch_source_tree(self.root))
         child_once = self.child_service.read_text()
@@ -81,6 +121,7 @@ class ChildMainDiagnosticsPatchTest(unittest.TestCase):
     def test_missing_files_are_ignored(self):
         self.child_service.unlink()
         self.path_utils.unlink()
+        self.connection_setup.unlink()
         self.assertFalse(PATCH.patch_source_tree(self.root))
 
 
