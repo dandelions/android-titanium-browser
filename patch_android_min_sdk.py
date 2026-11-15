@@ -2510,7 +2510,13 @@ def patch_kill_child_uncaught_exception_compat(src_dir: str) -> None:
             print(f"Patched KillChildUncaughtExceptionHandler for child crash logging in: {target}")
 
 
-DNS_HELPER_METHODS = '''    /** Helium: netd keeps publishing name servers as properties when LinkProperties is empty. */
+DNS_HELPER_METHODS = '''    /**
+     * Helium: last-resort resolvers, matching the fallback netd itself uses when the
+     * virtualization layer publishes no per-network DNS servers.
+     */
+    private static final String[] HELIUM_FALLBACK_DNS = {"8.8.8.8", "8.8.4.4"};
+
+    /** Helium: netd keeps publishing name servers as properties when LinkProperties is empty. */
     private static java.util.List<InetAddress> dnsServersFromSystemProperties() {
         java.util.List<InetAddress> servers = new java.util.ArrayList<InetAddress>();
         for (String name : new String[] {"net.dns1", "net.dns2", "net.dns3"}) {
@@ -2525,6 +2531,27 @@ DNS_HELPER_METHODS = '''    /** Helium: netd keeps publishing name servers as pr
         }
         if (!servers.isEmpty()) {
             Log.i(TAG, "Helium: DNS servers from system properties " + servers);
+        }
+        return servers;
+    }
+
+    /**
+     * Helium: when the container exposes neither LinkProperties nor net.dns* properties the
+     * resolver ends up with no name servers at all, so every hostname navigation hangs forever
+     * while IP literals still work. Fall back to the same public resolvers netd already uses.
+     */
+    private static java.util.List<InetAddress> heliumFallbackDnsServers() {
+        java.util.List<InetAddress> servers = new java.util.ArrayList<InetAddress>();
+        for (String value : HELIUM_FALLBACK_DNS) {
+            try {
+                InetAddress address = InetAddress.getByName(value);
+                if (address != null && !servers.contains(address)) servers.add(address);
+            } catch (IOException e) {
+                // Ignore unusable entries.
+            }
+        }
+        if (!servers.isEmpty()) {
+            Log.i(TAG, "Helium: using fallback DNS servers " + servers);
         }
         return servers;
     }
@@ -2609,21 +2636,111 @@ def patch_android_dns_fallback(src_dir: str) -> None:
             continue
         with open(target, "r", encoding="utf-8") as f:
             content = f.read()
-        if "Helium: DNS servers from system properties" in content:
-            continue
 
         new_content = content
-        if broken_network_guard in new_content:
-            new_content = new_content.replace(broken_network_guard, fixed_network_guard, 1)
-        if broken_dns_list in new_content:
-            new_content = new_content.replace(broken_dns_list, fixed_dns_list, 1)
-        if helper_anchor in new_content and DNS_HELPER_METHODS not in new_content:
-            new_content = new_content.replace(helper_anchor, DNS_HELPER_METHODS + helper_anchor, 1)
+        if "Helium: DNS servers from system properties" not in new_content:
+            if broken_network_guard in new_content:
+                new_content = new_content.replace(broken_network_guard, fixed_network_guard, 1)
+            if broken_dns_list in new_content:
+                new_content = new_content.replace(broken_dns_list, fixed_dns_list, 1)
+            if helper_anchor in new_content and DNS_HELPER_METHODS not in new_content:
+                new_content = new_content.replace(helper_anchor, DNS_HELPER_METHODS + helper_anchor, 1)
+
+        new_content = upgrade_dns_last_resort(new_content)
 
         if new_content != content:
             with open(target, "w", encoding="utf-8") as f:
                 f.write(new_content)
             print(f"Patched DNS config fallback for head-unit networking in: {target}")
+
+
+DNS_PROPERTIES_DOC = (
+    "    /** Helium: netd keeps publishing name servers as properties when LinkProperties is empty. */"
+)
+
+DNS_LAST_RESORT_FIELD = '''    /**
+     * Helium: last-resort resolvers, matching the fallback netd itself uses when the
+     * virtualization layer publishes no per-network DNS servers.
+     */
+    private static final String[] HELIUM_FALLBACK_DNS = {"8.8.8.8", "8.8.4.4"};
+
+'''
+
+DNS_LAST_RESORT_METHOD = '''    /**
+     * Helium: when the container exposes neither LinkProperties nor net.dns* properties the
+     * resolver ends up with no name servers at all, so every hostname navigation hangs forever
+     * while IP literals still work. Fall back to the same public resolvers netd already uses.
+     */
+    private static java.util.List<InetAddress> heliumFallbackDnsServers() {
+        java.util.List<InetAddress> servers = new java.util.ArrayList<InetAddress>();
+        for (String value : HELIUM_FALLBACK_DNS) {
+            try {
+                InetAddress address = InetAddress.getByName(value);
+                if (address != null && !servers.contains(address)) servers.add(address);
+            } catch (IOException e) {
+                // Ignore unusable entries.
+            }
+        }
+        if (!servers.isEmpty()) {
+            Log.i(TAG, "Helium: using fallback DNS servers " + servers);
+        }
+        return servers;
+    }
+
+'''
+
+DNS_EMPTY_LIST_ORIGINAL = (
+    "        if (dnsServersList.isEmpty()) {\n"
+    "            dnsServersList = dnsServersFromSystemProperties();\n"
+    "        }\n"
+)
+
+DNS_EMPTY_LIST_PATCHED = (
+    "        if (dnsServersList.isEmpty()) {\n"
+    "            dnsServersList = dnsServersFromSystemProperties();\n"
+    "        }\n"
+    "        if (dnsServersList.isEmpty()) {\n"
+    "            dnsServersList = heliumFallbackDnsServers();\n"
+    "        }\n"
+)
+
+DNS_FALLBACK_NULL_ORIGINAL = (
+    "    private static @Nullable DnsStatus fallbackDnsStatus(String reason) {\n"
+    "        java.util.List<InetAddress> servers = dnsServersFromSystemProperties();\n"
+    "        Log.w(TAG, \"Helium: system DNS config unavailable (\" + reason + \"): \" + servers);\n"
+    "        if (servers.isEmpty()) return null;\n"
+)
+
+DNS_FALLBACK_NULL_PATCHED = (
+    "    private static DnsStatus fallbackDnsStatus(String reason) {\n"
+    "        java.util.List<InetAddress> servers = dnsServersFromSystemProperties();\n"
+    "        Log.w(TAG, \"Helium: system DNS config unavailable (\" + reason + \"): \" + servers);\n"
+    "        if (servers.isEmpty()) servers = heliumFallbackDnsServers();\n"
+)
+
+
+def upgrade_dns_last_resort(content: str) -> str:
+    """Add the hard-coded last-resort resolvers to an already patched file."""
+    if "heliumFallbackDnsServers" in content:
+        return content
+    if "dnsServersFromSystemProperties" not in content:
+        return content
+
+    updated = content
+    if DNS_PROPERTIES_DOC in updated:
+        updated = updated.replace(
+            DNS_PROPERTIES_DOC, DNS_LAST_RESORT_FIELD + DNS_PROPERTIES_DOC, 1
+        )
+    if DNS_EMPTY_LIST_ORIGINAL in updated:
+        updated = updated.replace(DNS_EMPTY_LIST_ORIGINAL, DNS_EMPTY_LIST_PATCHED, 1)
+    if DNS_FALLBACK_NULL_ORIGINAL in updated:
+        updated = updated.replace(DNS_FALLBACK_NULL_ORIGINAL, DNS_FALLBACK_NULL_PATCHED, 1)
+    read_property_doc = "    private static @Nullable String readSystemProperty(String key) {"
+    if read_property_doc in updated:
+        updated = updated.replace(
+            read_property_doc, DNS_LAST_RESORT_METHOD + read_property_doc, 1
+        )
+    return updated
 
 
 ZIP_INSTALLER_REPLACEMENTS = (
@@ -2781,10 +2898,10 @@ def patch_zip_installer_in_process(src_dir: str) -> None:
 
 
 DNS_FALLBACK_HELPER = '''    /** Helium: builds a usable DNS status when the platform lookup fails entirely. */
-    private static @Nullable DnsStatus fallbackDnsStatus(String reason) {
+    private static DnsStatus fallbackDnsStatus(String reason) {
         java.util.List<InetAddress> servers = dnsServersFromSystemProperties();
         Log.w(TAG, "Helium: system DNS config unavailable (" + reason + "): " + servers);
-        if (servers.isEmpty()) return null;
+        if (servers.isEmpty()) servers = heliumFallbackDnsServers();
         return new DnsStatus(servers, false, "", "");
     }
 

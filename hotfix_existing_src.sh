@@ -4348,6 +4348,7 @@ python3 "$SCRIPT_DIR/patch_child_main_diagnostics.py" "$SRC_DIR"
 python3 "$SCRIPT_DIR/patch_unwindstack_cloexec.py" "$SRC_DIR"
 python3 "$SCRIPT_DIR/patch_tab_restore_diagnostics.py" "$SRC_DIR"
 python3 "$SCRIPT_DIR/patch_native_abort_backtrace.py" "$SRC_DIR"
+python3 "$SCRIPT_DIR/patch_navigation_stage_diagnostics.py" "$SRC_DIR"
 python3 "$SCRIPT_DIR/patch_accessibility_recommended_timeout.py" "$SRC_DIR"
     python3 "$SCRIPT_DIR/verify_old_android_features.py" "$SRC_DIR"
 else

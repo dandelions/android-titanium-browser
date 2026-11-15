@@ -49,6 +49,7 @@ ACCESSIBILITY_STATE_DELEGATE = Path(
     "ui/accessibility/android/java/src/org/chromium/ui/accessibility/"
     "AccessibilityStateDelegateImpl.java"
 )
+NAVIGATION_REQUEST = Path("content/browser/renderer_host/navigation_request.cc")
 
 
 def read(root, relative):
@@ -234,6 +235,21 @@ def verify_accessibility_recommended_timeout(root):
 
     print("Verified old-android accessibility recommended timeout guard")
 
+def verify_navigation_stage_diagnostics(root):
+    nav_path, nav = read(root, NAVIGATION_REQUEST)
+    for marker in (
+        "Helium nav: begin url=",
+        "Helium nav: checks-complete url=",
+        "Helium nav: commit url=",
+        "Helium nav: failed url=",
+    ):
+        if marker not in nav:
+            raise SystemExit(
+                f"navigation stage diagnostic '{marker}' is missing: {nav_path}"
+            )
+
+    print("Verified old-android navigation stage diagnostics")
+
 if __name__ == "__main__":
     root = Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
     verify(root)
@@ -244,3 +260,4 @@ if __name__ == "__main__":
     verify_unwindstack_cloexec(root)
     verify_native_abort_backtrace(root)
     verify_accessibility_recommended_timeout(root)
+    verify_navigation_stage_diagnostics(root)
