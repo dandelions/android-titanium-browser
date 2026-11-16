@@ -246,6 +246,25 @@ def _upgrade_abort_only(path, content):
     return True
 
 
+def _dedupe_install_calls(content):
+    """Keep one SIGSYS install and one fatal-signal install in JNI startup."""
+    lines = content.splitlines(keepends=True)
+    seen_sigsys = False
+    seen_fatal = False
+    result = []
+    for line in lines:
+        if line.strip() == "HeliumInstallSigSysLogger();":
+            if seen_sigsys:
+                continue
+            seen_sigsys = True
+        if line.strip() == "HeliumInstallFatalSignalLogger();":
+            if seen_fatal:
+                continue
+            seen_fatal = True
+        result.append(line)
+    return "".join(result)
+
+
 def _replace_helper_block(path, content):
     """Rewrite an older revision of the handler with the current one."""
     start = content.find(HELPER_START)
@@ -253,6 +272,7 @@ def _replace_helper_block(path, content):
     if start < 0 or end < 0:
         return False
     new_content = content[:start] + FATAL_HELPER + content[end:]
+    new_content = _dedupe_install_calls(new_content)
     _write(path, _ensure_includes(new_content))
     print(f"Upgraded native crash backtrace logging: {path}")
     return True
@@ -264,11 +284,22 @@ def patch_source_tree(src_dir):
         return False
     content = _read(path)
     if ARRAY_MARKER in content:
-        return _replace_helper_block(path, content)
+        changed = _replace_helper_block(path, content)
+        deduped = _dedupe_install_calls(_read(path))
+        if deduped != _read(path):
+            _write(path, deduped)
+            changed = True
+        return changed
     if "HeliumFatalSignalLogger" in content:
-        if STACK_WALKER_MARKER in content:
-            return False
-        return _replace_helper_block(path, content)
+        changed = False
+        if STACK_WALKER_MARKER not in content:
+            changed = _replace_helper_block(path, content)
+        current = _read(path)
+        deduped = _dedupe_install_calls(current)
+        if deduped != current:
+            _write(path, deduped)
+            changed = True
+        return changed
     if "HeliumAbortLogger" in content:
         return _upgrade_abort_only(path, content)
     if ANCHOR not in content or CALL_ANCHOR not in content:
@@ -280,7 +311,7 @@ def patch_source_tree(src_dir):
 
     new_content = content.replace(ANCHOR, FATAL_HELPER + ANCHOR, 1)
     new_content = new_content.replace(CALL_ANCHOR, CALL_ADDED, 1)
-    _write(path, _ensure_includes(new_content))
+    _write(path, _ensure_includes(_dedupe_install_calls(new_content)))
     print(f"Patched native crash backtrace logging: {path}")
     return True
 
