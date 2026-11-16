@@ -61,6 +61,34 @@ PATCHED_MPROTECT = """ResultExpr RendererProcessPolicy::EvaluateSyscall(int sysn
   }
 """
 
+LEGACY_MPROTECT = """ResultExpr RendererProcessPolicy::EvaluateSyscall(int sysno) const {
+  if (!is_jit_disabled_) {
+    switch (sysno) {
+#if defined(__i386__) || defined(__x86_64__) || defined(__mips__) || \\
+    defined(__aarch64__)
+      case __NR_mmap:
+#endif
+#if defined(__i386__) || defined(__arm__) || \\
+    (defined(ARCH_CPU_MIPS_FAMILY) && defined(ARCH_CPU_32_BITS))
+      case __NR_mmap2:
+#endif
+        return RestrictMmapFlags(sysno);
+      case __NR_mprotect:
+      case __NR_pkey_mprotect:
+        return RestrictMprotectFlags();
+    }
+  } else {
+    // V8 keeps its code pages writable until they are marked executable, and it
+    // still calls mprotect() for them when jitless mode is forced on. Denying
+    // PROT_EXEC here kills the renderer before it can commit a navigation.
+    switch (sysno) {
+      case __NR_mprotect:
+      case __NR_pkey_mprotect:
+        return RestrictMprotectFlags();
+    }
+  }
+"""
+
 ORIGINAL_POLICY_CHOICE = """  if (sandbox::policy::SandboxTypeFromCommandLine(
           *base::CommandLine::ForCurrentProcess()) ==
           sandbox::mojom::Sandbox::kRenderer &&
@@ -102,10 +130,10 @@ def patch_renderer_mprotect(src_dir):
     content = _read(path)
     if "VMOS still performs the executable-memory transition" in content:
         return False
-    if "jitless mode is forced on" in content:
-        # A tree patched by the earlier revision already has the correct
-        # PROT_EXEC rule; leave it unchanged while upgrading the policy choice.
-        return False
+    if LEGACY_MPROTECT in content:
+        _write(path, content.replace(LEGACY_MPROTECT, PATCHED_MPROTECT, 1))
+        print(f"Upgraded renderer mprotect rule: {path}")
+        return True
     if ORIGINAL_MPROTECT not in content:
         print(f"Warning: could not find RendererProcessPolicy in {path}", file=sys.stderr)
         return False
