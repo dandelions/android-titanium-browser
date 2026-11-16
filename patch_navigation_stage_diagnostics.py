@@ -23,7 +23,7 @@ BEGIN_SIG = "void NavigationRequest::BeginNavigation() {"
 LEGACY_TRACE_MARK = "Helium nav trace revision: 2"
 LEGACY_HELPER_PATTERN = re.compile(
     r"// Helium: navigation stage trace that survives logd being unavailable\.\n"
-    r"// Helium nav trace revision: 2\n"
+    r"// Helium nav trace revision: [23]\n"
     r"void HeliumNavTrace\(.*?\n}\n\n",
     re.DOTALL,
 )
@@ -150,12 +150,14 @@ def patch_source_tree(src_dir):
     original = content
     changed = False
 
-    if TRACE_MARK not in content and BEGIN_SIG in content:
-        # Upgrade revision 2 in place instead of appending a second helper.
-        content = LEGACY_HELPER_PATTERN.sub("", content, count=1)
-        content = _add_includes(content)
-        content = content.replace(BEGIN_SIG, HELPER + BEGIN_SIG, 1)
-        changed = True
+    if BEGIN_SIG in content:
+        # Remove every previous helper before inserting exactly one revision 3.
+        cleaned = LEGACY_HELPER_PATTERN.sub("", content)
+        if TRACE_MARK not in cleaned:
+            cleaned = _add_includes(cleaned)
+            cleaned = cleaned.replace(BEGIN_SIG, HELPER + BEGIN_SIG, 1)
+        content = cleaned
+        changed = content != original
 
     content, inserted = _ensure_stage(
         content,
