@@ -17,20 +17,30 @@ import sys
 
 NAVIGATION_REQUEST = "content/browser/renderer_host/navigation_request.cc"
 
-TRACE_MARK = "Helium nav trace revision: 2"
+TRACE_MARK = "Helium nav trace revision: 3"
 BEGIN_SIG = "void NavigationRequest::BeginNavigation() {"
 
 HELPER = '''// Helium: navigation stage trace that survives logd being unavailable.
-// Helium nav trace revision: 2
+// Helium nav trace revision: 3
 void HeliumNavTrace(const char* stage, const GURL& url, int value) {
   std::string line = base::StringPrintf("Helium nav: %s url=%s value=%d\\n",
                                         stage,
                                         url.possibly_invalid_spec().c_str(),
                                         value);
   LOG(WARNING) << line;
-  base::FilePath path;
-  if (!base::PathService::Get(base::DIR_ANDROID_APP_DATA, &path)) return;
-  base::AppendToFile(path.AppendASCII("helium-nav.log"), line);
+
+  // VMOS may return an unusable private-data path while its external app-data
+  // volume remains writable by the existing Helium log collector.
+  base::FilePath external_path(
+      "/storage/emulated/0/Android/data/io.github.jqssun.helium/files/logs");
+  base::CreateDirectory(external_path);
+  if (base::AppendToFile(external_path.AppendASCII("helium-nav.log"), line)) {
+    return;
+  }
+
+  base::FilePath private_path;
+  if (!base::PathService::Get(base::DIR_ANDROID_APP_DATA, &private_path)) return;
+  base::AppendToFile(private_path.AppendASCII("helium-nav.log"), line);
 }
 
 '''
