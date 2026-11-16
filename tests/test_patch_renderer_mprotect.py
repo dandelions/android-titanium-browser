@@ -84,20 +84,39 @@ class RendererMprotectPatchTest(unittest.TestCase):
     def test_allows_mprotect_when_jit_is_disabled(self):
         self.assertTrue(PATCH.patch_source_tree(self.root))
         result = self.policy_path.read_text()
-        self.assertIn("jitless mode is forced on", result)
+        self.assertIn("VMOS still performs the executable-memory transition", result)
         jitless_branch = result[result.index("} else {") :]
         self.assertIn("case __NR_mprotect:", jitless_branch)
         self.assertIn("return RestrictMprotectFlags();", jitless_branch)
 
-    def test_always_uses_the_renderer_policy(self):
+    def test_keeps_the_chromium_renderer_policy_selection(self):
         PATCH.patch_source_tree(self.root)
         delegate = self.delegate_path.read_text()
-        self.assertIn("Helium sandbox: renderer policy=", delegate)
+        self.assertNotIn("Helium sandbox: renderer policy=", delegate)
         self.assertIn("std::make_unique<sandbox::policy::RendererProcessPolicy>", delegate)
-        self.assertNotIn("std::make_unique<sandbox::BaselinePolicyAndroid>", delegate)
-        self.assertIn('#include "base/command_line.h"', delegate)
-        self.assertIn('#include "base/logging.h"', delegate)
-        self.assertIn('#include "third_party/blink/public/common/switches.h"', delegate)
+        self.assertIn("std::make_unique<sandbox::BaselinePolicyAndroid>", delegate)
+
+    def test_upgrades_the_previous_broad_policy_patch(self):
+        delegate = self.delegate_path.read_text()
+        original = PATCH.ORIGINAL_POLICY_CHOICE
+        broad = """  // Always use the renderer policy. The baseline policy rejects
+  // mprotect(PROT_EXEC), which kills the renderer while V8 sets up its code
+  // pages, so every page load failed on this device.
+  bool dynamic_code_can_be_disabled = sandbox::policy::CanDynamicCodeBeDisabled();
+  LOG(INFO) << "Helium sandbox: renderer policy=1 jitless="
+            << dynamic_code_can_be_disabled << " js_flags="
+            << base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+                   blink::switches::kJavaScriptFlags);
+  starter.set_policy(
+      std::make_unique<sandbox::policy::RendererProcessPolicy>(options,
+        dynamic_code_can_be_disabled));
+"""
+        delegate = delegate.replace(original, broad, 1)
+        self.delegate_path.write_text(delegate)
+        self.assertTrue(PATCH.patch_source_tree(self.root))
+        upgraded = self.delegate_path.read_text()
+        self.assertNotIn("Helium sandbox: renderer policy=", upgraded)
+        self.assertIn(original, upgraded)
 
     def test_repeated_runs_are_no_ops(self):
         self.assertTrue(PATCH.patch_source_tree(self.root))

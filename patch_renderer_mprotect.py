@@ -1,18 +1,15 @@
 #!/usr/bin/env python3
-"""Keep the renderer usable when Chromium forces V8 into jitless mode.
+"""Allow the VMOS renderer's required executable-memory transition.
 
-On devices where the OS reports restricted memory (``isMemoryDclRestricted()``)
-Helium appends ``--js-flags=--jitless`` to every sandboxed child process. The
-renderer sandbox then selects the "no W^X" mprotect rule, which rejects
-``mprotect(PROT_EXEC)`` with SIGSYS. V8 still calls mprotect for its code pages
-during startup, so the renderer is killed before the first frame is committed
-and every web page fails to load.
-
-Allow PROT_EXEC in the renderer's mprotect rule regardless of the jitless flag:
-a jitless V8 does not create executable code pages, so the rule change does not
-widen the reachable attack surface, and it keeps the process alive.
+The VMOS Android 9 target reports the memory restriction API as unavailable.
+Chromium still starts the renderer with its Android renderer policy, and the
+policy must allow the normal mprotect(PROT_EXEC) transition used during V8
+startup. Keep Chromium's renderer-policy selection intact; replacing the
+Android baseline path wholesale changes unrelated syscall rules and can leave
+navigation without a usable renderer.
 """
 import os
+import re
 import sys
 
 POLICY_FILE = "sandbox/policy/linux/bpf_renderer_policy_linux.cc"
@@ -54,9 +51,8 @@ PATCHED_MPROTECT = """ResultExpr RendererProcessPolicy::EvaluateSyscall(int sysn
         return RestrictMprotectFlags();
     }
   } else {
-    // V8 keeps its code pages writable until they are marked executable, and it
-    // still calls mprotect() for them when jitless mode is forced on. Denying
-    // PROT_EXEC here kills the renderer before it can commit a navigation.
+    // VMOS still performs the executable-memory transition while jitless is
+    // selected. Keep the renderer alive without changing other syscall rules.
     switch (sysno) {
       case __NR_mprotect:
       case __NR_pkey_mprotect:
@@ -80,18 +76,13 @@ ORIGINAL_POLICY_CHOICE = """  if (sandbox::policy::SandboxTypeFromCommandLine(
   }
 """
 
-PATCHED_POLICY_CHOICE = """  // Always use the renderer policy. The baseline policy rejects
-  // mprotect(PROT_EXEC), which kills the renderer while V8 sets up its code
-  // pages, so every page load failed on this device.
-  bool dynamic_code_can_be_disabled = sandbox::policy::CanDynamicCodeBeDisabled();
-  LOG(INFO) << "Helium sandbox: renderer policy=1 jit_disabled="
-            << dynamic_code_can_be_disabled << " js_flags="
-            << base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
-                   blink::switches::kJavaScriptFlags);
-  starter.set_policy(
-      std::make_unique<sandbox::policy::RendererProcessPolicy>(options,
-        dynamic_code_can_be_disabled));
-"""
+LEGACY_POLICY_PATTERN = re.compile(
+    r"  // Always use the renderer policy\..*?"
+    r"  starter\.set_policy\(\n"
+    r"      std::make_unique<sandbox::policy::RendererProcessPolicy>\(options,\n"
+    r"        dynamic_code_can_be_disabled\)\);\n",
+    re.DOTALL,
+)
 
 
 def _read(path):
@@ -109,7 +100,11 @@ def patch_renderer_mprotect(src_dir):
     if not os.path.isfile(path):
         return False
     content = _read(path)
+    if "VMOS still performs the executable-memory transition" in content:
+        return False
     if "jitless mode is forced on" in content:
+        # A tree patched by the earlier revision already has the correct
+        # PROT_EXEC rule; leave it unchanged while upgrading the policy choice.
         return False
     if ORIGINAL_MPROTECT not in content:
         print(f"Warning: could not find RendererProcessPolicy in {path}", file=sys.stderr)
@@ -124,30 +119,27 @@ def patch_sandbox_policy(src_dir):
     if not os.path.isfile(path):
         return False
     content = _read(path)
+
     if "Helium sandbox: renderer policy=" in content:
-        return False
-    if ORIGINAL_POLICY_CHOICE not in content:
-        print(f"Warning: could not find the sandbox policy choice in {path}", file=sys.stderr)
-        return False
-    new_content = content.replace(ORIGINAL_POLICY_CHOICE, PATCHED_POLICY_CHOICE, 1)
-    if '#include "base/command_line.h"' not in new_content:
-        new_content = new_content.replace(
-            '#include "base/android/android_info.h"\n',
-            '#include "base/android/android_info.h"\n'
-            '#include "base/command_line.h"\n'
+        new_content, count = LEGACY_POLICY_PATTERN.subn(
+            ORIGINAL_POLICY_CHOICE, content, count=1
+        )
+        if count != 1:
+            print(f"Warning: renderer policy patch needs manual upgrade: {path}", file=sys.stderr)
+            return False
+        for include in (
+            '#include "base/command_line.h"\n',
             '#include "base/logging.h"\n',
-            1,
-        )
-    if 'third_party/blink/public/common/switches.h' not in new_content:
-        new_content = new_content.replace(
-            '#include "sandbox/sandbox_buildflags.h"\n',
-            '#include "sandbox/sandbox_buildflags.h"\n'
             '#include "third_party/blink/public/common/switches.h"\n',
-            1,
-        )
-    _write(path, new_content)
-    print(f"Patched renderer sandbox policy: {path}")
-    return True
+        ):
+            new_content = new_content.replace(include, "", 1)
+        _write(path, new_content)
+        print(f"Restored Chromium renderer policy selection: {path}")
+        return True
+
+    if "Helium renderer policy upgrade" in content:
+        return False
+    return False
 
 
 def patch_source_tree(src_dir):

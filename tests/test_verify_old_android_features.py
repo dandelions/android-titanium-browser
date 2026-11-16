@@ -11,8 +11,8 @@ VERIFY = ROOT / "verify_old_android_features.py"
 NEWTAB_FILES = {
     "chrome/browser/extensions/extension_url_overrides.cc": "HeliumNtp: pref list missing",
     "chrome/browser/url_constants/android/java/src/org/chromium/chrome/browser/url_constants/UrlConstantResolver.java": 'Log.i("HeliumNtp",',
-    "sandbox/policy/linux/bpf_renderer_policy_linux.cc": "jitless mode is forced on",
-    "content/renderer/renderer_main_platform_delegate_android.cc": "Helium sandbox: renderer policy=",
+    "sandbox/policy/linux/bpf_renderer_policy_linux.cc": "VMOS still performs the executable-memory transition",
+    "content/renderer/renderer_main_platform_delegate_android.cc": "std::make_unique<sandbox::policy::RendererProcessPolicy>\nstd::make_unique<sandbox::policy::BaselinePolicyAndroid>",
     "content/app/android/content_main_android.cc": "void HeliumFatalSignalLogger(int sig, siginfo_t* info, void*) {}\n  HeliumInstallFatalSignalLogger();",
     "base/android/linker/linker_jni.h": "static const size_t kAddressSpaceReservationSize = 320 * 1024 * 1024;",
     "base/android/java/src/org/chromium/base/library_loader/Linker.java": "attemptLoadLibraryLocked(library, RelroSharingMode.NO_SHARING);",

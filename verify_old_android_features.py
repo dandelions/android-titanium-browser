@@ -149,18 +149,22 @@ def verify_newtab_override(root):
 
 def verify_renderer_mprotect(root):
     policy_path, policy = read(root, RENDERER_POLICY)
-    if "jitless mode is forced on" not in policy:
+    if "VMOS still performs the executable-memory transition" not in policy:
         raise SystemExit(
             f"renderer mprotect policy patch is missing: {policy_path}"
         )
 
     delegate_path, delegate = read(root, RENDERER_DELEGATE)
-    if "Helium sandbox: renderer policy=" not in delegate:
+    if "Helium sandbox: renderer policy=" in delegate:
         raise SystemExit(
-            f"renderer sandbox policy patch is missing: {delegate_path}"
+            f"renderer policy was broadened beyond Chromium's Android selection: {delegate_path}"
+        )
+    if "std::make_unique<sandbox::policy::BaselinePolicyAndroid>" not in delegate:
+        raise SystemExit(
+            f"Android baseline renderer policy fallback is missing: {delegate_path}"
         )
 
-    print("Verified old-android renderer sandbox mprotect patches")
+    print("Verified old-android renderer mprotect patch preserves Chromium policy selection")
 
 
 def verify_native_abort_backtrace(root):
