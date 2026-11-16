@@ -13,12 +13,20 @@ dead, and cover the response stage so a stall between "throttles passed" and
 "renderer committed" is attributable to a specific step.
 """
 import os
+import re
 import sys
 
 NAVIGATION_REQUEST = "content/browser/renderer_host/navigation_request.cc"
 
 TRACE_MARK = "Helium nav trace revision: 3"
 BEGIN_SIG = "void NavigationRequest::BeginNavigation() {"
+LEGACY_TRACE_MARK = "Helium nav trace revision: 2"
+LEGACY_HELPER_PATTERN = re.compile(
+    r"// Helium: navigation stage trace that survives logd being unavailable\.\n"
+    r"// Helium nav trace revision: 2\n"
+    r"void HeliumNavTrace\(.*?\n}\n\n",
+    re.DOTALL,
+)
 
 HELPER = '''// Helium: navigation stage trace that survives logd being unavailable.
 // Helium nav trace revision: 3
@@ -143,6 +151,8 @@ def patch_source_tree(src_dir):
     changed = False
 
     if TRACE_MARK not in content and BEGIN_SIG in content:
+        # Upgrade revision 2 in place instead of appending a second helper.
+        content = LEGACY_HELPER_PATTERN.sub("", content, count=1)
         content = _add_includes(content)
         content = content.replace(BEGIN_SIG, HELPER + BEGIN_SIG, 1)
         changed = True
