@@ -159,7 +159,7 @@ def verify_renderer_mprotect(root):
         raise SystemExit(
             f"renderer policy was broadened beyond Chromium's Android selection: {delegate_path}"
         )
-    if "std::make_unique<sandbox::policy::BaselinePolicyAndroid>" not in delegate:
+    if "std::make_unique<sandbox::BaselinePolicyAndroid>" not in delegate:
         raise SystemExit(
             f"Android baseline renderer policy fallback is missing: {delegate_path}"
         )
