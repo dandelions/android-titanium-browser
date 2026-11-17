@@ -21,12 +21,12 @@ import sys
 
 NAVIGATION_REQUEST = "content/browser/renderer_host/navigation_request.cc"
 
-TRACE_MARK = "Helium nav trace revision: 4"
+TRACE_MARK = "Helium nav trace revision: 5"
 BEGIN_SIG = "void NavigationRequest::BeginNavigation() {"
 LEGACY_TRACE_MARK = "Helium nav trace revision: 2"
 LEGACY_HELPER_PATTERN = re.compile(
     r"// Helium: navigation stage trace that survives logd being unavailable\.\n"
-    r"// Helium nav trace revision: [234]\n"
+    r"// Helium nav trace revision: [2-5]\n"
     r"void HeliumNavTrace\(.*?\n}\n\n",
     re.DOTALL,
 )
@@ -41,7 +41,7 @@ LEGACY_INLINE_PATTERN = re.compile(
 )
 
 HELPER = '''// Helium: navigation stage trace that survives logd being unavailable.
-// Helium nav trace revision: 4
+// Helium nav trace revision: 5
 void HeliumNavTrace(const char* stage, const GURL& url, int value) {
   std::string line = base::StringPrintf("Helium nav: %s url=%s value=%d\\n",
                                         stage,
@@ -61,7 +61,7 @@ void HeliumNavTrace(const char* stage, const GURL& url, int value) {
       "/storage/emulated/0/Android/data/io.github.jqssun.helium/files/logs/"
       "helium-nav.log"));
 
-  const int line_size = static_cast<int>(line.size());
+  const size_t line_size = line.size();
   for (const base::FilePath& where : candidates) {
     base::File file(where, base::File::FLAG_OPEN_ALWAYS |
                                base::File::FLAG_WRITE |
@@ -72,7 +72,9 @@ void HeliumNavTrace(const char* stage, const GURL& url, int value) {
                                      file.error_details());
       continue;
     }
-    if (file.WriteAtCurrentPos(line.data(), line_size) == line_size) {
+    const std::optional<size_t> written =
+        file.WriteAtCurrentPos(base::as_byte_span(line));
+    if (written.has_value() && *written == line_size) {
       return;
     }
     LOG(WARNING) << "Helium nav: short write to " << where.value();
@@ -180,7 +182,7 @@ def patch_source_tree(src_dir):
     changed = False
 
     if BEGIN_SIG in content:
-        # Remove every previous helper before inserting exactly one revision 4,
+        # Remove every previous helper before inserting exactly one revision 5,
         # and drop the bare LOG statements an earlier revision left behind so a
         # stage is reported once.
         cleaned = LEGACY_HELPER_PATTERN.sub("", content)
