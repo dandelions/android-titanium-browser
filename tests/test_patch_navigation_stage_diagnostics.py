@@ -53,6 +53,18 @@ void NavigationRequest::OnRequestFailedInternal(
     bool collapse_frame) {
   CHECK(true);
 }
+
+void NavigationRequest::ReadyToCommitNavigation(bool is_error) {
+  CHECK(true);
+}
+
+void NavigationRequest::OnCommitTimeout() {
+  CHECK(true);
+}
+
+void NavigationRequest::OnResponseBodyReady(MojoResult) {
+  CHECK(true);
+}
 """
 
 # 上一版补丁留下的痕迹：只有 LOG 行，没有 HeliumNavTrace
@@ -104,7 +116,16 @@ class TestPatchNavigationStageDiagnostics(unittest.TestCase):
             ):
                 self.assertIn(f'#include "{header}"', out)
             self.assertIn("base::File::ErrorToString(", out)
-            for stage in ("begin", "checks-complete", "response", "commit", "failed"):
+            for stage in (
+                "begin",
+                "checks-complete",
+                "response",
+                "response-body-ready",
+                "ready-to-commit",
+                "commit-timeout",
+                "commit",
+                "failed",
+            ):
                 self.assertIn(f'HeliumNavTrace("{stage}"', out)
 
     def test_upgrades_a_previously_patched_tree(self):

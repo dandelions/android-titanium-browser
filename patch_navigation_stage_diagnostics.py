@@ -130,6 +130,21 @@ STAGES = (
         'HeliumNavTrace("failed", GetURL(), status.error_code);',
         "failed",
     ),
+    (
+        "void NavigationRequest::ReadyToCommitNavigation(bool is_error)",
+        'HeliumNavTrace("ready-to-commit", GetURL(), is_error);',
+        "ready-to-commit",
+    ),
+    (
+        "void NavigationRequest::OnCommitTimeout()",
+        'HeliumNavTrace("commit-timeout", GetURL(), 0);',
+        "commit-timeout",
+    ),
+    (
+        "void NavigationRequest::OnResponseBodyReady(MojoResult)",
+        'HeliumNavTrace("response-body-ready", GetURL(), 0);',
+        "response-body-ready",
+    ),
 )
 
 
