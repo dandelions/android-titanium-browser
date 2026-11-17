@@ -11,6 +11,9 @@ producing output exactly when the failure happens. Log through both LOG and a
 direct append to ``<app data>/helium-nav.log`` so the stages survive logd being
 dead, and cover the response stage so a stall between "throttles passed" and
 "renderer committed" is attributable to a specific step.
+
+The device never produced that file, so the trace now reports the ``base::File``
+error for every path it tries instead of failing silently.
 """
 import os
 import re
@@ -18,18 +21,27 @@ import sys
 
 NAVIGATION_REQUEST = "content/browser/renderer_host/navigation_request.cc"
 
-TRACE_MARK = "Helium nav trace revision: 3"
+TRACE_MARK = "Helium nav trace revision: 4"
 BEGIN_SIG = "void NavigationRequest::BeginNavigation() {"
 LEGACY_TRACE_MARK = "Helium nav trace revision: 2"
 LEGACY_HELPER_PATTERN = re.compile(
     r"// Helium: navigation stage trace that survives logd being unavailable\.\n"
-    r"// Helium nav trace revision: [23]\n"
+    r"// Helium nav trace revision: [234]\n"
     r"void HeliumNavTrace\(.*?\n}\n\n",
     re.DOTALL,
 )
 
+# Stages that an earlier revision logged with a bare LOG statement next to the
+# helper call, which doubled every line in logcat.
+LEGACY_INLINE_PATTERN = re.compile(
+    r"(?:[ \t]*// Helium: [^\n]*\n)?"
+    r'[ \t]*LOG\(WARNING\) << "Helium nav: '
+    r"(?:begin|checks-complete|commit|failed) url="
+    r"[\s\S]*?;[ \t]*\n"
+)
+
 HELPER = '''// Helium: navigation stage trace that survives logd being unavailable.
-// Helium nav trace revision: 3
+// Helium nav trace revision: 4
 void HeliumNavTrace(const char* stage, const GURL& url, int value) {
   std::string line = base::StringPrintf("Helium nav: %s url=%s value=%d\\n",
                                         stage,
@@ -37,24 +49,41 @@ void HeliumNavTrace(const char* stage, const GURL& url, int value) {
                                         value);
   LOG(WARNING) << line;
 
-  // VMOS may return an unusable private-data path while its external app-data
-  // volume remains writable by the existing Helium log collector.
-  base::FilePath external_path(
-      "/storage/emulated/0/Android/data/io.github.jqssun.helium/files/logs");
-  base::CreateDirectory(external_path);
-  if (base::AppendToFile(external_path.AppendASCII("helium-nav.log"), line)) {
-    return;
+  // The app data directory is the only location the browser process is
+  // guaranteed to own, so try it first. The shared app-data volume is written
+  // second because logd dies on this device and a file outlives it.
+  std::vector<base::FilePath> candidates;
+  base::FilePath app_data;
+  if (base::PathService::Get(base::DIR_ANDROID_APP_DATA, &app_data)) {
+    candidates.push_back(app_data.AppendASCII("helium-nav.log"));
   }
+  candidates.push_back(base::FilePath(
+      "/storage/emulated/0/Android/data/io.github.jqssun.helium/files/logs/"
+      "helium-nav.log"));
 
-  base::FilePath private_path;
-  if (!base::PathService::Get(base::DIR_ANDROID_APP_DATA, &private_path)) return;
-  base::AppendToFile(private_path.AppendASCII("helium-nav.log"), line);
+  const int line_size = static_cast<int>(line.size());
+  for (const base::FilePath& where : candidates) {
+    base::File file(where, base::File::FLAG_OPEN_ALWAYS |
+                               base::File::FLAG_WRITE |
+                               base::File::FLAG_APPEND);
+    if (!file.IsValid()) {
+      LOG(WARNING) << "Helium nav: cannot open " << where.value()
+                   << " error=" << base::File::ErrorToString(
+                                     file.error_details());
+      continue;
+    }
+    if (file.WriteAtCurrentPos(line.data(), line_size) == line_size) {
+      return;
+    }
+    LOG(WARNING) << "Helium nav: short write to " << where.value();
+  }
 }
 
 '''
 
 EXTRA_INCLUDES = (
-    "base/files/file_util.h",
+    "base/files/file.h",
+    "base/files/file_path.h",
     "base/path_service.h",
     "base/base_paths_android.h",
 )
@@ -151,8 +180,11 @@ def patch_source_tree(src_dir):
     changed = False
 
     if BEGIN_SIG in content:
-        # Remove every previous helper before inserting exactly one revision 3.
+        # Remove every previous helper before inserting exactly one revision 4,
+        # and drop the bare LOG statements an earlier revision left behind so a
+        # stage is reported once.
         cleaned = LEGACY_HELPER_PATTERN.sub("", content)
+        cleaned = LEGACY_INLINE_PATTERN.sub("", cleaned)
         if TRACE_MARK not in cleaned:
             cleaned = _add_includes(cleaned)
             cleaned = cleaned.replace(BEGIN_SIG, HELPER + BEGIN_SIG, 1)

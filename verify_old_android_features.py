@@ -50,6 +50,8 @@ ACCESSIBILITY_STATE_DELEGATE = Path(
     "AccessibilityStateDelegateImpl.java"
 )
 NAVIGATION_REQUEST = Path("content/browser/renderer_host/navigation_request.cc")
+CONTENT_MAIN = Path("content/app/content_main.cc")
+CONTENT_MAIN_RUNNER = Path("content/app/content_main_runner_impl.cc")
 
 
 def read(root, relative):
@@ -256,6 +258,32 @@ def verify_navigation_stage_diagnostics(root):
 
     print("Verified old-android navigation stage diagnostics")
 
+def verify_content_main_diagnostics(root):
+    main_path, main = read(root, CONTENT_MAIN)
+    for marker in (
+        "Helium content main trace revision: 1",
+        "Helium content main: type=",
+        "Helium content main: initialize returned ",
+        "Helium content main: run returned ",
+    ):
+        if marker not in main:
+            raise SystemExit(
+                f"content main diagnostic '{marker}' is missing: {main_path}"
+            )
+
+    runner_path, runner = read(root, CONTENT_MAIN_RUNNER)
+    for marker in (
+        "Helium child main: type=",
+        "Helium child main: matched ",
+        "Helium child main: no main function for type=",
+    ):
+        if marker not in runner:
+            raise SystemExit(
+                f"child main diagnostic '{marker}' is missing: {runner_path}"
+            )
+
+    print("Verified old-android content main diagnostics")
+
 if __name__ == "__main__":
     root = Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
     verify(root)
@@ -267,3 +295,4 @@ if __name__ == "__main__":
     verify_native_abort_backtrace(root)
     verify_accessibility_recommended_timeout(root)
     verify_navigation_stage_diagnostics(root)
+    verify_content_main_diagnostics(root)

@@ -4085,6 +4085,7 @@ python3 "$SCRIPT_DIR/patch_unwindstack_cloexec.py" .
 python3 "$SCRIPT_DIR/patch_tab_restore_diagnostics.py" .
 python3 "$SCRIPT_DIR/patch_native_abort_backtrace.py" .
 python3 "$SCRIPT_DIR/patch_navigation_stage_diagnostics.py" .
+python3 "$SCRIPT_DIR/patch_content_main_diagnostics.py" .
 python3 "$SCRIPT_DIR/patch_accessibility_recommended_timeout.py" .
     python3 "$SCRIPT_DIR/verify_old_android_features.py" .
 else

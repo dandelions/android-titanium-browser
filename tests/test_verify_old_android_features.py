@@ -20,6 +20,8 @@ NEWTAB_FILES = {
     "third_party/libunwindstack/src/libprocinfo/include/procinfo/process_map.h": "fcntl(fd, F_SETFD, FD_CLOEXEC)",
     "ui/accessibility/android/java/src/org/chromium/ui/accessibility/AccessibilityStateDelegateImpl.java": "Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q\nint recommendedTimeout = nonA11yTimeout;",
     "content/browser/renderer_host/navigation_request.cc": 'HeliumNavTrace("begin"\nHeliumNavTrace("checks-complete"\nHeliumNavTrace("response"\nHeliumNavTrace("commit"\nHeliumNavTrace("failed"\nhelium-nav.log',
+    "content/app/content_main.cc": "Helium content main trace revision: 1\nHelium content main: type=\nHelium content main: initialize returned \nHelium content main: run returned ",
+    "content/app/content_main_runner_impl.cc": "Helium child main: type=\nHelium child main: matched \nHelium child main: no main function for type=",
 }
 
 

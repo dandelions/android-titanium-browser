@@ -94,14 +94,16 @@ class TestPatchNavigationStageDiagnostics(unittest.TestCase):
             self.assertTrue(changed)
             out = path.read_text(encoding="utf-8")
             self.assertIn("void HeliumNavTrace(const char* stage", out)
-            self.assertIn('path.AppendASCII("helium-nav.log")', out)
-            self.assertIn("base::AppendToFile(", out)
+            self.assertIn('app_data.AppendASCII("helium-nav.log")', out)
+            self.assertIn("base::File file(where,", out)
             for header in (
-                "base/files/file_util.h",
+                "base/files/file.h",
+                "base/files/file_path.h",
                 "base/path_service.h",
                 "base/base_paths_android.h",
             ):
                 self.assertIn(f'#include "{header}"', out)
+            self.assertIn("base::File::ErrorToString(", out)
             for stage in ("begin", "checks-complete", "response", "commit", "failed"):
                 self.assertIn(f'HeliumNavTrace("{stage}"', out)
 
@@ -113,6 +115,10 @@ class TestPatchNavigationStageDiagnostics(unittest.TestCase):
             self.assertIn("void HeliumNavTrace(const char* stage", out)
             for stage in ("begin", "checks-complete", "commit"):
                 self.assertIn(f'HeliumNavTrace("{stage}"', out)
+            # 上一版留下的裸 LOG 行必须被清掉，否则每个阶段会打印两次。
+            self.assertNotIn('LOG(WARNING) << "Helium nav: begin url=', out)
+            self.assertNotIn('LOG(WARNING) << "Helium nav: checks-complete url=', out)
+            self.assertNotIn('LOG(WARNING) << "Helium nav: commit url=', out)
 
     def test_idempotent(self):
         with tempfile.TemporaryDirectory() as tmp:
