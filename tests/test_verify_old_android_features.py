@@ -22,6 +22,8 @@ NEWTAB_FILES = {
     "content/browser/renderer_host/navigation_request.cc": 'HeliumNavTrace("begin"\nHeliumNavTrace("checks-complete"\nHeliumNavTrace("response"\nHeliumNavTrace("commit"\nHeliumNavTrace("failed"\nhelium-nav.log',
     "content/app/content_main.cc": "Helium content main trace revision: 1\nHelium content main: type=\nHelium content main: initialize returned \nHelium content main: run returned ",
     "content/app/content_main_runner_impl.cc": "Helium child main: type=\nHelium child main: matched \nHelium child main: no main function for type=",
+    "content/renderer/renderer_main.cc": "Helium renderer lifecycle: main entered\nHelium renderer lifecycle: RenderThreadImpl ready\nHelium renderer lifecycle: message loop entered\nHelium renderer lifecycle: message loop exited",
+    "content/child/child_thread_impl.cc": "Helium renderer lifecycle: child channel error",
 }
 
 

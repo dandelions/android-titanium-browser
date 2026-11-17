@@ -52,6 +52,8 @@ ACCESSIBILITY_STATE_DELEGATE = Path(
 NAVIGATION_REQUEST = Path("content/browser/renderer_host/navigation_request.cc")
 CONTENT_MAIN = Path("content/app/content_main.cc")
 CONTENT_MAIN_RUNNER = Path("content/app/content_main_runner_impl.cc")
+RENDERER_MAIN = Path("content/renderer/renderer_main.cc")
+CHILD_THREAD = Path("content/child/child_thread_impl.cc")
 
 
 def read(root, relative):
@@ -284,6 +286,27 @@ def verify_content_main_diagnostics(root):
 
     print("Verified old-android content main diagnostics")
 
+def verify_renderer_lifecycle_diagnostics(root):
+    renderer_path, renderer = read(root, RENDERER_MAIN)
+    for marker in (
+        "Helium renderer lifecycle: main entered",
+        "Helium renderer lifecycle: RenderThreadImpl ready",
+        "Helium renderer lifecycle: message loop entered",
+        "Helium renderer lifecycle: message loop exited",
+    ):
+        if marker not in renderer:
+            raise SystemExit(
+                f"renderer lifecycle diagnostic '{marker}' is missing: {renderer_path}"
+            )
+
+    child_path, child = read(root, CHILD_THREAD)
+    if "Helium renderer lifecycle: child channel error" not in child:
+        raise SystemExit(
+            f"renderer channel diagnostic is missing: {child_path}"
+        )
+
+    print("Verified old-android renderer lifecycle diagnostics")
+
 if __name__ == "__main__":
     root = Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
     verify(root)
@@ -296,3 +319,4 @@ if __name__ == "__main__":
     verify_accessibility_recommended_timeout(root)
     verify_navigation_stage_diagnostics(root)
     verify_content_main_diagnostics(root)
+    verify_renderer_lifecycle_diagnostics(root)
