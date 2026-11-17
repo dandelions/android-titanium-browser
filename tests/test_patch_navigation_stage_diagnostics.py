@@ -65,6 +65,48 @@ void NavigationRequest::OnCommitTimeout() {
 void NavigationRequest::OnResponseBodyReady(MojoResult) {
   CHECK(true);
 }
+
+void NavigationRequest::RunCommitDeferringConditions(
+    base::OnceClosure on_commit_deferring_conditions_complete_callback) {
+  CHECK(true);
+}
+
+void NavigationRequest::CommitNavigation() {
+  CHECK(true);
+}
+"""
+
+RUNNER = """#include "base/memory/ptr_util.h"
+
+void CommitDeferringConditionRunner::ProcessConditions() {
+  while (!conditions_.empty()) {
+    auto resume_closure = base::BindOnce(&CommitDeferringConditionRunner);
+    CommitDeferringCondition* condition = (*conditions_.begin()).get();
+    is_deferred_ = false;
+    is_in_will_commit_navigation_ = true;
+    was_resumed_synchronously_ = false;
+
+    base::WeakPtr<CommitDeferringConditionRunner> weak_self =
+        weak_factory_.GetWeakPtr();
+    CommitDeferringCondition::Result result =
+        condition->WillCommitNavigation(std::move(resume_closure));
+    if (!weak_self) {
+      // The runner was deleted, which indicates the navigation was cancelled.
+      CHECK_NE(result, CommitDeferringCondition::Result::kProceed);
+      return;
+    }
+    is_in_will_commit_navigation_ = false;
+  }
+}
+"""
+
+RENDER_FRAME = """void RenderFrameImpl::CommitNavigation(
+    blink::mojom::CommonNavigationParamsPtr common_params) {
+  base::ElapsedTimer timer;
+  TRACE_EVENT("navigation", "RenderFrameImpl::CommitNavigation",
+              perfetto::Flow::FromPointer(this));
+  DCHECK(navigation_client_impl_);
+}
 """
 
 # 上一版补丁留下的痕迹：只有 LOG 行，没有 HeliumNavTrace
@@ -100,6 +142,15 @@ class TestPatchNavigationStageDiagnostics(unittest.TestCase):
         path.write_text(source, encoding="utf-8")
         return path, PATCH.patch_source_tree(tmp)
 
+    def _apply_commit_stage_files(self, tmp):
+        runner = Path(tmp) / PATCH.COMMIT_RUNNER
+        runner.parent.mkdir(parents=True, exist_ok=True)
+        runner.write_text(RUNNER, encoding="utf-8")
+        renderer = Path(tmp) / PATCH.RENDER_FRAME_IMPL
+        renderer.parent.mkdir(parents=True, exist_ok=True)
+        renderer.write_text(RENDER_FRAME, encoding="utf-8")
+        return runner, renderer
+
     def test_fresh_tree_gets_helper_and_all_stages(self):
         with tempfile.TemporaryDirectory() as tmp:
             path, changed = self._apply(tmp, CLEAN)
@@ -122,6 +173,8 @@ class TestPatchNavigationStageDiagnostics(unittest.TestCase):
                 "response",
                 "response-body-ready",
                 "ready-to-commit",
+                "conditions-start",
+                "commit-send",
                 "commit-timeout",
                 "commit",
                 "failed",
@@ -147,6 +200,29 @@ class TestPatchNavigationStageDiagnostics(unittest.TestCase):
             first = path.read_text(encoding="utf-8")
             self.assertFalse(PATCH.patch_source_tree(tmp))
             self.assertEqual(first, path.read_text(encoding="utf-8"))
+
+    def test_commit_stage_traces_cover_conditions_and_renderer_receipt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runner, renderer = self._apply_commit_stage_files(tmp)
+            self.assertTrue(PATCH.patch_source_tree(tmp))
+
+            runner_out = runner.read_text(encoding="utf-8")
+            self.assertIn('#include "base/logging.h"', runner_out)
+            self.assertIn('"Helium commit: condition="', runner_out)
+            self.assertIn('"Helium commit: condition result="', runner_out)
+            self.assertIn("condition->TraceEventName()", runner_out)
+
+            renderer_out = renderer.read_text(encoding="utf-8")
+            self.assertIn('"Helium renderer commit: received"', renderer_out)
+            self.assertLess(
+                renderer_out.index("Helium renderer commit: received"),
+                renderer_out.index('TRACE_EVENT("navigation", "RenderFrameImpl'),
+            )
+
+            # 第二次运行必须不再改动，避免重复插入日志。
+            self.assertFalse(PATCH.patch_source_tree(tmp))
+            self.assertEqual(runner_out, runner.read_text(encoding="utf-8"))
+            self.assertEqual(renderer_out, renderer.read_text(encoding="utf-8"))
 
     def test_missing_file_is_noop(self):
         with tempfile.TemporaryDirectory() as tmp:

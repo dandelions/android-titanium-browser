@@ -145,6 +145,55 @@ STAGES = (
         'HeliumNavTrace("response-body-ready", GetURL(), 0);',
         "response-body-ready",
     ),
+    (
+        "void NavigationRequest::RunCommitDeferringConditions(\n"
+        "    base::OnceClosure on_commit_deferring_conditions_complete_callback)",
+        'HeliumNavTrace("conditions-start", GetURL(), 0);',
+        "conditions-start",
+    ),
+    (
+        "void NavigationRequest::CommitNavigation()",
+        'HeliumNavTrace("commit-send", GetURL(), 0);',
+        "commit-send",
+    ),
+)
+
+COMMIT_RUNNER = "content/browser/renderer_host/commit_deferring_condition_runner.cc"
+RENDER_FRAME_IMPL = "content/renderer/render_frame_impl.cc"
+
+RUNNER_INCLUDE_ANCHOR = '#include "base/memory/ptr_util.h"\n'
+RUNNER_INCLUDE_PATCH = (
+    RUNNER_INCLUDE_ANCHOR + '#include "base/logging.h"\n'
+)
+
+RUNNER_CONDITION_ANCHOR = (
+    "    CommitDeferringCondition* condition = (*conditions_.begin()).get();\n"
+)
+RUNNER_CONDITION_PATCH = RUNNER_CONDITION_ANCHOR + (
+    '    LOG(WARNING) << "Helium commit: condition="\n'
+    "                 << condition->TraceEventName();\n"
+)
+
+RUNNER_RESULT_ANCHOR = (
+    "    if (!weak_self) {\n"
+    "      // The runner was deleted, which indicates the navigation was cancelled.\n"
+    "      CHECK_NE(result, CommitDeferringCondition::Result::kProceed);\n"
+    "      return;\n"
+    "    }\n"
+    "    is_in_will_commit_navigation_ = false;\n"
+)
+RUNNER_RESULT_PATCH = RUNNER_RESULT_ANCHOR + (
+    '    LOG(WARNING) << "Helium commit: condition result="\n'
+    '                 << static_cast<int>(result) << " "\n'
+    "                 << condition->TraceEventName();\n"
+)
+
+RENDER_COMMIT_ANCHOR = (
+    '  TRACE_EVENT("navigation", "RenderFrameImpl::CommitNavigation",\n'
+)
+RENDER_COMMIT_PATCH = (
+    '  LOG(WARNING) << "Helium renderer commit: received";\n'
+    + RENDER_COMMIT_ANCHOR
 )
 
 
@@ -187,14 +236,80 @@ def _ensure_stage(content, signature, statement, stage):
     return content.replace(marker, marker + "  " + statement + "\n", 1), True
 
 
+def _replace_anchor(path, anchor, patched, marker, label):
+    """Insert `patched` in place of `anchor` once, skipping already patched files."""
+    if not os.path.isfile(path):
+        return False
+    content = _read(path)
+    if marker in content:
+        return False
+    if anchor not in content:
+        print(f"Warning: could not find {label} in {path}", file=sys.stderr)
+        return False
+    _write(path, content.replace(anchor, patched, 1))
+    print(f"Patched {label}: {path}")
+    return True
+
+
+def patch_commit_stages(src_dir):
+    """Report which commit deferring condition, or the commit send, stalls."""
+    changed = False
+
+    runner = os.path.join(src_dir, COMMIT_RUNNER)
+    changed = (
+        _replace_anchor(
+            runner,
+            RUNNER_INCLUDE_ANCHOR,
+            RUNNER_INCLUDE_PATCH,
+            '#include "base/logging.h"',
+            "commit condition logging include",
+        )
+        or changed
+    )
+    changed = (
+        _replace_anchor(
+            runner,
+            RUNNER_CONDITION_ANCHOR,
+            RUNNER_CONDITION_PATCH,
+            "Helium commit: condition=",
+            "commit deferring condition name",
+        )
+        or changed
+    )
+    changed = (
+        _replace_anchor(
+            runner,
+            RUNNER_RESULT_ANCHOR,
+            RUNNER_RESULT_PATCH,
+            "Helium commit: condition result=",
+            "commit deferring condition result",
+        )
+        or changed
+    )
+
+    changed = (
+        _replace_anchor(
+            os.path.join(src_dir, RENDER_FRAME_IMPL),
+            RENDER_COMMIT_ANCHOR,
+            RENDER_COMMIT_PATCH,
+            "Helium renderer commit: received",
+            "renderer commit receipt",
+        )
+        or changed
+    )
+
+    return changed
+
+
 def patch_source_tree(src_dir):
+    changed = patch_commit_stages(src_dir)
+
     nav_path = os.path.join(src_dir, NAVIGATION_REQUEST)
     if not os.path.isfile(nav_path):
-        return False
+        return changed
 
     content = _read(nav_path)
     original = content
-    changed = False
 
     if BEGIN_SIG in content:
         # Remove every previous helper before inserting exactly one revision 5,

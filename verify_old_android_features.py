@@ -50,6 +50,8 @@ ACCESSIBILITY_STATE_DELEGATE = Path(
     "AccessibilityStateDelegateImpl.java"
 )
 NAVIGATION_REQUEST = Path("content/browser/renderer_host/navigation_request.cc")
+COMMIT_RUNNER = Path("content/browser/renderer_host/commit_deferring_condition_runner.cc")
+RENDER_FRAME_IMPL = Path("content/renderer/render_frame_impl.cc")
 CONTENT_MAIN = Path("content/app/content_main.cc")
 CONTENT_MAIN_RUNNER = Path("content/app/content_main_runner_impl.cc")
 RENDERER_MAIN = Path("content/renderer/renderer_main.cc")
@@ -251,6 +253,8 @@ def verify_navigation_stage_diagnostics(root):
         'HeliumNavTrace("response"',
         'HeliumNavTrace("response-body-ready"',
         'HeliumNavTrace("ready-to-commit"',
+        'HeliumNavTrace("conditions-start"',
+        'HeliumNavTrace("commit-send"',
         'HeliumNavTrace("commit-timeout"',
         'HeliumNavTrace("commit"',
         'HeliumNavTrace("failed"',
@@ -260,6 +264,22 @@ def verify_navigation_stage_diagnostics(root):
             raise SystemExit(
                 f"navigation stage diagnostic '{marker}' is missing: {nav_path}"
             )
+
+    runner_path, runner = read(root, COMMIT_RUNNER)
+    for marker in (
+        '"Helium commit: condition="',
+        '"Helium commit: condition result="',
+    ):
+        if marker not in runner:
+            raise SystemExit(
+                f"commit stage diagnostic '{marker}' is missing: {runner_path}"
+            )
+
+    render_path, render = read(root, RENDER_FRAME_IMPL)
+    if "Helium renderer commit: received" not in render:
+        raise SystemExit(
+            f"renderer commit receipt tracing is missing: {render_path}"
+        )
 
     print("Verified old-android navigation stage diagnostics")
 
