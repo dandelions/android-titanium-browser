@@ -24,6 +24,23 @@ class OldAndroidFeatureConfigurationTest(unittest.TestCase):
             build,
         )
 
+    def test_old_android_disables_priority_inheritance_futexes(self):
+        build = (ROOT / "build.sh").read_text()
+        self.assertIn(
+            'set_gn_arg "$desired_args" enable_mutex_priority_inheritance false',
+            build,
+        )
+        self.assertIn(
+            'set_gn_arg "$desired_args" enable_partition_lock_priority_inheritance false',
+            build,
+        )
+        configure_start = build.index("configure_out_dir() {")
+        old_android_start = build.index("if is_old_android_build; then", configure_start)
+        old_android_end = build.index("    else", old_android_start)
+        old_android_block = build[old_android_start:old_android_end]
+        self.assertIn("enable_mutex_priority_inheritance false", old_android_block)
+        self.assertIn("enable_partition_lock_priority_inheritance false", old_android_block)
+
     def test_hotfixes_require_extension_and_bottom_toolbar_markers(self):
         for name in ("patch.sh", "hotfix_existing_src.sh"):
             with self.subTest(script=name):

@@ -316,6 +316,10 @@ configure_out_dir() {
         set_gn_arg "$desired_args" is_desktop_android true
         set_gn_arg "$desired_args" v8_enable_drumbrake false
         set_gn_arg "$desired_args" v8_drumbrake_bounds_checks false
+        # VMOS Android 9 does not provide a reliable priority-inheritance
+        # futex implementation; keep old-android on regular mutexes.
+        set_gn_arg "$desired_args" enable_mutex_priority_inheritance false
+        set_gn_arg "$desired_args" enable_partition_lock_priority_inheritance false
     else
         sed -i "/^default_min_sdk_version/d" "$desired_args"
     fi
