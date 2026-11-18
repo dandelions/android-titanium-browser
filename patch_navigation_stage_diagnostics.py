@@ -158,15 +158,14 @@ RENDER_FRAME_IMPL = "content/renderer/render_frame_impl.cc"
 RENDER_FRAME_HOST_IMPL = "content/browser/renderer_host/render_frame_host_impl.cc"
 
 RUNNER_INCLUDE_ANCHOR = '#include "base/memory/ptr_util.h"\n'
-RUNNER_INCLUDE_PATCH = (
-    RUNNER_INCLUDE_ANCHOR
-    + '#include "base/logging.h"\n'
-    + '#include "base/containers/span.h"\n'
-    + '#include "base/files/file.h"\n'
-    + '#include "base/files/file_path.h"\n'
-    + '#include "base/path_service.h"\n'
-    + '#include "base/base_paths_android.h"\n'
-    + '#include "base/strings/stringprintf.h"\n'
+RUNNER_INCLUDE_PATCH = RUNNER_INCLUDE_ANCHOR + '#include "base/logging.h"\n'
+RUNNER_EXTRA_INCLUDES = (
+    '#include "base/containers/span.h"\n',
+    '#include "base/files/file.h"\n',
+    '#include "base/files/file_path.h"\n',
+    '#include "base/path_service.h"\n',
+    '#include "base/base_paths_android.h"\n',
+    '#include "base/strings/stringprintf.h"\n',
 )
 
 RUNNER_TRACE_HELPER_ANCHOR = "void CommitDeferringConditionRunner::ProcessConditions() {\n"
@@ -346,6 +345,23 @@ def patch_commit_stages(src_dir):
         )
         or changed
     )
+    if os.path.isfile(runner):
+        runner_content = _read(runner)
+        missing_includes = "".join(
+            include
+            for include in RUNNER_EXTRA_INCLUDES
+            if include not in runner_content
+        )
+        if missing_includes:
+            _write(
+                runner,
+                runner_content.replace(
+                    RUNNER_INCLUDE_ANCHOR,
+                    RUNNER_INCLUDE_ANCHOR + missing_includes,
+                    1,
+                ),
+            )
+            changed = True
     changed = (
         _replace_anchor(
             runner,

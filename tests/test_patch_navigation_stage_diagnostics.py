@@ -292,6 +292,23 @@ class TestPatchNavigationStageDiagnostics(unittest.TestCase):
             self.assertEqual(renderer_out, renderer.read_text(encoding="utf-8"))
             self.assertEqual(browser_out, browser.read_text(encoding="utf-8"))
 
+    def test_existing_runner_gets_missing_file_trace_includes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runner = Path(tmp) / PATCH.COMMIT_RUNNER
+            runner.parent.mkdir(parents=True, exist_ok=True)
+            runner.write_text(
+                '#include "base/memory/ptr_util.h"\n'
+                '#include "base/logging.h"\n\n'
+                'void CommitDeferringConditionRunner::ProcessConditions() {\n'
+                '  HeliumCommitConditionTrace("start", "condition", -1);\n'
+                '}\n',
+                encoding="utf-8",
+            )
+            self.assertTrue(PATCH.patch_source_tree(tmp))
+            out = runner.read_text(encoding="utf-8")
+            for include in PATCH.RUNNER_EXTRA_INCLUDES:
+                self.assertIn(include, out)
+
     def test_missing_file_is_noop(self):
         with tempfile.TemporaryDirectory() as tmp:
             self.assertFalse(PATCH.patch_source_tree(tmp))
