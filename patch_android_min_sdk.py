@@ -3143,7 +3143,6 @@ def main() -> None:
     clean_manifest_zygote_and_modern_attributes(src_dir)
     patch_gl_software_fallback(src_dir)
     patch_startup_field_trials(src_dir)
-    patch_java_car_sdcard_logger(src_dir)
     patch_activity_lifecycle_callbacks_compat(src_dir)
     patch_strict_mode_credential_protected(src_dir)
     patch_url_bar_cursor_handles_compat(src_dir)

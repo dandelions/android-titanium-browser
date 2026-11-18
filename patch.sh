@@ -4077,6 +4077,8 @@ if is_old_version_branch; then
         python3 "$SCRIPT_DIR/patch_android_min_sdk.py" .
     fi
     python3 "$SCRIPT_DIR/patch_newtab_override.py" .
+    python3 "$SCRIPT_DIR/patch_startup_logcat.py" . --strip-legacy-car-logger
+    python3 "$SCRIPT_DIR/patch_old_android_single_process.py" .
 python3 "$SCRIPT_DIR/patch_renderer_mprotect.py" .
 python3 "$SCRIPT_DIR/patch_linker_reservation_size.py" .
 python3 "$SCRIPT_DIR/patch_linker_relro_sharing.py" .
