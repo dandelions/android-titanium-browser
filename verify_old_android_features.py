@@ -281,7 +281,7 @@ def verify_navigation_stage_diagnostics(root):
         'HeliumRendererCommitTrace("params")',
         'HeliumRendererCommitTrace("blink-before")',
         'HeliumRendererCommitTrace("blink-after")',
-        "/data/local/tmp/helium-renderer-commit.log",
+        "/data/data/io.github.jqssun.helium/app_chrome/helium-renderer-commit.log",
     ):
         if marker not in render:
             raise SystemExit(

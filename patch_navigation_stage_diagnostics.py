@@ -201,7 +201,7 @@ RENDERER_TRACE_HELPER_PATCH = RENDERER_TRACE_HELPER_ANCHOR + """
 void HeliumRendererCommitTrace(const char* stage) {
   std::string line = std::string("Helium renderer commit: ") + stage + "\\n";
   base::File file(
-      base::FilePath("/data/local/tmp/helium-renderer-commit.log"),
+      base::FilePath("/data/data/io.github.jqssun.helium/app_chrome/helium-renderer-commit.log"),
       base::File::FLAG_OPEN_ALWAYS | base::File::FLAG_WRITE |
           base::File::FLAG_APPEND);
   if (file.IsValid()) {

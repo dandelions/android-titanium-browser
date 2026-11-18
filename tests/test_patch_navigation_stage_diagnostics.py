@@ -237,7 +237,7 @@ class TestPatchNavigationStageDiagnostics(unittest.TestCase):
                 'HeliumRendererCommitTrace("params")',
                 'HeliumRendererCommitTrace("blink-before")',
                 'HeliumRendererCommitTrace("blink-after")',
-                "/data/local/tmp/helium-renderer-commit.log",
+                "/data/data/io.github.jqssun.helium/app_chrome/helium-renderer-commit.log",
             ):
                 self.assertIn(marker, renderer_out)
 
