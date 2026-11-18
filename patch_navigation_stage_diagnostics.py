@@ -159,13 +159,42 @@ RENDER_FRAME_HOST_IMPL = "content/browser/renderer_host/render_frame_host_impl.c
 
 RUNNER_INCLUDE_ANCHOR = '#include "base/memory/ptr_util.h"\n'
 RUNNER_INCLUDE_PATCH = (
-    RUNNER_INCLUDE_ANCHOR + '#include "base/logging.h"\n'
+    RUNNER_INCLUDE_ANCHOR
+    + '#include "base/logging.h"\n'
+    + '#include "base/containers/span.h"\n'
+    + '#include "base/files/file.h"\n'
+    + '#include "base/files/file_path.h"\n'
+    + '#include "base/path_service.h"\n'
+    + '#include "base/base_paths_android.h"\n'
+    + '#include "base/strings/stringprintf.h"\n'
 )
+
+RUNNER_TRACE_HELPER_ANCHOR = "void CommitDeferringConditionRunner::ProcessConditions() {\n"
+RUNNER_TRACE_HELPER = '''void HeliumCommitConditionTrace(const char* phase,
+                                const char* condition,
+                                int result) {
+  base::FilePath app_data;
+  if (!base::PathService::Get(base::DIR_ANDROID_APP_DATA, &app_data)) {
+    return;
+  }
+  std::string line = base::StringPrintf(
+      "Helium commit: condition %s=%s result=%d\\n", phase, condition,
+      result);
+  base::File file(app_data.AppendASCII("helium-nav.log"),
+                  base::File::FLAG_OPEN_ALWAYS | base::File::FLAG_WRITE |
+                      base::File::FLAG_APPEND);
+  if (file.IsValid()) {
+    file.WriteAtCurrentPos(base::as_byte_span(line));
+  }
+}
+
+'''
 
 RUNNER_CONDITION_ANCHOR = (
     "    CommitDeferringCondition* condition = (*conditions_.begin()).get();\n"
 )
 RUNNER_CONDITION_PATCH = RUNNER_CONDITION_ANCHOR + (
+    '    HeliumCommitConditionTrace("start", condition->TraceEventName(), -1);\n'
     '    LOG(WARNING) << "Helium commit: condition="\n'
     "                 << condition->TraceEventName();\n"
 )
@@ -179,6 +208,8 @@ RUNNER_RESULT_ANCHOR = (
     "    is_in_will_commit_navigation_ = false;\n"
 )
 RUNNER_RESULT_PATCH = RUNNER_RESULT_ANCHOR + (
+    '    HeliumCommitConditionTrace("result", condition->TraceEventName(),\n'
+    '                                static_cast<int>(result));\n'
     '    LOG(WARNING) << "Helium commit: condition result="\n'
     '                 << static_cast<int>(result) << " "\n'
     "                 << condition->TraceEventName();\n"
@@ -312,6 +343,16 @@ def patch_commit_stages(src_dir):
             RUNNER_INCLUDE_PATCH,
             '#include "base/logging.h"',
             "commit condition logging include",
+        )
+        or changed
+    )
+    changed = (
+        _replace_anchor(
+            runner,
+            RUNNER_TRACE_HELPER_ANCHOR,
+            RUNNER_TRACE_HELPER + RUNNER_TRACE_HELPER_ANCHOR,
+            "HeliumCommitConditionTrace",
+            "commit condition file trace helper",
         )
         or changed
     )

@@ -258,6 +258,10 @@ class TestPatchNavigationStageDiagnostics(unittest.TestCase):
 
             runner_out = runner.read_text(encoding="utf-8")
             self.assertIn('#include "base/logging.h"', runner_out)
+            self.assertIn("void HeliumCommitConditionTrace", runner_out)
+            self.assertIn('"Helium commit: condition %s=%s result=%d\\n"', runner_out)
+            self.assertIn('HeliumCommitConditionTrace("start"', runner_out)
+            self.assertIn('HeliumCommitConditionTrace("result"', runner_out)
             self.assertIn('"Helium commit: condition="', runner_out)
             self.assertIn('"Helium commit: condition result="', runner_out)
             self.assertIn("condition->TraceEventName()", runner_out)
