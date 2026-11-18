@@ -100,8 +100,11 @@ void CommitDeferringConditionRunner::ProcessConditions() {
 }
 """
 
-RENDER_FRAME_HOST = """void RenderFrameHostImpl::CommitNavigation() {
+RENDER_FRAME_HOST = """#include "base/feature_list.h"
+
+void RenderFrameHostImpl::CommitNavigation() {
     auto scope = MakeUrgentMessageScopeIfNeeded();
+    HeliumNavTrace("commit-mojo-send", navigation_request->GetURL(), 0);
     navigation_request->GetCommitNavigationClient()->CommitNavigation(
         std::move(common_params), std::move(commit_params));
 }
@@ -271,6 +274,8 @@ class TestPatchNavigationStageDiagnostics(unittest.TestCase):
                 self.assertIn(marker, renderer_out)
 
             browser_out = browser.read_text(encoding="utf-8")
+            self.assertIn('#include "base/logging.h"', browser_out)
+            self.assertNotIn('HeliumNavTrace("commit-mojo-send"', browser_out)
             self.assertIn('Helium commit: Mojo send url=', browser_out)
             self.assertLess(
                 browser_out.index('Helium commit: Mojo send url='),

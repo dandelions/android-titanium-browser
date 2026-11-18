@@ -413,6 +413,28 @@ def patch_commit_stages(src_dir):
     )
 
     browser = os.path.join(src_dir, RENDER_FRAME_HOST_IMPL)
+    if os.path.isfile(browser):
+        browser_content = _read(browser)
+        legacy_send = (
+            '    HeliumNavTrace("commit-mojo-send", navigation_request->GetURL(), 0);\n'
+        )
+        if legacy_send in browser_content:
+            _write(browser, browser_content.replace(legacy_send, "", 1))
+            browser_content = _read(browser)
+            changed = True
+        if '#include "base/logging.h"' not in browser_content:
+            include_anchor = '#include "base/feature_list.h"\n'
+            if include_anchor in browser_content:
+                _write(
+                    browser,
+                    browser_content.replace(
+                        include_anchor,
+                        include_anchor + '#include "base/logging.h"\n',
+                        1,
+                    ),
+                )
+                changed = True
+
     changed = (
         _replace_anchor(
             browser,
