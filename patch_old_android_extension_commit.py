@@ -27,11 +27,13 @@ PATCHED = """  ProcessMap* process_map = ProcessMap::Get(process_host->GetBrowse
   // The browser process owns the page there, so it cannot appear in the
   // extension ProcessMap. Keep the normal multi-process check unchanged.
   if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kSingleProcess)) {
+          ::switches::kSingleProcess)) {
     return true;
   }
 """
 MARKER = "VMOS Android 9 uses the old-android single-process compatibility mode."
+OLD_SWITCH = "          switches::kSingleProcess)) {"
+NEW_SWITCH = "          ::switches::kSingleProcess)) {"
 
 
 def patch_source_tree(src_dir: str) -> bool:
@@ -41,6 +43,11 @@ def patch_source_tree(src_dir: str) -> bool:
     with open(path, "r", encoding="utf-8") as handle:
         content = handle.read()
     if MARKER in content:
+        if OLD_SWITCH in content:
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write(content.replace(OLD_SWITCH, NEW_SWITCH, 1))
+            print(f"Updated old-android switch namespace: {path}")
+            return True
         return False
     if INCLUDE_ANCHOR not in content:
         raise RuntimeError(f"content switch include anchor not found in {path}")

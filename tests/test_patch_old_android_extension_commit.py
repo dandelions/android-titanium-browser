@@ -32,7 +32,7 @@ class OldAndroidExtensionCommitPatchTest(unittest.TestCase):
         self.assertTrue(PATCH.patch_source_tree(str(self.root)))
         result = self.path.read_text()
         self.assertIn('#include "content/public/common/content_switches.h"', result)
-        self.assertIn("HasSwitch(\n          switches::kSingleProcess)", result)
+        self.assertIn("HasSwitch(\n          ::switches::kSingleProcess)", result)
         self.assertIn("VMOS Android 9 uses the old-android single-process compatibility mode.", result)
         self.assertIn("if (process_map->Contains(extension->id(), process_host->GetID()))", result)
         self.assertEqual(1, result.count(MARKER := PATCH.MARKER))
@@ -42,6 +42,16 @@ class OldAndroidExtensionCommitPatchTest(unittest.TestCase):
         patched = self.path.read_text()
         self.assertFalse(PATCH.patch_source_tree(str(self.root)))
         self.assertEqual(patched, self.path.read_text())
+
+    def test_upgrades_previous_switch_namespace_in_place(self):
+        self.assertTrue(PATCH.patch_source_tree(str(self.root)))
+        text = self.path.read_text().replace(
+            "::switches::kSingleProcess", "switches::kSingleProcess"
+        )
+        self.path.write_text(text)
+        self.assertTrue(PATCH.patch_source_tree(str(self.root)))
+        self.assertIn("::switches::kSingleProcess", self.path.read_text())
+        self.assertFalse(PATCH.patch_source_tree(str(self.root)))
 
     def test_fails_closed_when_source_shape_changes(self):
         self.path.write_text('#include "content/public/common/child_process_id.h"\n')
