@@ -100,12 +100,30 @@ void CommitDeferringConditionRunner::ProcessConditions() {
 }
 """
 
-RENDER_FRAME = """void RenderFrameImpl::CommitNavigation(
-    blink::mojom::CommonNavigationParamsPtr common_params) {
+RENDER_FRAME = """#include "base/files/file.h"
+
+namespace content {
+namespace {
+const int kExtraCharsBeforeAndAfterSelection = 100;
+}
+
+void RenderFrameImpl::CommitNavigation(
+    blink::mojom::CommonNavigationParamsPtr common_params,
+    mojom::NavigationClient::CommitNavigationCallback commit_callback) {
   base::ElapsedTimer timer;
   TRACE_EVENT("navigation", "RenderFrameImpl::CommitNavigation",
               perfetto::Flow::FromPointer(this));
   DCHECK(navigation_client_impl_);
+}
+
+void RenderFrameImpl::CommitNavigationWithParams(
+    std::unique_ptr<DocumentState> document_state,
+    std::unique_ptr<WebNavigationParams> navigation_params) {
+  TRACE_EVENT("navigation", "RenderFrameImpl::CommitNavigationWithParams",
+              perfetto::Flow::FromPointer(this));
+  frame_->CommitNavigation(std::move(navigation_params),
+                           std::move(document_state));
+}
 }
 """
 
@@ -213,11 +231,15 @@ class TestPatchNavigationStageDiagnostics(unittest.TestCase):
             self.assertIn("condition->TraceEventName()", runner_out)
 
             renderer_out = renderer.read_text(encoding="utf-8")
-            self.assertIn('"Helium renderer commit: received"', renderer_out)
-            self.assertLess(
-                renderer_out.index("Helium renderer commit: received"),
-                renderer_out.index('TRACE_EVENT("navigation", "RenderFrameImpl'),
-            )
+            for marker in (
+                "HeliumRendererCommitTrace",
+                'HeliumRendererCommitTrace("received")',
+                'HeliumRendererCommitTrace("params")',
+                'HeliumRendererCommitTrace("blink-before")',
+                'HeliumRendererCommitTrace("blink-after")',
+                "/data/local/tmp/helium-renderer-commit.log",
+            ):
+                self.assertIn(marker, renderer_out)
 
             # 第二次运行必须不再改动，避免重复插入日志。
             self.assertFalse(PATCH.patch_source_tree(tmp))

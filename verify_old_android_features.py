@@ -276,10 +276,17 @@ def verify_navigation_stage_diagnostics(root):
             )
 
     render_path, render = read(root, RENDER_FRAME_IMPL)
-    if "Helium renderer commit: received" not in render:
-        raise SystemExit(
-            f"renderer commit receipt tracing is missing: {render_path}"
-        )
+    for marker in (
+        'HeliumRendererCommitTrace("received")',
+        'HeliumRendererCommitTrace("params")',
+        'HeliumRendererCommitTrace("blink-before")',
+        'HeliumRendererCommitTrace("blink-after")',
+        "/data/local/tmp/helium-renderer-commit.log",
+    ):
+        if marker not in render:
+            raise SystemExit(
+                f"renderer commit diagnostic '{marker}' is missing: {render_path}"
+            )
 
     print("Verified old-android navigation stage diagnostics")
 

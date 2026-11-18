@@ -188,12 +188,48 @@ RUNNER_RESULT_PATCH = RUNNER_RESULT_ANCHOR + (
     "                 << condition->TraceEventName();\n"
 )
 
+RENDERER_TRACE_INCLUDE_ANCHOR = '#include "base/files/file.h"\n'
+RENDERER_TRACE_INCLUDE_PATCH = (
+    RENDERER_TRACE_INCLUDE_ANCHOR
+    + '#include "base/containers/span.h"\n'
+    + '#include "base/files/file_path.h"\n'
+)
+
+RENDERER_TRACE_HELPER_ANCHOR = "const int kExtraCharsBeforeAndAfterSelection = 100;\n"
+RENDERER_TRACE_HELPER_PATCH = RENDERER_TRACE_HELPER_ANCHOR + """
+
+void HeliumRendererCommitTrace(const char* stage) {
+  std::string line = std::string("Helium renderer commit: ") + stage + "\\n";
+  base::File file(
+      base::FilePath("/data/local/tmp/helium-renderer-commit.log"),
+      base::File::FLAG_OPEN_ALWAYS | base::File::FLAG_WRITE |
+          base::File::FLAG_APPEND);
+  if (file.IsValid()) {
+    file.WriteAtCurrentPos(base::as_byte_span(line));
+  }
+}
+"""
+
 RENDER_COMMIT_ANCHOR = (
-    '  TRACE_EVENT("navigation", "RenderFrameImpl::CommitNavigation",\n'
+    "    mojom::NavigationClient::CommitNavigationCallback commit_callback) {\n"
 )
 RENDER_COMMIT_PATCH = (
-    '  LOG(WARNING) << "Helium renderer commit: received";\n'
-    + RENDER_COMMIT_ANCHOR
+    RENDER_COMMIT_ANCHOR + '  HeliumRendererCommitTrace("received");\n'
+)
+RENDER_PARAMS_ANCHOR = (
+    "    std::unique_ptr<DocumentState> document_state,\n"
+    "    std::unique_ptr<WebNavigationParams> navigation_params) {\n"
+)
+RENDER_PARAMS_PATCH = (
+    RENDER_PARAMS_ANCHOR + '  HeliumRendererCommitTrace("params");\n'
+)
+RENDER_BLINK_ANCHOR = "  frame_->CommitNavigation(std::move(navigation_params),\n"
+RENDER_BLINK_PATCH = (
+    '  HeliumRendererCommitTrace("blink-before");\n' + RENDER_BLINK_ANCHOR
+)
+RENDER_BLINK_AFTER_ANCHOR = "                           std::move(document_state));\n"
+RENDER_BLINK_AFTER_PATCH = (
+    RENDER_BLINK_AFTER_ANCHOR + '  HeliumRendererCommitTrace("blink-after");\n'
 )
 
 
@@ -287,13 +323,64 @@ def patch_commit_stages(src_dir):
         or changed
     )
 
+    renderer = os.path.join(src_dir, RENDER_FRAME_IMPL)
     changed = (
         _replace_anchor(
-            os.path.join(src_dir, RENDER_FRAME_IMPL),
+            renderer,
+            RENDERER_TRACE_INCLUDE_ANCHOR,
+            RENDERER_TRACE_INCLUDE_PATCH,
+            '#include "base/containers/span.h"',
+            "renderer commit trace includes",
+        )
+        or changed
+    )
+    changed = (
+        _replace_anchor(
+            renderer,
+            RENDERER_TRACE_HELPER_ANCHOR,
+            RENDERER_TRACE_HELPER_PATCH,
+            "HeliumRendererCommitTrace",
+            "renderer commit trace helper",
+        )
+        or changed
+    )
+    changed = (
+        _replace_anchor(
+            renderer,
             RENDER_COMMIT_ANCHOR,
             RENDER_COMMIT_PATCH,
-            "Helium renderer commit: received",
+            'HeliumRendererCommitTrace("received")',
             "renderer commit receipt",
+        )
+        or changed
+    )
+    changed = (
+        _replace_anchor(
+            renderer,
+            RENDER_PARAMS_ANCHOR,
+            RENDER_PARAMS_PATCH,
+            'HeliumRendererCommitTrace("params")',
+            "renderer commit params",
+        )
+        or changed
+    )
+    changed = (
+        _replace_anchor(
+            renderer,
+            RENDER_BLINK_ANCHOR,
+            RENDER_BLINK_PATCH,
+            'HeliumRendererCommitTrace("blink-before")',
+            "renderer Blink commit entry",
+        )
+        or changed
+    )
+    changed = (
+        _replace_anchor(
+            renderer,
+            RENDER_BLINK_AFTER_ANCHOR,
+            RENDER_BLINK_AFTER_PATCH,
+            'HeliumRendererCommitTrace("blink-after")',
+            "renderer Blink commit return",
         )
         or changed
     )
