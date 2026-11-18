@@ -100,6 +100,13 @@ void CommitDeferringConditionRunner::ProcessConditions() {
 }
 """
 
+RENDER_FRAME_HOST = """void RenderFrameHostImpl::CommitNavigation() {
+    auto scope = MakeUrgentMessageScopeIfNeeded();
+    navigation_request->GetCommitNavigationClient()->CommitNavigation(
+        std::move(common_params), std::move(commit_params));
+}
+"""
+
 RENDER_FRAME = """#include "base/files/file.h"
 
 namespace content {
@@ -167,7 +174,10 @@ class TestPatchNavigationStageDiagnostics(unittest.TestCase):
         renderer = Path(tmp) / PATCH.RENDER_FRAME_IMPL
         renderer.parent.mkdir(parents=True, exist_ok=True)
         renderer.write_text(RENDER_FRAME, encoding="utf-8")
-        return runner, renderer
+        browser = Path(tmp) / PATCH.RENDER_FRAME_HOST_IMPL
+        browser.parent.mkdir(parents=True, exist_ok=True)
+        browser.write_text(RENDER_FRAME_HOST, encoding="utf-8")
+        return runner, renderer, browser
 
     def test_fresh_tree_gets_helper_and_all_stages(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -192,7 +202,6 @@ class TestPatchNavigationStageDiagnostics(unittest.TestCase):
                 "response-body-ready",
                 "ready-to-commit",
                 "conditions-start",
-                "commit-send",
                 "commit-timeout",
                 "commit",
                 "failed",
@@ -234,14 +243,14 @@ class TestPatchNavigationStageDiagnostics(unittest.TestCase):
             PATCH.patch_source_tree(tmp)
             out = renderer.read_text(encoding="utf-8")
             self.assertIn(
-                "/data/data/io.github.jqssun.helium/app_chrome/helium-renderer-commit.log",
+                "/storage/emulated/0/Android/data/io.github.jqssun.helium/files/logs/helium-renderer-commit.log",
                 out,
             )
             self.assertNotIn("/data/local/tmp/helium-renderer-commit.log", out)
 
     def test_commit_stage_traces_cover_conditions_and_renderer_receipt(self):
         with tempfile.TemporaryDirectory() as tmp:
-            runner, renderer = self._apply_commit_stage_files(tmp)
+            runner, renderer, browser = self._apply_commit_stage_files(tmp)
             self.assertTrue(PATCH.patch_source_tree(tmp))
 
             runner_out = runner.read_text(encoding="utf-8")
@@ -257,14 +266,23 @@ class TestPatchNavigationStageDiagnostics(unittest.TestCase):
                 'HeliumRendererCommitTrace("params")',
                 'HeliumRendererCommitTrace("blink-before")',
                 'HeliumRendererCommitTrace("blink-after")',
-                "/data/data/io.github.jqssun.helium/app_chrome/helium-renderer-commit.log",
+                "/storage/emulated/0/Android/data/io.github.jqssun.helium/files/logs/helium-renderer-commit.log",
             ):
                 self.assertIn(marker, renderer_out)
+
+            browser_out = browser.read_text(encoding="utf-8")
+            send_marker = 'HeliumNavTrace("commit-mojo-send"'
+            self.assertIn(send_marker, browser_out)
+            self.assertLess(
+                browser_out.index(send_marker),
+                browser_out.index("GetCommitNavigationClient()->CommitNavigation("),
+            )
 
             # 第二次运行必须不再改动，避免重复插入日志。
             self.assertFalse(PATCH.patch_source_tree(tmp))
             self.assertEqual(runner_out, runner.read_text(encoding="utf-8"))
             self.assertEqual(renderer_out, renderer.read_text(encoding="utf-8"))
+            self.assertEqual(browser_out, browser.read_text(encoding="utf-8"))
 
     def test_missing_file_is_noop(self):
         with tempfile.TemporaryDirectory() as tmp:

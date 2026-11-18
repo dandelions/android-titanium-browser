@@ -151,15 +151,11 @@ STAGES = (
         'HeliumNavTrace("conditions-start", GetURL(), 0);',
         "conditions-start",
     ),
-    (
-        "void NavigationRequest::CommitNavigation()",
-        'HeliumNavTrace("commit-send", GetURL(), 0);',
-        "commit-send",
-    ),
 )
 
 COMMIT_RUNNER = "content/browser/renderer_host/commit_deferring_condition_runner.cc"
 RENDER_FRAME_IMPL = "content/renderer/render_frame_impl.cc"
+RENDER_FRAME_HOST_IMPL = "content/browser/renderer_host/render_frame_host_impl.cc"
 
 RUNNER_INCLUDE_ANCHOR = '#include "base/memory/ptr_util.h"\n'
 RUNNER_INCLUDE_PATCH = (
@@ -201,7 +197,7 @@ RENDERER_TRACE_HELPER_PATCH = RENDERER_TRACE_HELPER_ANCHOR + """
 void HeliumRendererCommitTrace(const char* stage) {
   std::string line = std::string("Helium renderer commit: ") + stage + "\\n";
   base::File file(
-      base::FilePath("/data/data/io.github.jqssun.helium/app_chrome/helium-renderer-commit.log"),
+      base::FilePath("/storage/emulated/0/Android/data/io.github.jqssun.helium/files/logs/helium-renderer-commit.log"),
       base::File::FLAG_OPEN_ALWAYS | base::File::FLAG_WRITE |
           base::File::FLAG_APPEND);
   if (file.IsValid()) {
@@ -230,6 +226,14 @@ RENDER_BLINK_PATCH = (
 RENDER_BLINK_AFTER_ANCHOR = "                           std::move(document_state));\n"
 RENDER_BLINK_AFTER_PATCH = (
     RENDER_BLINK_AFTER_ANCHOR + '  HeliumRendererCommitTrace("blink-after");\n'
+)
+
+BROWSER_MOJO_SEND_ANCHOR = (
+    "    navigation_request->GetCommitNavigationClient()->CommitNavigation(\n"
+)
+BROWSER_MOJO_SEND_PATCH = (
+    '    HeliumNavTrace("commit-mojo-send", navigation_request->GetURL(), 0);\n'
+    + BROWSER_MOJO_SEND_ANCHOR
 )
 
 
@@ -291,6 +295,14 @@ def patch_commit_stages(src_dir):
     """Report which commit deferring condition, or the commit send, stalls."""
     changed = False
 
+    navigation = os.path.join(src_dir, NAVIGATION_REQUEST)
+    if os.path.isfile(navigation):
+        navigation_content = _read(navigation)
+        legacy_send = '  HeliumNavTrace("commit-send", GetURL(), 0);\n'
+        if legacy_send in navigation_content:
+            _write(navigation, navigation_content.replace(legacy_send, "", 1))
+            changed = True
+
     runner = os.path.join(src_dir, COMMIT_RUNNER)
     changed = (
         _replace_anchor(
@@ -326,10 +338,16 @@ def patch_commit_stages(src_dir):
     renderer = os.path.join(src_dir, RENDER_FRAME_IMPL)
     if os.path.isfile(renderer):
         renderer_content = _read(renderer)
-        old_trace_path = "/data/local/tmp/helium-renderer-commit.log"
-        new_trace_path = "/data/data/io.github.jqssun.helium/app_chrome/helium-renderer-commit.log"
-        if old_trace_path in renderer_content:
-            _write(renderer, renderer_content.replace(old_trace_path, new_trace_path))
+        new_trace_path = "/storage/emulated/0/Android/data/io.github.jqssun.helium/files/logs/helium-renderer-commit.log"
+        old_trace_paths = (
+            "/data/local/tmp/helium-renderer-commit.log",
+            "/data/data/io.github.jqssun.helium/app_chrome/helium-renderer-commit.log",
+        )
+        upgraded = renderer_content
+        for old_trace_path in old_trace_paths:
+            upgraded = upgraded.replace(old_trace_path, new_trace_path)
+        if upgraded != renderer_content:
+            _write(renderer, upgraded)
             changed = True
 
     changed = (
@@ -389,6 +407,18 @@ def patch_commit_stages(src_dir):
             RENDER_BLINK_AFTER_PATCH,
             'HeliumRendererCommitTrace("blink-after")',
             "renderer Blink commit return",
+        )
+        or changed
+    )
+
+    browser = os.path.join(src_dir, RENDER_FRAME_HOST_IMPL)
+    changed = (
+        _replace_anchor(
+            browser,
+            BROWSER_MOJO_SEND_ANCHOR,
+            BROWSER_MOJO_SEND_PATCH,
+            'HeliumNavTrace("commit-mojo-send"',
+            "browser Mojo commit send trace",
         )
         or changed
     )

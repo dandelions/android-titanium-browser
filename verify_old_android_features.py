@@ -52,6 +52,7 @@ ACCESSIBILITY_STATE_DELEGATE = Path(
 NAVIGATION_REQUEST = Path("content/browser/renderer_host/navigation_request.cc")
 COMMIT_RUNNER = Path("content/browser/renderer_host/commit_deferring_condition_runner.cc")
 RENDER_FRAME_IMPL = Path("content/renderer/render_frame_impl.cc")
+RENDER_FRAME_HOST_IMPL = Path("content/browser/renderer_host/render_frame_host_impl.cc")
 CONTENT_MAIN = Path("content/app/content_main.cc")
 CONTENT_MAIN_RUNNER = Path("content/app/content_main_runner_impl.cc")
 RENDERER_MAIN = Path("content/renderer/renderer_main.cc")
@@ -254,7 +255,6 @@ def verify_navigation_stage_diagnostics(root):
         'HeliumNavTrace("response-body-ready"',
         'HeliumNavTrace("ready-to-commit"',
         'HeliumNavTrace("conditions-start"',
-        'HeliumNavTrace("commit-send"',
         'HeliumNavTrace("commit-timeout"',
         'HeliumNavTrace("commit"',
         'HeliumNavTrace("failed"',
@@ -263,6 +263,16 @@ def verify_navigation_stage_diagnostics(root):
         if marker not in nav:
             raise SystemExit(
                 f"navigation stage diagnostic '{marker}' is missing: {nav_path}"
+            )
+
+    browser_commit_path, browser_commit = read(root, RENDER_FRAME_HOST_IMPL)
+    for marker in (
+        'HeliumNavTrace("commit-mojo-send"',
+        "GetCommitNavigationClient()->CommitNavigation(",
+    ):
+        if marker not in browser_commit:
+            raise SystemExit(
+                f"browser Mojo commit trace '{marker}' is missing: {browser_commit_path}"
             )
 
     runner_path, runner = read(root, COMMIT_RUNNER)
@@ -281,7 +291,7 @@ def verify_navigation_stage_diagnostics(root):
         'HeliumRendererCommitTrace("params")',
         'HeliumRendererCommitTrace("blink-before")',
         'HeliumRendererCommitTrace("blink-after")',
-        "/data/data/io.github.jqssun.helium/app_chrome/helium-renderer-commit.log",
+        "/storage/emulated/0/Android/data/io.github.jqssun.helium/files/logs/helium-renderer-commit.log",
     ):
         if marker not in render:
             raise SystemExit(
