@@ -21,7 +21,7 @@ NEWTAB_FILES = {
     "ui/accessibility/android/java/src/org/chromium/ui/accessibility/AccessibilityStateDelegateImpl.java": "Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q\nint recommendedTimeout = nonA11yTimeout;",
     "content/browser/renderer_host/navigation_request.cc": 'HeliumNavTrace("begin"\nHeliumNavTrace("checks-complete"\nHeliumNavTrace("response"\nHeliumNavTrace("response-body-ready"\nHeliumNavTrace("ready-to-commit"\nHeliumNavTrace("conditions-start"\nHeliumNavTrace("commit-timeout"\nHeliumNavTrace("commit"\nHeliumNavTrace("failed"\nhelium-nav.log',
     "content/browser/renderer_host/commit_deferring_condition_runner.cc": '"Helium commit: condition="\n"Helium commit: condition result="',
-    "content/browser/renderer_host/render_frame_host_impl.cc": 'HeliumNavTrace("commit-mojo-send"\nGetCommitNavigationClient()->CommitNavigation(',
+    "content/browser/renderer_host/render_frame_host_impl.cc": 'Helium commit: Mojo send url=\nGetCommitNavigationClient()->CommitNavigation(',
     "content/renderer/render_frame_impl.cc": 'HeliumRendererCommitTrace("received")\nHeliumRendererCommitTrace("params")\nHeliumRendererCommitTrace("blink-before")\nHeliumRendererCommitTrace("blink-after")\n/storage/emulated/0/Android/data/io.github.jqssun.helium/files/logs/helium-renderer-commit.log',
     "content/app/content_main.cc": "Helium content main trace revision: 1\nHelium content main: type=\nHelium content main: initialize returned \nHelium content main: run returned ",
     "content/app/content_main_runner_impl.cc": "Helium child main: type=\nHelium child main: matched \nHelium child main: no main function for type=",

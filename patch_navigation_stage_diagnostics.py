@@ -232,7 +232,8 @@ BROWSER_MOJO_SEND_ANCHOR = (
     "    navigation_request->GetCommitNavigationClient()->CommitNavigation(\n"
 )
 BROWSER_MOJO_SEND_PATCH = (
-    '    HeliumNavTrace("commit-mojo-send", navigation_request->GetURL(), 0);\n'
+    '    LOG(WARNING) << "Helium commit: Mojo send url="\n'
+    '                 << navigation_request->GetURL().possibly_invalid_spec();\n'
     + BROWSER_MOJO_SEND_ANCHOR
 )
 
@@ -417,7 +418,7 @@ def patch_commit_stages(src_dir):
             browser,
             BROWSER_MOJO_SEND_ANCHOR,
             BROWSER_MOJO_SEND_PATCH,
-            'HeliumNavTrace("commit-mojo-send"',
+            'Helium commit: Mojo send url=',
             "browser Mojo commit send trace",
         )
         or changed

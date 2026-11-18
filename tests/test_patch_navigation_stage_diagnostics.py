@@ -271,10 +271,9 @@ class TestPatchNavigationStageDiagnostics(unittest.TestCase):
                 self.assertIn(marker, renderer_out)
 
             browser_out = browser.read_text(encoding="utf-8")
-            send_marker = 'HeliumNavTrace("commit-mojo-send"'
-            self.assertIn(send_marker, browser_out)
+            self.assertIn('Helium commit: Mojo send url=', browser_out)
             self.assertLess(
-                browser_out.index(send_marker),
+                browser_out.index('Helium commit: Mojo send url='),
                 browser_out.index("GetCommitNavigationClient()->CommitNavigation("),
             )
 

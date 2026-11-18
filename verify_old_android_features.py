@@ -267,7 +267,7 @@ def verify_navigation_stage_diagnostics(root):
 
     browser_commit_path, browser_commit = read(root, RENDER_FRAME_HOST_IMPL)
     for marker in (
-        'HeliumNavTrace("commit-mojo-send"',
+        'Helium commit: Mojo send url=',
         "GetCommitNavigationClient()->CommitNavigation(",
     ):
         if marker not in browser_commit:
