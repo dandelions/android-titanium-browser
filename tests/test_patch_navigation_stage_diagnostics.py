@@ -219,6 +219,26 @@ class TestPatchNavigationStageDiagnostics(unittest.TestCase):
             self.assertFalse(PATCH.patch_source_tree(tmp))
             self.assertEqual(first, path.read_text(encoding="utf-8"))
 
+    def test_upgrades_renderer_trace_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            renderer = Path(tmp) / PATCH.RENDER_FRAME_IMPL
+            renderer.parent.mkdir(parents=True, exist_ok=True)
+            renderer.write_text(
+                '#include "base/files/file.h"\n'
+                'const int kExtraCharsBeforeAndAfterSelection = 100;\n'
+                'void HeliumRendererCommitTrace(const char* stage) {\n'
+                '  base::FilePath path("/data/local/tmp/helium-renderer-commit.log");\n'
+                '}\n',
+                encoding="utf-8",
+            )
+            PATCH.patch_source_tree(tmp)
+            out = renderer.read_text(encoding="utf-8")
+            self.assertIn(
+                "/data/data/io.github.jqssun.helium/app_chrome/helium-renderer-commit.log",
+                out,
+            )
+            self.assertNotIn("/data/local/tmp/helium-renderer-commit.log", out)
+
     def test_commit_stage_traces_cover_conditions_and_renderer_receipt(self):
         with tempfile.TemporaryDirectory() as tmp:
             runner, renderer = self._apply_commit_stage_files(tmp)

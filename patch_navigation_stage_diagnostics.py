@@ -324,6 +324,14 @@ def patch_commit_stages(src_dir):
     )
 
     renderer = os.path.join(src_dir, RENDER_FRAME_IMPL)
+    if os.path.isfile(renderer):
+        renderer_content = _read(renderer)
+        old_trace_path = "/data/local/tmp/helium-renderer-commit.log"
+        new_trace_path = "/data/data/io.github.jqssun.helium/app_chrome/helium-renderer-commit.log"
+        if old_trace_path in renderer_content:
+            _write(renderer, renderer_content.replace(old_trace_path, new_trace_path))
+            changed = True
+
     changed = (
         _replace_anchor(
             renderer,
