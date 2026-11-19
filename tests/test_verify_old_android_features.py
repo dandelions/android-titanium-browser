@@ -30,6 +30,53 @@ NEWTAB_FILES = {
 }
 
 
+SINGLE_PROCESS_FILES = {
+    "content/browser/renderer_host/render_process_host_impl.cc": (
+        "if (run_renderer_in_process()) {\n"
+        "    // VMOS Android 9 keeps the renderer inside the browser process, so killing\n"
+        "    // it would terminate the whole browser. Drop the message instead.\n"
+        "    return;\n"
+        "}"
+    ),
+    "extensions/browser/api/messaging/message_service_bindings.cc": (
+        "if (!RenderProcessHost::run_renderer_in_process() &&\n"
+        "    !ProcessMap::Get(process.GetBrowserContext())\n"
+        "        ->Contains(*source_endpoint_extension_id, process.GetID())) {}\n"
+        "if (precursor_origin.scheme() == kExtensionScheme &&\n"
+        "    !RenderProcessHost::run_renderer_in_process() &&\n"
+        "    !ProcessMap::Get(process.GetBrowserContext())\n"
+        "        ->Contains(precursor_origin.host(), process.GetID())) {}"
+    ),
+    "extensions/browser/service_worker/service_worker_host.cc": (
+        "if (!content::RenderProcessHost::run_renderer_in_process() &&\n"
+        "    (!process_map || !process_map->Contains(extension_id, render_process_id))) {}\n"
+        "if (!content::RenderProcessHost::run_renderer_in_process() &&\n"
+        "    (!process_map || !process_map->Contains(extension_id, render_process_id))) {}\n"
+        "if (!content::RenderProcessHost::run_renderer_in_process() &&\n"
+        "    (!process_map || !process_map->Contains(extension_id, render_process_id))) {}"
+    ),
+    "chrome/browser/net/system_network_context_manager.cc": (
+        "// V8 resolver still works there, and PAC proxy rules require it."
+    ),
+    "chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/"
+    "LocationBarPhone.java": (
+        "protected @Nullable ImageButton mBackButton;\n"
+        + "ImageButton backButton = mBackButton;\n" * 6
+    ),
+    "chrome/browser/ui/android/omnibox/java/res/layout-sw600dp/location_bar.xml": (
+        '<include layout="@layout/omnibox_back_button"/>'
+    ),
+    "chrome/browser/flags/android/chrome_feature_list.cc": (
+        "BASE_FEATURE(kAndroidBottomBar, base::FEATURE_ENABLED_BY_DEFAULT);"
+    ),
+    "chrome/browser/ui/android/bottombar/java/src/org/chromium/chrome/browser/ui/"
+    "bottombar/BottomBarConfigUtils.java": (
+        "// Helium: offer the bottom toolbar in desktop mode and on car units too.\n"
+        "return ChromeFeatureList.sAndroidBottomBar.isEnabled();"
+    ),
+}
+
+
 class VerifyOldAndroidFeaturesTest(unittest.TestCase):
     def test_accepts_required_feature_markers(self):
         files = {
@@ -46,6 +93,7 @@ class VerifyOldAndroidFeaturesTest(unittest.TestCase):
             ),
         }
         files.update(NEWTAB_FILES)
+        files.update(SINGLE_PROCESS_FILES)
         with tempfile.TemporaryDirectory() as temp:
             root = pathlib.Path(temp)
             for relative, content in files.items():
@@ -64,6 +112,7 @@ class VerifyOldAndroidFeaturesTest(unittest.TestCase):
             "chrome/android/java/src/org/chromium/chrome/browser/toolbar/ToolbarManager.java": "mToolbarLayout,",
         }
         files.update(NEWTAB_FILES)
+        files.update(SINGLE_PROCESS_FILES)
         with tempfile.TemporaryDirectory() as temp:
             root = pathlib.Path(temp)
             for relative, content in files.items():
@@ -83,6 +132,7 @@ class VerifyOldAndroidFeaturesTest(unittest.TestCase):
             "chrome/android/java/src/org/chromium/chrome/browser/toolbar/ToolbarManager.java": "mToolbarLayout,",
         }
         files.update(NEWTAB_FILES)
+        files.update(SINGLE_PROCESS_FILES)
         with tempfile.TemporaryDirectory() as temp:
             root = pathlib.Path(temp)
             for relative, content in files.items():
@@ -102,6 +152,7 @@ class VerifyOldAndroidFeaturesTest(unittest.TestCase):
             "chrome/android/java/src/org/chromium/chrome/browser/toolbar/ToolbarManager.java": "ExtensionsToolbarCoordinator.maybeCreate((ToolbarTablet) mToolbarLayout,",
         }
         files.update(NEWTAB_FILES)
+        files.update(SINGLE_PROCESS_FILES)
         with tempfile.TemporaryDirectory() as temp:
             root = pathlib.Path(temp)
             for relative, content in files.items():
@@ -128,6 +179,7 @@ class VerifyOldAndroidFeaturesTest(unittest.TestCase):
             ),
         }
         files.update(NEWTAB_FILES)
+        files.update(SINGLE_PROCESS_FILES)
         with tempfile.TemporaryDirectory() as temp:
             root = pathlib.Path(temp)
             for relative, content in files.items():
@@ -154,6 +206,7 @@ class VerifyOldAndroidFeaturesTest(unittest.TestCase):
             ),
         }
         files.update(NEWTAB_FILES)
+        files.update(SINGLE_PROCESS_FILES)
         with tempfile.TemporaryDirectory() as temp:
             root = pathlib.Path(temp)
             for relative, content in files.items():
@@ -173,7 +226,64 @@ class VerifyOldAndroidFeaturesTest(unittest.TestCase):
             "chrome/android/java/src/org/chromium/chrome/browser/toolbar/ToolbarManager.java": "mToolbarLayout,",
         }
         files.update(NEWTAB_FILES)
+        files.update(SINGLE_PROCESS_FILES)
         files["chrome/browser/extensions/extension_url_overrides.cc"] = "no fallback"
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            for relative, content in files.items():
+                path = root / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(content)
+            result = subprocess.run([sys.executable, str(VERIFY), str(root)])
+            self.assertNotEqual(result.returncode, 0)
+
+
+    def test_rejects_missing_single_process_bad_message_guard(self):
+        files = {
+            "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsToolbarCoordinatorImpl.java": "return !mIsWebApp && mCanShowMenuIcon;",
+            "chrome/android/java/src/org/chromium/chrome/browser/app/appmenu/AppMenuPropertiesDelegateImpl.java": "boolean shouldShowExtensionsItem() {\n        return true;\n    }",
+            "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/ToolbarPositionController.java": "Helium: follow the toolbar preference on the NTP and while editing",
+            "chrome/android/java/src/org/chromium/chrome/browser/ntp/NewTabPageCoordinator.java": "AddressBarPreference.isToolbarConfiguredToShowOnTop()",
+            "chrome/browser/ui/android/toolbar/java/res/layout/toolbar_phone.xml": '<ViewStub android:id="@+id/extensions_toolbar_container_stub"/>',
+            "chrome/android/java/src/org/chromium/chrome/browser/toolbar/ToolbarManager.java": (
+                "ExtensionsToolbarCoordinator.maybeCreate(mToolbarLayout,\n"
+                "if (mToolbarLayout instanceof ToolbarTablet) {\n"
+                "    return ((ToolbarTablet) mToolbarLayout).areAnyToolbarComponentsMissingForWidth();\n"
+                "}"
+            ),
+        }
+        files.update(NEWTAB_FILES)
+        files.update(SINGLE_PROCESS_FILES)
+        files["content/browser/renderer_host/render_process_host_impl.cc"] = "NOTREACHED();"
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            for relative, content in files.items():
+                path = root / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(content)
+            result = subprocess.run([sys.executable, str(VERIFY), str(root)])
+            self.assertNotEqual(result.returncode, 0)
+
+    def test_rejects_restricted_bottom_toolbar_eligibility(self):
+        files = {
+            "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsToolbarCoordinatorImpl.java": "return !mIsWebApp && mCanShowMenuIcon;",
+            "chrome/android/java/src/org/chromium/chrome/browser/app/appmenu/AppMenuPropertiesDelegateImpl.java": "boolean shouldShowExtensionsItem() {\n        return true;\n    }",
+            "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/ToolbarPositionController.java": "Helium: follow the toolbar preference on the NTP and while editing",
+            "chrome/android/java/src/org/chromium/chrome/browser/ntp/NewTabPageCoordinator.java": "AddressBarPreference.isToolbarConfiguredToShowOnTop()",
+            "chrome/browser/ui/android/toolbar/java/res/layout/toolbar_phone.xml": '<ViewStub android:id="@+id/extensions_toolbar_container_stub"/>',
+            "chrome/android/java/src/org/chromium/chrome/browser/toolbar/ToolbarManager.java": (
+                "ExtensionsToolbarCoordinator.maybeCreate(mToolbarLayout,\n"
+                "if (mToolbarLayout instanceof ToolbarTablet) {\n"
+                "    return ((ToolbarTablet) mToolbarLayout).areAnyToolbarComponentsMissingForWidth();\n"
+                "}"
+            ),
+        }
+        files.update(NEWTAB_FILES)
+        files.update(SINGLE_PROCESS_FILES)
+        files[
+            "chrome/browser/ui/android/bottombar/java/src/org/chromium/chrome/browser/ui/"
+            "bottombar/BottomBarConfigUtils.java"
+        ] = "return !DeviceInfo.isAutomotive() && ChromeFeatureList.sAndroidBottomBar.isEnabled();"
         with tempfile.TemporaryDirectory() as temp:
             root = pathlib.Path(temp)
             for relative, content in files.items():

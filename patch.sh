@@ -4081,6 +4081,12 @@ if is_old_version_branch; then
     python3 "$SCRIPT_DIR/patch_old_android_single_process.py" .
     python3 "$SCRIPT_DIR/patch_old_android_extension_commit.py" .
     python3 "$SCRIPT_DIR/patch_old_android_extension_resources.py" .
+    python3 "$SCRIPT_DIR/patch_old_android_bad_message_kill.py" .
+    python3 "$SCRIPT_DIR/patch_old_android_extension_messaging.py" .
+    python3 "$SCRIPT_DIR/patch_old_android_extension_service_worker.py" .
+    python3 "$SCRIPT_DIR/patch_old_android_pac_proxy.py" .
+    python3 "$SCRIPT_DIR/patch_old_android_location_bar_back_button.py" .
+    python3 "$SCRIPT_DIR/patch_old_android_bottom_toolbar.py" .
 python3 "$SCRIPT_DIR/patch_renderer_mprotect.py" .
 python3 "$SCRIPT_DIR/patch_linker_reservation_size.py" .
 python3 "$SCRIPT_DIR/patch_linker_relro_sharing.py" .

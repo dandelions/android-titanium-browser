@@ -57,6 +57,28 @@ CONTENT_MAIN = Path("content/app/content_main.cc")
 CONTENT_MAIN_RUNNER = Path("content/app/content_main_runner_impl.cc")
 RENDERER_MAIN = Path("content/renderer/renderer_main.cc")
 CHILD_THREAD = Path("content/child/child_thread_impl.cc")
+RENDER_PROCESS_HOST_IMPL = Path(
+    "content/browser/renderer_host/render_process_host_impl.cc"
+)
+EXTENSION_MESSAGING_BINDINGS = Path(
+    "extensions/browser/api/messaging/message_service_bindings.cc"
+)
+SERVICE_WORKER_HOST = Path("extensions/browser/service_worker/service_worker_host.cc")
+SYSTEM_NETWORK_CONTEXT_MANAGER = Path(
+    "chrome/browser/net/system_network_context_manager.cc"
+)
+LOCATION_BAR_PHONE = Path(
+    "chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/"
+    "LocationBarPhone.java"
+)
+LOCATION_BAR_WIDE_LAYOUT = Path(
+    "chrome/browser/ui/android/omnibox/java/res/layout-sw600dp/location_bar.xml"
+)
+BOTTOM_BAR_CONFIG_UTILS = Path(
+    "chrome/browser/ui/android/bottombar/java/src/org/chromium/chrome/browser/ui/"
+    "bottombar/BottomBarConfigUtils.java"
+)
+ANDROID_FEATURE_LIST = Path("chrome/browser/flags/android/chrome_feature_list.cc")
 
 
 def read(root, relative):
@@ -347,10 +369,65 @@ def verify_renderer_lifecycle_diagnostics(root):
 
     print("Verified old-android renderer lifecycle diagnostics")
 
+def verify_single_process_extensions(root):
+    host_path, host = read(root, RENDER_PROCESS_HOST_IMPL)
+    if "VMOS Android 9 keeps the renderer inside the browser process" not in host:
+        raise SystemExit(f"single process bad message guard is missing: {host_path}")
+
+    bindings_path, bindings = read(root, EXTENSION_MESSAGING_BINDINGS)
+    if bindings.count("RenderProcessHost::run_renderer_in_process()") != 2:
+        raise SystemExit(
+            f"extension messaging process guard is missing: {bindings_path}"
+        )
+
+    worker_path, worker = read(root, SERVICE_WORKER_HOST)
+    if worker.count("content::RenderProcessHost::run_renderer_in_process()") != 3:
+        raise SystemExit(
+            f"extension service worker process guard is missing: {worker_path}"
+        )
+
+    context_path, context = read(root, SYSTEM_NETWORK_CONTEXT_MANAGER)
+    if "V8 resolver still works there, and PAC proxy rules require it." not in context:
+        raise SystemExit(f"PAC proxy resolver guard is missing: {context_path}")
+
+    print("Verified old-android single process extensions and PAC proxy support")
+
+
+def verify_bottom_toolbar(root):
+    location_path, location_bar = read(root, LOCATION_BAR_PHONE)
+    if "protected @Nullable ImageButton mBackButton;" not in location_bar:
+        raise SystemExit(f"location bar back button is not optional: {location_path}")
+    expected_guards = 6
+    if location_bar.count("ImageButton backButton = mBackButton;") != expected_guards:
+        raise SystemExit(
+            f"location bar back button guards are missing: {location_path}"
+        )
+
+    layout_path, layout = read(root, LOCATION_BAR_WIDE_LAYOUT)
+    if '@layout/omnibox_back_button' not in layout:
+        raise SystemExit(
+            f"wide screen location bar back button include is missing: {layout_path}"
+        )
+
+    features_path, features = read(root, ANDROID_FEATURE_LIST)
+    if "BASE_FEATURE(kAndroidBottomBar, base::FEATURE_ENABLED_BY_DEFAULT);" not in features:
+        raise SystemExit(f"bottom bar feature is not enabled: {features_path}")
+
+    config_path, config = read(root, BOTTOM_BAR_CONFIG_UTILS)
+    if "Helium: offer the bottom toolbar in desktop mode" not in config:
+        raise SystemExit(
+            f"bottom bar form factor restriction is still present: {config_path}"
+        )
+
+    print("Verified old-android bottom toolbar availability")
+
+
 if __name__ == "__main__":
     root = Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
     verify(root)
     verify_newtab_override(root)
+    verify_single_process_extensions(root)
+    verify_bottom_toolbar(root)
     verify_renderer_mprotect(root)
     verify_linker_reservation_size(root)
     verify_linker_relro_sharing(root)
