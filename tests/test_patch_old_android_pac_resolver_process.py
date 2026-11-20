@@ -156,9 +156,10 @@ class OldAndroidPacResolverProcessPatchTest(unittest.TestCase):
             self.assertIn(PATCH.UTILITY_SERVICE_MARKER, services)
             self.assertIn(PATCH.UTILITY_IMPLEMENTATION_MARKER, services)
             self.assertIn("services.Add(RunProxyResolver);", services)
-            self.assertNotIn(
-                "#if !BUILDFLAG(IS_ANDROID)\n" + PATCH.UTILITY_RESOLVER_INCLUDES,
-                services,
+            self.assertEqual(1, services.count(PATCH.UTILITY_RESOLVER_INCLUDES))
+            self.assertLess(
+                services.index(PATCH.UTILITY_RESOLVER_INCLUDES),
+                services.index("#if !BUILDFLAG(IS_ANDROID)"),
             )
             self.assertLess(
                 services.index(PATCH.UTILITY_IMPLEMENTATION_MARKER),

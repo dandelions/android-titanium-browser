@@ -158,6 +158,19 @@ def _replace_once(path: str, content: str, old: str, new: str, label: str) -> st
     return content.replace(old, new, 1)
 
 
+def _normalize_resolver_includes(content: str) -> str:
+    platform_guard_position = content.find("#if !BUILDFLAG(IS_ANDROID)")
+    if platform_guard_position < 0:
+        raise RuntimeError("Android utility service platform guard is missing")
+    content = content.replace(UTILITY_RESOLVER_INCLUDES, "")
+    platform_guard_position = content.find("#if !BUILDFLAG(IS_ANDROID)")
+    return (
+        content[:platform_guard_position]
+        + UTILITY_RESOLVER_INCLUDES
+        + content[platform_guard_position:]
+    )
+
+
 def patch_source_tree(src_dir: str) -> bool:
     sources = _read_sources(src_dir)
     factory = sources[FACTORY]
@@ -167,7 +180,14 @@ def patch_source_tree(src_dir: str) -> bool:
     markers = (FACTORY_MARKER in factory, NETWORK_MARKER in network,
                UTILITY_MARKER in utility, UTILITY_SERVICE_MARKER in utility_service)
     utility_implementation_patched = UTILITY_IMPLEMENTATION_MARKER in utility_service
-    utility_includes_patched = "services/proxy_resolver/proxy_resolver_factory_impl.h" in utility_service
+    include_position = utility_service.find(UTILITY_RESOLVER_INCLUDES)
+    platform_guard_position = utility_service.find("#if !BUILDFLAG(IS_ANDROID)")
+    utility_includes_patched = (
+        include_position >= 0
+        and platform_guard_position >= 0
+        and include_position < platform_guard_position
+        and utility_service.count(UTILITY_RESOLVER_INCLUDES) == 1
+    )
     if all(markers) and utility_implementation_patched and utility_includes_patched:
         return False
 
@@ -187,11 +207,7 @@ def patch_source_tree(src_dir: str) -> bool:
                 UTILITY_SERVICE, utility_service, UTILITY_IMPLEMENTATION,
                 UTILITY_IMPLEMENTATION_NEW, "Android proxy resolver service implementation",
             )
-        if not utility_includes_patched:
-            utility_service = _replace_once(
-                UTILITY_SERVICE, utility_service, UTILITY_RESOLVER_INCLUDE_ANCHOR,
-                UTILITY_RESOLVER_INCLUDE_NEW, "Android proxy resolver service includes",
-            )
+        utility_service = _normalize_resolver_includes(utility_service)
         with open(os.path.join(src_dir, UTILITY_SERVICE), "w", encoding="utf-8") as handle:
             handle.write(utility_service)
         print("Completed old-android PAC resolver utility service registration")
@@ -224,10 +240,7 @@ def patch_source_tree(src_dir: str) -> bool:
         UTILITY_SERVICE, utility_service, UTILITY_IMPLEMENTATION,
         UTILITY_IMPLEMENTATION_NEW, "Android proxy resolver service implementation",
     )
-    utility_service = _replace_once(
-        UTILITY_SERVICE, utility_service, UTILITY_RESOLVER_INCLUDE_ANCHOR,
-        UTILITY_RESOLVER_INCLUDE_NEW, "Android proxy resolver service includes",
-    )
+    utility_service = _normalize_resolver_includes(utility_service)
 
     sources[FACTORY] = factory
     sources[NETWORK] = network
