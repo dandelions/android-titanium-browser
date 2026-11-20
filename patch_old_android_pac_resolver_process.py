@@ -141,6 +141,20 @@ def patch_source_tree(src_dir: str) -> bool:
                UTILITY_MARKER in utility, UTILITY_SERVICE_MARKER in utility_service)
     if all(markers):
         return False
+
+    # A previous build may have applied the first three source changes before
+    # the service-registration change was added to this patch script. Complete
+    # that migration in place; reject every other partial state.
+    if markers[:3] == (True, True, True) and not markers[3]:
+        utility_service = _replace_once(
+            UTILITY_SERVICE, utility_service, UTILITY_SERVICE_OLD,
+            UTILITY_SERVICE_NEW, "Android proxy resolver service registration",
+        )
+        with open(os.path.join(src_dir, UTILITY_SERVICE), "w", encoding="utf-8") as handle:
+            handle.write(utility_service)
+        print("Completed old-android PAC resolver utility service registration")
+        return True
+
     if any(markers):
         raise RuntimeError("PAC resolver process patch is partially applied")
 

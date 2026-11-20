@@ -150,6 +150,22 @@ class OldAndroidPacResolverProcessPatchTest(unittest.TestCase):
             self.assertEqual(FACTORY_SOURCE, paths[PATCH.FACTORY].read_text())
             self.assertEqual(NETWORK_SOURCE, paths[PATCH.NETWORK].read_text())
 
+    def test_completes_previous_three_file_application(self):
+        with tempfile.TemporaryDirectory() as temp:
+            paths = self._write_sources(Path(temp))
+            root = Path(temp)
+            for relative in (PATCH.FACTORY, PATCH.NETWORK, PATCH.UTILITY):
+                text = paths[relative].read_text()
+                marker = {
+                    PATCH.FACTORY: PATCH.FACTORY_MARKER,
+                    PATCH.NETWORK: PATCH.NETWORK_MARKER,
+                    PATCH.UTILITY: PATCH.UTILITY_MARKER,
+                }[relative]
+                paths[relative].write_text(text + "\n" + marker + "\n")
+            self.assertTrue(PATCH.patch_source_tree(temp))
+            self.assertIn(PATCH.UTILITY_SERVICE_MARKER, paths[PATCH.UTILITY_SERVICE].read_text())
+            self.assertFalse(PATCH.patch_source_tree(temp))
+
     def test_rejects_partially_applied_patch(self):
         with tempfile.TemporaryDirectory() as temp:
             paths = self._write_sources(Path(temp))
