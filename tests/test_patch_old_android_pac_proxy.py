@@ -60,6 +60,13 @@ class OldAndroidPacProxyPatchTest(unittest.TestCase):
             self.assertFalse(PATCH.patch_source_tree(temp))
             self.assertEqual(UPSTREAM, path.read_text())
 
+    def test_accepts_dedicated_pac_resolver_process(self):
+        dedicated_process = "// Helium: the PAC resolver runs in a dedicated utility process.\n"
+        with tempfile.TemporaryDirectory() as temp:
+            path = self._write_source(temp, dedicated_process)
+            self.assertFalse(PATCH.patch_source_tree(temp))
+            self.assertEqual(dedicated_process, path.read_text())
+
     def test_is_idempotent_after_revert(self):
         with tempfile.TemporaryDirectory() as temp:
             path = self._write_source(temp, UNSAFE_PATCHED)

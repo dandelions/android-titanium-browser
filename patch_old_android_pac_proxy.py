@@ -24,6 +24,7 @@ UPSTREAM_RESTRICTION_MARKER = (
     'LOG(ERROR) << "Cannot use V8 Proxy resolver in single process mode.";'
 )
 UNSAFE_OVERRIDE_MARKER = "V8 resolver still works there, and PAC proxy rules require it."
+DEDICATED_PROCESS_MARKER = "Helium: the PAC resolver runs in a dedicated utility process."
 
 
 def patch_source_tree(src_dir: str) -> bool:
@@ -35,6 +36,8 @@ def patch_source_tree(src_dir: str) -> bool:
         content = handle.read()
 
     if UPSTREAM_RESTRICTION_MARKER in content:
+        return False
+    if DEDICATED_PROCESS_MARKER in content:
         return False
     if content.count(UNSAFE_SINGLE_PROCESS_OVERRIDE) != 1:
         raise RuntimeError(f"unsafe single-process PAC resolver override not found in {path}")
