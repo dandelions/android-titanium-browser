@@ -50,6 +50,9 @@ import org.chromium.ui.base.DeviceFormFactor;
 """
 FORM_FACTOR_IMPORT_NEW = """import org.chromium.components.embedder_support.util.UrlUtilities;
 """
+LEGACY_ELIGIBLE = """        // Helium: offer the bottom toolbar in desktop mode and on car units too.
+        return ChromeFeatureList.sAndroidBottomBar.isEnabled();
+"""
 CONFIG_MARKER = "Helium: expose and allow the bottom toolbar on every old-android form factor"
 TOGGLE_OLD = """    public static boolean shouldShowSettingsToggle(Context context) {
         return isBottomBarEligible(context)
@@ -113,14 +116,26 @@ def patch_config_utils(src_dir: str) -> bool:
 
     if CONFIG_MARKER in content and TOGGLE_MARKER in content:
         return False
-    for anchor in (ELIGIBLE_OLD, IMPORTS_OLD, FORM_FACTOR_IMPORT_OLD, TOGGLE_OLD):
-        if content.count(anchor) != 1:
-            raise RuntimeError(f"bottom bar eligibility anchor not found in {path}: {anchor!r}")
 
-    content = content.replace(ELIGIBLE_OLD, ELIGIBLE_NEW, 1)
-    content = content.replace(IMPORTS_OLD, IMPORTS_NEW, 1)
-    content = content.replace(FORM_FACTOR_IMPORT_OLD, FORM_FACTOR_IMPORT_NEW, 1)
-    content = content.replace(TOGGLE_OLD, TOGGLE_NEW, 1)
+    if ELIGIBLE_OLD in content:
+        content = content.replace(ELIGIBLE_OLD, ELIGIBLE_NEW, 1)
+    elif LEGACY_ELIGIBLE in content:
+        content = content.replace(LEGACY_ELIGIBLE, ELIGIBLE_NEW, 1)
+    elif CONFIG_MARKER not in content:
+        raise RuntimeError(f"bottom bar eligibility anchor not found in {path}")
+
+    if IMPORTS_OLD in content:
+        content = content.replace(IMPORTS_OLD, IMPORTS_NEW, 1)
+    elif FORM_FACTOR_IMPORT_OLD in content:
+        raise RuntimeError(f"bottom bar imports are partially patched in {path}")
+
+    if FORM_FACTOR_IMPORT_OLD in content:
+        content = content.replace(FORM_FACTOR_IMPORT_OLD, FORM_FACTOR_IMPORT_NEW, 1)
+
+    if TOGGLE_OLD in content:
+        content = content.replace(TOGGLE_OLD, TOGGLE_NEW, 1)
+    elif TOGGLE_MARKER not in content:
+        raise RuntimeError(f"bottom bar setting toggle anchor not found in {path}")
 
     with open(path, "w", encoding="utf-8") as handle:
         handle.write(content)
