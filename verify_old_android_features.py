@@ -69,6 +69,7 @@ SYSTEM_NETWORK_CONTEXT_MANAGER = Path(
 )
 PROXY_RESOLVER_FACTORY = Path("chrome/browser/net/chrome_mojo_proxy_resolver_factory.cc")
 UTILITY_PROCESS_HOST = Path("content/browser/service_host/utility_process_host.cc")
+UTILITY_SERVICES = Path("chrome/utility/services.cc")
 LOCATION_BAR_PHONE = Path(
     "chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/"
     "LocationBarPhone.java"
@@ -411,6 +412,12 @@ def verify_single_process_extensions(root):
     utility_path, utility = read(root, UTILITY_PROCESS_HOST)
     if "Helium: only PAC resolution escapes renderer single-process mode." not in utility:
         raise SystemExit(f"PAC utility process exception is missing: {utility_path}")
+
+    services_path, services = read(root, UTILITY_SERVICES)
+    if "Helium: the old-android PAC resolver runs in this utility process." not in services:
+        raise SystemExit(f"Android PAC utility service registration is missing: {services_path}")
+    if "services.Add(RunProxyResolver);" not in services:
+        raise SystemExit(f"Android PAC utility resolver is not registered: {services_path}")
 
     print("Verified old-android extension guards and isolated PAC resolver")
 

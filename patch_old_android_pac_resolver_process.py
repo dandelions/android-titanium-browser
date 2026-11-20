@@ -86,6 +86,17 @@ NETWORK_MARKER = "Helium: the PAC resolver runs in a dedicated utility process."
 
 UTILITY = "content/browser/service_host/utility_process_host.cc"
 UTILITY_INCLUDE_OLD = '#include "content/browser/service_host/utility_process_host.h"\n'
+UTILITY_SERVICE = "chrome/utility/services.cc"
+UTILITY_SERVICE_OLD = """void RegisterIOThreadServices(mojo::ServiceFactory& services) {
+#if !BUILDFLAG(IS_ANDROID)
+  services.Add(RunProxyResolver);
+#endif
+"""
+UTILITY_SERVICE_NEW = """void RegisterIOThreadServices(mojo::ServiceFactory& services) {
+  // Helium: the old-android PAC resolver runs in this utility process.
+  services.Add(RunProxyResolver);
+"""
+UTILITY_SERVICE_MARKER = "Helium: the old-android PAC resolver runs in this utility process."
 UTILITY_INCLUDE_NEW = (
     UTILITY_INCLUDE_OLD
     + '#include "services/proxy_resolver/public/mojom/proxy_resolver.mojom.h"\n'
@@ -104,7 +115,7 @@ UTILITY_MARKER = "Helium: only PAC resolution escapes renderer single-process mo
 
 def _read_sources(src_dir: str) -> dict[str, str]:
     result = {}
-    for relative in (FACTORY, NETWORK, UTILITY):
+    for relative in (FACTORY, NETWORK, UTILITY, UTILITY_SERVICE):
         path = os.path.join(src_dir, relative)
         if not os.path.isfile(path):
             raise FileNotFoundError(path)
@@ -125,8 +136,9 @@ def patch_source_tree(src_dir: str) -> bool:
     factory = sources[FACTORY]
     network = sources[NETWORK]
     utility = sources[UTILITY]
+    utility_service = sources[UTILITY_SERVICE]
     markers = (FACTORY_MARKER in factory, NETWORK_MARKER in network,
-               UTILITY_MARKER in utility)
+               UTILITY_MARKER in utility, UTILITY_SERVICE_MARKER in utility_service)
     if all(markers):
         return False
     if any(markers):
@@ -148,10 +160,15 @@ def patch_source_tree(src_dir: str) -> bool:
     utility = _replace_once(
         UTILITY, utility, UTILITY_OLD, UTILITY_NEW, "utility process dispatch"
     )
+    utility_service = _replace_once(
+        UTILITY_SERVICE, utility_service, UTILITY_SERVICE_OLD, UTILITY_SERVICE_NEW,
+        "Android proxy resolver service registration",
+    )
 
     sources[FACTORY] = factory
     sources[NETWORK] = network
     sources[UTILITY] = utility
+    sources[UTILITY_SERVICE] = utility_service
     for relative, content in sources.items():
         with open(os.path.join(src_dir, relative), "w", encoding="utf-8") as handle:
             handle.write(content)

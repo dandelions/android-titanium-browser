@@ -64,6 +64,10 @@ SINGLE_PROCESS_FILES = {
     "content/browser/service_host/utility_process_host.cc": (
         "Helium: only PAC resolution escapes renderer single-process mode."
     ),
+    "chrome/utility/services.cc": (
+        "Helium: the old-android PAC resolver runs in this utility process.\n"
+        "  services.Add(RunProxyResolver);"
+    ),
     "chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/"
     "LocationBarPhone.java": (
         "protected @Nullable ImageButton mBackButton;\n"

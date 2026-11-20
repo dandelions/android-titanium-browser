@@ -69,6 +69,13 @@ NETWORK_SOURCE = '''  if (!command_line.HasSwitch(switches::kWinHttpProxyResolve
   }
 '''
 
+UTILITY_SERVICE_SOURCE = '''void RegisterIOThreadServices(mojo::ServiceFactory& services) {
+#if !BUILDFLAG(IS_ANDROID)
+  services.Add(RunProxyResolver);
+#endif
+}
+'''
+
 UTILITY_SOURCE = '''#include "content/browser/service_host/utility_process_host.h"
 
 bool UtilityProcessHost::StartProcess() {
@@ -94,6 +101,7 @@ class OldAndroidPacResolverProcessPatchTest(unittest.TestCase):
             PATCH.FACTORY: FACTORY_SOURCE,
             PATCH.NETWORK: NETWORK_SOURCE,
             PATCH.UTILITY: UTILITY_SOURCE,
+            PATCH.UTILITY_SERVICE: UTILITY_SERVICE_SOURCE,
         }
         for relative, text in content.items():
             path = root / relative
@@ -120,6 +128,10 @@ class OldAndroidPacResolverProcessPatchTest(unittest.TestCase):
             self.assertIn(PATCH.UTILITY_MARKER, utility)
             self.assertIn("options_.metrics_name_ !=", utility)
             self.assertIn("ProxyResolverFactory::Name_", utility)
+
+            services = paths[PATCH.UTILITY_SERVICE].read_text()
+            self.assertIn(PATCH.UTILITY_SERVICE_MARKER, services)
+            self.assertIn("services.Add(RunProxyResolver);", services)
 
     def test_is_idempotent(self):
         with tempfile.TemporaryDirectory() as temp:
