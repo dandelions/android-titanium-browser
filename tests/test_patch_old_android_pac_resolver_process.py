@@ -69,7 +69,30 @@ NETWORK_SOURCE = '''  if (!command_line.HasSwitch(switches::kWinHttpProxyResolve
   }
 '''
 
-UTILITY_SERVICE_SOURCE = '''void RegisterIOThreadServices(mojo::ServiceFactory& services) {
+UTILITY_SERVICE_SOURCE = '''#include "content/public/utility/utility_thread.h"
+#if !BUILDFLAG(IS_ANDROID)
+#include "chrome/common/importer/profile_import.mojom.h"
+#include "chrome/utility/importer/profile_import_impl.h"
+#include "services/proxy_resolver/proxy_resolver_factory_impl.h"  // nogncheck
+#include "services/proxy_resolver/public/mojom/proxy_resolver.mojom.h"
+#endif
+
+#if !BUILDFLAG(IS_ANDROID)
+auto RunProxyResolver(
+    mojo::PendingReceiver<proxy_resolver::mojom::ProxyResolverFactory>
+        receiver) {
+  return std::make_unique<proxy_resolver::ProxyResolverFactoryImpl>(
+      std::move(receiver));
+}
+
+auto RunProfileImporter(
+    mojo::PendingReceiver<chrome::mojom::ProfileImport> receiver) {
+  return std::make_unique<ProfileImportImpl>(std::move(receiver));
+}
+
+#endif
+
+void RegisterIOThreadServices(mojo::ServiceFactory& services) {
 #if !BUILDFLAG(IS_ANDROID)
   services.Add(RunProxyResolver);
 #endif
@@ -131,7 +154,16 @@ class OldAndroidPacResolverProcessPatchTest(unittest.TestCase):
 
             services = paths[PATCH.UTILITY_SERVICE].read_text()
             self.assertIn(PATCH.UTILITY_SERVICE_MARKER, services)
+            self.assertIn(PATCH.UTILITY_IMPLEMENTATION_MARKER, services)
             self.assertIn("services.Add(RunProxyResolver);", services)
+            self.assertNotIn(
+                "#if !BUILDFLAG(IS_ANDROID)\n" + PATCH.UTILITY_RESOLVER_INCLUDES,
+                services,
+            )
+            self.assertLess(
+                services.index(PATCH.UTILITY_IMPLEMENTATION_MARKER),
+                services.index("auto RunProfileImporter"),
+            )
 
     def test_is_idempotent(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -163,7 +195,9 @@ class OldAndroidPacResolverProcessPatchTest(unittest.TestCase):
                 }[relative]
                 paths[relative].write_text(text + "\n" + marker + "\n")
             self.assertTrue(PATCH.patch_source_tree(temp))
-            self.assertIn(PATCH.UTILITY_SERVICE_MARKER, paths[PATCH.UTILITY_SERVICE].read_text())
+            service_source = paths[PATCH.UTILITY_SERVICE].read_text()
+            self.assertIn(PATCH.UTILITY_SERVICE_MARKER, service_source)
+            self.assertIn(PATCH.UTILITY_IMPLEMENTATION_MARKER, service_source)
             self.assertFalse(PATCH.patch_source_tree(temp))
 
     def test_rejects_partially_applied_patch(self):

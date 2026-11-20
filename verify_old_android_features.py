@@ -418,6 +418,11 @@ def verify_single_process_extensions(root):
         raise SystemExit(f"Android PAC utility service registration is missing: {services_path}")
     if "services.Add(RunProxyResolver);" not in services:
         raise SystemExit(f"Android PAC utility resolver is not registered: {services_path}")
+    if "Helium: expose the PAC resolver factory to the Android utility process." not in services:
+        raise SystemExit(f"Android PAC utility resolver implementation is missing: {services_path}")
+    resolver_guard = "#if !BUILDFLAG(IS_ANDROID)\nauto RunProxyResolver"
+    if resolver_guard in services:
+        raise SystemExit(f"Android PAC utility resolver is still excluded by its platform guard: {services_path}")
 
     print("Verified old-android extension guards and isolated PAC resolver")
 

@@ -97,6 +97,33 @@ UTILITY_SERVICE_NEW = """void RegisterIOThreadServices(mojo::ServiceFactory& ser
   services.Add(RunProxyResolver);
 """
 UTILITY_SERVICE_MARKER = "Helium: the old-android PAC resolver runs in this utility process."
+UTILITY_IMPLEMENTATION = """#if !BUILDFLAG(IS_ANDROID)
+auto RunProxyResolver(
+    mojo::PendingReceiver<proxy_resolver::mojom::ProxyResolverFactory>
+        receiver) {
+  return std::make_unique<proxy_resolver::ProxyResolverFactoryImpl>(
+      std::move(receiver));
+}
+
+"""
+UTILITY_IMPLEMENTATION_NEW = """// Helium: expose the PAC resolver factory to the Android utility process.
+auto RunProxyResolver(
+    mojo::PendingReceiver<proxy_resolver::mojom::ProxyResolverFactory>
+        receiver) {
+  return std::make_unique<proxy_resolver::ProxyResolverFactoryImpl>(
+      std::move(receiver));
+}
+
+#if !BUILDFLAG(IS_ANDROID)
+"""
+UTILITY_IMPLEMENTATION_MARKER = "Helium: expose the PAC resolver factory to the Android utility process."
+UTILITY_RESOLVER_INCLUDES = '''#include "services/proxy_resolver/proxy_resolver_factory_impl.h"  // nogncheck
+#include "services/proxy_resolver/public/mojom/proxy_resolver.mojom.h"
+'''
+UTILITY_RESOLVER_INCLUDE_ANCHOR = '#include "content/public/utility/utility_thread.h"\n'
+UTILITY_RESOLVER_INCLUDE_NEW = (
+    UTILITY_RESOLVER_INCLUDE_ANCHOR + UTILITY_RESOLVER_INCLUDES
+)
 UTILITY_INCLUDE_NEW = (
     UTILITY_INCLUDE_OLD
     + '#include "services/proxy_resolver/public/mojom/proxy_resolver.mojom.h"\n'
@@ -139,17 +166,32 @@ def patch_source_tree(src_dir: str) -> bool:
     utility_service = sources[UTILITY_SERVICE]
     markers = (FACTORY_MARKER in factory, NETWORK_MARKER in network,
                UTILITY_MARKER in utility, UTILITY_SERVICE_MARKER in utility_service)
-    if all(markers):
+    utility_implementation_patched = UTILITY_IMPLEMENTATION_MARKER in utility_service
+    utility_includes_patched = "services/proxy_resolver/proxy_resolver_factory_impl.h" in utility_service
+    if all(markers) and utility_implementation_patched and utility_includes_patched:
         return False
 
-    # A previous build may have applied the first three source changes before
-    # the service-registration change was added to this patch script. Complete
-    # that migration in place; reject every other partial state.
-    if markers[:3] == (True, True, True) and not markers[3]:
-        utility_service = _replace_once(
-            UTILITY_SERVICE, utility_service, UTILITY_SERVICE_OLD,
-            UTILITY_SERVICE_NEW, "Android proxy resolver service registration",
-        )
+    # Complete older PAC utility patches that registered the service but left
+    # its implementation and headers excluded on Android.
+    if (
+        markers[:3] == (True, True, True)
+        and (not markers[3] or not utility_implementation_patched or not utility_includes_patched)
+    ):
+        if not markers[3]:
+            utility_service = _replace_once(
+                UTILITY_SERVICE, utility_service, UTILITY_SERVICE_OLD,
+                UTILITY_SERVICE_NEW, "Android proxy resolver service registration",
+            )
+        if not utility_implementation_patched:
+            utility_service = _replace_once(
+                UTILITY_SERVICE, utility_service, UTILITY_IMPLEMENTATION,
+                UTILITY_IMPLEMENTATION_NEW, "Android proxy resolver service implementation",
+            )
+        if not utility_includes_patched:
+            utility_service = _replace_once(
+                UTILITY_SERVICE, utility_service, UTILITY_RESOLVER_INCLUDE_ANCHOR,
+                UTILITY_RESOLVER_INCLUDE_NEW, "Android proxy resolver service includes",
+            )
         with open(os.path.join(src_dir, UTILITY_SERVICE), "w", encoding="utf-8") as handle:
             handle.write(utility_service)
         print("Completed old-android PAC resolver utility service registration")
@@ -177,6 +219,14 @@ def patch_source_tree(src_dir: str) -> bool:
     utility_service = _replace_once(
         UTILITY_SERVICE, utility_service, UTILITY_SERVICE_OLD, UTILITY_SERVICE_NEW,
         "Android proxy resolver service registration",
+    )
+    utility_service = _replace_once(
+        UTILITY_SERVICE, utility_service, UTILITY_IMPLEMENTATION,
+        UTILITY_IMPLEMENTATION_NEW, "Android proxy resolver service implementation",
+    )
+    utility_service = _replace_once(
+        UTILITY_SERVICE, utility_service, UTILITY_RESOLVER_INCLUDE_ANCHOR,
+        UTILITY_RESOLVER_INCLUDE_NEW, "Android proxy resolver service includes",
     )
 
     sources[FACTORY] = factory

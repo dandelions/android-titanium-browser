@@ -66,7 +66,10 @@ SINGLE_PROCESS_FILES = {
     ),
     "chrome/utility/services.cc": (
         "Helium: the old-android PAC resolver runs in this utility process.\n"
-        "  services.Add(RunProxyResolver);"
+        "  services.Add(RunProxyResolver);\n"
+        "// Helium: expose the PAC resolver factory to the Android utility process.\n"
+        "auto RunProxyResolver(\n"
+        "#if !BUILDFLAG(IS_ANDROID)\nauto RunProfileImporter"
     ),
     "chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/"
     "LocationBarPhone.java": (
