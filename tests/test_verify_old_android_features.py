@@ -56,7 +56,9 @@ SINGLE_PROCESS_FILES = {
         "    (!process_map || !process_map->Contains(extension_id, render_process_id))) {}"
     ),
     "chrome/browser/net/system_network_context_manager.cc": (
-        "// V8 resolver still works there, and PAC proxy rules require it."
+        '  if (command_line.HasSwitch(switches::kSingleProcess)) {\n'
+        '    LOG(ERROR) << "Cannot use V8 Proxy resolver in single process mode.";\n'
+        '  } else {'
     ),
     "chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/"
     "LocationBarPhone.java": (
@@ -69,10 +71,15 @@ SINGLE_PROCESS_FILES = {
     "chrome/browser/flags/android/chrome_feature_list.cc": (
         "BASE_FEATURE(kAndroidBottomBar, base::FEATURE_ENABLED_BY_DEFAULT);"
     ),
+    "chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/"
+    "ChromeFeatureList.java": (
+        "newCachedFlag(ANDROID_BOTTOM_BAR, true, /* defaultValueInTests= */ true);"
+    ),
     "chrome/browser/ui/android/bottombar/java/src/org/chromium/chrome/browser/ui/"
     "bottombar/BottomBarConfigUtils.java": (
-        "// Helium: offer the bottom toolbar in desktop mode and on car units too.\n"
-        "return ChromeFeatureList.sAndroidBottomBar.isEnabled();"
+        "// Helium: expose and allow the bottom toolbar on every old-android form factor.\n"
+        "// The matching native feature is enabled by the old-android build patch.\n"
+        "return true;"
     ),
 }
 
@@ -255,6 +262,35 @@ class VerifyOldAndroidFeaturesTest(unittest.TestCase):
         files.update(NEWTAB_FILES)
         files.update(SINGLE_PROCESS_FILES)
         files["content/browser/renderer_host/render_process_host_impl.cc"] = "NOTREACHED();"
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            for relative, content in files.items():
+                path = root / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(content)
+            result = subprocess.run([sys.executable, str(VERIFY), str(root)])
+            self.assertNotEqual(result.returncode, 0)
+
+    def test_rejects_disabled_bottom_toolbar_java_cached_flag(self):
+        files = {
+            "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsToolbarCoordinatorImpl.java": "return !mIsWebApp && mCanShowMenuIcon;",
+            "chrome/android/java/src/org/chromium/chrome/browser/app/appmenu/AppMenuPropertiesDelegateImpl.java": "boolean shouldShowExtensionsItem() {\n        return true;\n    }",
+            "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/ToolbarPositionController.java": "Helium: follow the toolbar preference on the NTP and while editing",
+            "chrome/android/java/src/org/chromium/chrome/browser/ntp/NewTabPageCoordinator.java": "AddressBarPreference.isToolbarConfiguredToShowOnTop()",
+            "chrome/browser/ui/android/toolbar/java/res/layout/toolbar_phone.xml": '<ViewStub android:id="@+id/extensions_toolbar_container_stub"/>',
+            "chrome/android/java/src/org/chromium/chrome/browser/toolbar/ToolbarManager.java": (
+                "ExtensionsToolbarCoordinator.maybeCreate(mToolbarLayout,\n"
+                "if (mToolbarLayout instanceof ToolbarTablet) {\n"
+                "    return ((ToolbarTablet) mToolbarLayout).areAnyToolbarComponentsMissingForWidth();\n"
+                "}"
+            ),
+        }
+        files.update(NEWTAB_FILES)
+        files.update(SINGLE_PROCESS_FILES)
+        files[
+            "chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/"
+            "ChromeFeatureList.java"
+        ] = "newCachedFlag(ANDROID_BOTTOM_BAR, false, /* defaultValueInTests= */ true);"
         with tempfile.TemporaryDirectory() as temp:
             root = pathlib.Path(temp)
             for relative, content in files.items():

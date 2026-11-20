@@ -79,6 +79,10 @@ BOTTOM_BAR_CONFIG_UTILS = Path(
     "bottombar/BottomBarConfigUtils.java"
 )
 ANDROID_FEATURE_LIST = Path("chrome/browser/flags/android/chrome_feature_list.cc")
+ANDROID_JAVA_FEATURE_LIST = Path(
+    "chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/"
+    "ChromeFeatureList.java"
+)
 
 
 def read(root, relative):
@@ -387,10 +391,19 @@ def verify_single_process_extensions(root):
         )
 
     context_path, context = read(root, SYSTEM_NETWORK_CONTEXT_MANAGER)
-    if "V8 resolver still works there, and PAC proxy rules require it." not in context:
-        raise SystemExit(f"PAC proxy resolver guard is missing: {context_path}")
+    if (
+        "command_line.HasSwitch(switches::kSingleProcess)" not in context
+        or "Cannot use V8 Proxy resolver in single process mode." not in context
+    ):
+        raise SystemExit(
+            f"upstream PAC resolver restriction is missing in single-process mode: {context_path}"
+        )
+    if "V8 resolver still works there, and PAC proxy rules require it." in context:
+        raise SystemExit(
+            f"unsafe single-process PAC resolver override is present: {context_path}"
+        )
 
-    print("Verified old-android single process extensions and PAC proxy support")
+    print("Verified old-android single-process extension guards and PAC restriction")
 
 
 def verify_bottom_toolbar(root):
@@ -413,10 +426,20 @@ def verify_bottom_toolbar(root):
     if "BASE_FEATURE(kAndroidBottomBar, base::FEATURE_ENABLED_BY_DEFAULT);" not in features:
         raise SystemExit(f"bottom bar feature is not enabled: {features_path}")
 
-    config_path, config = read(root, BOTTOM_BAR_CONFIG_UTILS)
-    if "Helium: offer the bottom toolbar in desktop mode" not in config:
+    java_features_path, java_features = read(root, ANDROID_JAVA_FEATURE_LIST)
+    if "newCachedFlag(ANDROID_BOTTOM_BAR, true, /* defaultValueInTests= */ true);" not in java_features:
         raise SystemExit(
-            f"bottom bar form factor restriction is still present: {config_path}"
+            f"bottom bar Java cached flag is not enabled by default: {java_features_path}"
+        )
+
+    config_path, config = read(root, BOTTOM_BAR_CONFIG_UTILS)
+    if (
+        "Helium: expose and allow the bottom toolbar on every old-android form factor"
+        not in config
+        or "return true;" not in config
+    ):
+        raise SystemExit(
+            f"bottom bar is not unconditionally eligible on old-android: {config_path}"
         )
 
     print("Verified old-android bottom toolbar availability")

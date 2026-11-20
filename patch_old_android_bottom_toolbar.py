@@ -16,6 +16,18 @@ FEATURE_NEW = """// Helium: the bottom toolbar must be available on car head uni
 BASE_FEATURE(kAndroidBottomBar, base::FEATURE_ENABLED_BY_DEFAULT);"""
 FEATURE_MARKER = "Helium: the bottom toolbar must be available"
 
+JAVA_FEATURE_LIST = (
+    "chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/"
+    "ChromeFeatureList.java"
+)
+JAVA_FLAG_OLD = """    public static final CachedFlag sAndroidBottomBar =
+            newCachedFlag(ANDROID_BOTTOM_BAR, false, /* defaultValueInTests= */ true);
+"""
+JAVA_FLAG_NEW = """    public static final CachedFlag sAndroidBottomBar =
+            newCachedFlag(ANDROID_BOTTOM_BAR, true, /* defaultValueInTests= */ true);
+"""
+JAVA_FLAG_MARKER = "newCachedFlag(ANDROID_BOTTOM_BAR, true, /* defaultValueInTests= */ true);"
+
 CONFIG_UTILS = (
     "chrome/browser/ui/android/bottombar/java/src/org/chromium/chrome/browser/ui/"
     "bottombar/BottomBarConfigUtils.java"
@@ -24,8 +36,9 @@ ELIGIBLE_OLD = """        return !DeviceFormFactor.isNonMultiDisplayContextOnTab
                 && !DeviceInfo.isAutomotive()
                 && ChromeFeatureList.sAndroidBottomBar.isEnabled();
 """
-ELIGIBLE_NEW = """        // Helium: offer the bottom toolbar in desktop mode and on car units too.
-        return ChromeFeatureList.sAndroidBottomBar.isEnabled();
+ELIGIBLE_NEW = """        // Helium: expose and allow the bottom toolbar on every old-android form factor.
+        // The matching native feature is enabled by the old-android build patch.
+        return true;
 """
 IMPORTS_OLD = """import org.chromium.base.DeviceInfo;
 import org.chromium.build.annotations.NullMarked;
@@ -37,7 +50,19 @@ import org.chromium.ui.base.DeviceFormFactor;
 """
 FORM_FACTOR_IMPORT_NEW = """import org.chromium.components.embedder_support.util.UrlUtilities;
 """
-CONFIG_MARKER = "Helium: offer the bottom toolbar in desktop mode"
+CONFIG_MARKER = "Helium: expose and allow the bottom toolbar on every old-android form factor"
+TOGGLE_OLD = """    public static boolean shouldShowSettingsToggle(Context context) {
+        return isBottomBarEligible(context)
+                && ChromeFeatureList.sAndroidBottomBarShowSettingsToggle.getValue();
+    }
+
+"""
+TOGGLE_NEW = """    public static boolean shouldShowSettingsToggle(Context context) {
+        // Helium: keep the bottom toolbar option visible on every old-android device.
+        return true;
+    }
+"""
+TOGGLE_MARKER = "Helium: keep the bottom toolbar option visible on every old-android device."
 
 
 def patch_feature_list(src_dir: str) -> bool:
@@ -59,6 +84,25 @@ def patch_feature_list(src_dir: str) -> bool:
     return True
 
 
+def patch_java_feature_flag(src_dir: str) -> bool:
+    path = os.path.join(src_dir, JAVA_FEATURE_LIST)
+    if not os.path.isfile(path):
+        raise FileNotFoundError(path)
+
+    with open(path, "r", encoding="utf-8") as handle:
+        content = handle.read()
+
+    if JAVA_FLAG_MARKER in content:
+        return False
+    if content.count(JAVA_FLAG_OLD) != 1:
+        raise RuntimeError(f"bottom bar Java feature flag not found in {path}")
+
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(content.replace(JAVA_FLAG_OLD, JAVA_FLAG_NEW, 1))
+    print(f"Patched old-android bottom bar Java feature flag: {path}")
+    return True
+
+
 def patch_config_utils(src_dir: str) -> bool:
     path = os.path.join(src_dir, CONFIG_UTILS)
     if not os.path.isfile(path):
@@ -67,15 +111,16 @@ def patch_config_utils(src_dir: str) -> bool:
     with open(path, "r", encoding="utf-8") as handle:
         content = handle.read()
 
-    if CONFIG_MARKER in content:
+    if CONFIG_MARKER in content and TOGGLE_MARKER in content:
         return False
-    for anchor in (ELIGIBLE_OLD, IMPORTS_OLD, FORM_FACTOR_IMPORT_OLD):
+    for anchor in (ELIGIBLE_OLD, IMPORTS_OLD, FORM_FACTOR_IMPORT_OLD, TOGGLE_OLD):
         if content.count(anchor) != 1:
             raise RuntimeError(f"bottom bar eligibility anchor not found in {path}: {anchor!r}")
 
     content = content.replace(ELIGIBLE_OLD, ELIGIBLE_NEW, 1)
     content = content.replace(IMPORTS_OLD, IMPORTS_NEW, 1)
     content = content.replace(FORM_FACTOR_IMPORT_OLD, FORM_FACTOR_IMPORT_NEW, 1)
+    content = content.replace(TOGGLE_OLD, TOGGLE_NEW, 1)
 
     with open(path, "w", encoding="utf-8") as handle:
         handle.write(content)
@@ -85,8 +130,9 @@ def patch_config_utils(src_dir: str) -> bool:
 
 def patch_source_tree(src_dir: str) -> bool:
     feature_changed = patch_feature_list(src_dir)
+    java_flag_changed = patch_java_feature_flag(src_dir)
     config_changed = patch_config_utils(src_dir)
-    return feature_changed or config_changed
+    return feature_changed or java_flag_changed or config_changed
 
 
 if __name__ == "__main__":
