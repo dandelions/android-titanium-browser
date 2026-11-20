@@ -67,6 +67,8 @@ SERVICE_WORKER_HOST = Path("extensions/browser/service_worker/service_worker_hos
 SYSTEM_NETWORK_CONTEXT_MANAGER = Path(
     "chrome/browser/net/system_network_context_manager.cc"
 )
+PROXY_RESOLVER_FACTORY = Path("chrome/browser/net/chrome_mojo_proxy_resolver_factory.cc")
+UTILITY_PROCESS_HOST = Path("content/browser/service_host/utility_process_host.cc")
 LOCATION_BAR_PHONE = Path(
     "chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/"
     "LocationBarPhone.java"
@@ -391,19 +393,26 @@ def verify_single_process_extensions(root):
         )
 
     context_path, context = read(root, SYSTEM_NETWORK_CONTEXT_MANAGER)
-    if (
-        "command_line.HasSwitch(switches::kSingleProcess)" not in context
-        or "Cannot use V8 Proxy resolver in single process mode." not in context
-    ):
+    if "PAC resolver runs in a dedicated utility process" not in context:
         raise SystemExit(
-            f"upstream PAC resolver restriction is missing in single-process mode: {context_path}"
+            f"dedicated PAC resolver process selection is missing: {context_path}"
         )
-    if "V8 resolver still works there, and PAC proxy rules require it." in context:
+    if "Cannot use V8 Proxy resolver in single process mode." in context:
         raise SystemExit(
-            f"unsafe single-process PAC resolver override is present: {context_path}"
+            f"PAC resolver is still disabled in single-process mode: {context_path}"
         )
 
-    print("Verified old-android single-process extension guards and PAC restriction")
+    factory_path, factory = read(root, PROXY_RESOLVER_FACTORY)
+    if "Helium: run PAC evaluation in a sandboxed utility process on Android." not in factory:
+        raise SystemExit(f"Android PAC utility process launch is missing: {factory_path}")
+    if "ProxyResolverFactoryImpl" in factory:
+        raise SystemExit(f"Android PAC resolver still runs in browser process: {factory_path}")
+
+    utility_path, utility = read(root, UTILITY_PROCESS_HOST)
+    if "Helium: only PAC resolution escapes renderer single-process mode." not in utility:
+        raise SystemExit(f"PAC utility process exception is missing: {utility_path}")
+
+    print("Verified old-android extension guards and isolated PAC resolver")
 
 
 def verify_bottom_toolbar(root):

@@ -56,9 +56,13 @@ SINGLE_PROCESS_FILES = {
         "    (!process_map || !process_map->Contains(extension_id, render_process_id))) {}"
     ),
     "chrome/browser/net/system_network_context_manager.cc": (
-        '  if (command_line.HasSwitch(switches::kSingleProcess)) {\n'
-        '    LOG(ERROR) << "Cannot use V8 Proxy resolver in single process mode.";\n'
-        '  } else {'
+        "// Helium: the PAC resolver runs in a dedicated utility process."
+    ),
+    "chrome/browser/net/chrome_mojo_proxy_resolver_factory.cc": (
+        "Helium: run PAC evaluation in a sandboxed utility process on Android."
+    ),
+    "content/browser/service_host/utility_process_host.cc": (
+        "Helium: only PAC resolution escapes renderer single-process mode."
     ),
     "chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/"
     "LocationBarPhone.java": (

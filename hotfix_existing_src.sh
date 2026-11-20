@@ -4349,6 +4349,7 @@ if is_old_version_branch; then
     python3 "$SCRIPT_DIR/patch_old_android_extension_messaging.py" "$SRC_DIR"
     python3 "$SCRIPT_DIR/patch_old_android_extension_service_worker.py" "$SRC_DIR"
     python3 "$SCRIPT_DIR/patch_old_android_pac_proxy.py" "$SRC_DIR"
+    python3 "$SCRIPT_DIR/patch_old_android_pac_resolver_process.py" "$SRC_DIR"
     python3 "$SCRIPT_DIR/patch_old_android_location_bar_back_button.py" "$SRC_DIR"
     python3 "$SCRIPT_DIR/patch_old_android_bottom_toolbar.py" "$SRC_DIR"
 python3 "$SCRIPT_DIR/patch_renderer_mprotect.py" "$SRC_DIR"
