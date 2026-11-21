@@ -11,8 +11,9 @@ TARGET = (
 
 ORIGINAL_FIELD = "    private FrameLayout.LayoutParams mDefaultLocationBarLayoutParams;\n"
 PATCHED_FIELD = """    // Helium: the bottom address bar is hosted by a LinearLayout on old-android.
-    private @Nullable FrameLayout.LayoutParams mDefaultLocationBarLayoutParams;
+    private FrameLayout.@Nullable LayoutParams mDefaultLocationBarLayoutParams;
 """
+INVALID_PATCHED_FIELD = "    private @Nullable FrameLayout.LayoutParams mDefaultLocationBarLayoutParams;\n"
 FIELD_MARKER = "Helium: the bottom address bar is hosted by a LinearLayout"
 
 ORIGINAL_INIT = """        mDefaultLocationBarRightPadding = mLocationBar.getContainerView().getPaddingRight();
@@ -81,13 +82,21 @@ def patch_source_tree(src_dir: str) -> bool:
 
     with open(path, "r", encoding="utf-8") as handle:
         content = handle.read()
+    changed = False
+    if INVALID_PATCHED_FIELD in content:
+        content = content.replace(INVALID_PATCHED_FIELD, PATCHED_FIELD.split("\n", 1)[1], 1)
+        changed = True
     if (
         FIELD_MARKER in content
         and INIT_MARKER in content
         and STATE_MARKER in content
         and TRANSITION_MARKER in content
     ):
-        return False
+        if changed:
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write(content)
+            print(f"Normalized old-android mini-origin layout annotation: {path}")
+        return changed
 
     if FIELD_MARKER not in content:
         if content.count(ORIGINAL_FIELD) != 1:

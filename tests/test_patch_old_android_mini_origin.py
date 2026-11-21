@@ -33,8 +33,8 @@ class OldAndroidMiniOriginPatchTest(unittest.TestCase):
             self.assertTrue(patch.patch_source_tree(root))
             result = path.read_text(encoding="utf-8")
             self.assertIn(patch.FIELD_MARKER, result)
-            self.assertIn("private @Nullable FrameLayout.LayoutParams", result)
-            self.assertNotIn("FrameLayout.@Nullable LayoutParams", result)
+            self.assertIn("private FrameLayout.@Nullable LayoutParams", result)
+            self.assertNotIn("private @Nullable FrameLayout.LayoutParams", result)
             self.assertIn(patch.INIT_MARKER, result)
             self.assertIn(patch.STATE_MARKER, result)
             self.assertIn("locationBarLayoutParams instanceof FrameLayout.LayoutParams", result)
@@ -69,6 +69,23 @@ class OldAndroidMiniOriginPatchTest(unittest.TestCase):
             self.assertIn(patch.INIT_MARKER, result)
             self.assertIn(patch.STATE_MARKER, result)
             self.assertIn(patch.TRANSITION_MARKER, result)
+
+    def test_normalizes_complete_patch_with_old_annotation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = self._write_source(root)
+            self.assertTrue(patch.patch_source_tree(root))
+            result = path.read_text(encoding="utf-8").replace(
+                "private FrameLayout.@Nullable LayoutParams",
+                "private @Nullable FrameLayout.LayoutParams",
+            )
+            path.write_text(result, encoding="utf-8")
+
+            self.assertTrue(patch.patch_source_tree(root))
+            normalized = path.read_text(encoding="utf-8")
+            self.assertIn("private FrameLayout.@Nullable LayoutParams", normalized)
+            self.assertNotIn("private @Nullable FrameLayout.LayoutParams", normalized)
+            self.assertFalse(patch.patch_source_tree(root))
 
 
 if __name__ == "__main__":
