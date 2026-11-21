@@ -17,6 +17,9 @@ class OldAndroidMiniOriginPatchTest(unittest.TestCase):
             + "    }\n"
             + patch.ORIGINAL_STATE
             + "        return;\n"
+            + "    }\n"
+            + patch.ORIGINAL_TRANSITION
+            + "        return;\n"
             + "    }\n",
             encoding="utf-8",
         )
@@ -35,6 +38,7 @@ class OldAndroidMiniOriginPatchTest(unittest.TestCase):
             self.assertIn("locationBarLayoutParams instanceof FrameLayout.LayoutParams", result)
             self.assertIn("instanceof FrameLayout.LayoutParams", result)
             self.assertIn("if (mDefaultLocationBarLayoutParams == null) return;", result)
+            self.assertIn(patch.TRANSITION_MARKER, result)
             self.assertFalse(patch.patch_source_tree(root))
             self.assertEqual(result, path.read_text(encoding="utf-8"))
 
@@ -51,6 +55,9 @@ class OldAndroidMiniOriginPatchTest(unittest.TestCase):
                 + "    }\n"
                 + patch.ORIGINAL_STATE
                 + "        return;\n"
+                + "    }\n"
+                + patch.ORIGINAL_TRANSITION
+                + "        return;\n"
                 + "    }\n",
                 encoding="utf-8",
             )
@@ -59,6 +66,7 @@ class OldAndroidMiniOriginPatchTest(unittest.TestCase):
             result = path.read_text(encoding="utf-8")
             self.assertIn(patch.INIT_MARKER, result)
             self.assertIn(patch.STATE_MARKER, result)
+            self.assertIn(patch.TRANSITION_MARKER, result)
 
 
 if __name__ == "__main__":

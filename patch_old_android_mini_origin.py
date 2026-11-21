@@ -11,7 +11,7 @@ TARGET = (
 
 ORIGINAL_FIELD = "    private FrameLayout.LayoutParams mDefaultLocationBarLayoutParams;\n"
 PATCHED_FIELD = """    // Helium: the bottom address bar is hosted by a LinearLayout on old-android.
-    private @Nullable FrameLayout.LayoutParams mDefaultLocationBarLayoutParams;
+    private FrameLayout.@Nullable LayoutParams mDefaultLocationBarLayoutParams;
 """
 FIELD_MARKER = "Helium: the bottom address bar is hosted by a LinearLayout"
 
@@ -56,6 +56,23 @@ PARTIAL_STATE = """    private void updateMiniOriginBarState(@MiniOriginEvent in
         if (newMiniOriginState == mMiniOriginBarState) return;
 """
 
+ORIGINAL_TRANSITION = """        if (isMiniOriginBarVisibleForState(newMiniOriginState)) {
+            // Cache the location bar's layout params now, since we are about to mutate them.
+            mDefaultLocationBarLayoutParams =
+                    (FrameLayout.LayoutParams) mLocationBar.getContainerView().getLayoutParams();
+            showMiniOriginBar();
+"""
+PATCHED_TRANSITION = """        if (isMiniOriginBarVisibleForState(newMiniOriginState)) {
+            // Cache the location bar's layout params now, since we are about to mutate them.
+            ViewGroup.LayoutParams locationBarLayoutParams =
+                    mLocationBar.getContainerView().getLayoutParams();
+            if (!(locationBarLayoutParams instanceof FrameLayout.LayoutParams)) return;
+            mDefaultLocationBarLayoutParams =
+                    (FrameLayout.LayoutParams) locationBarLayoutParams;
+            showMiniOriginBar();
+"""
+TRANSITION_MARKER = "if (!(locationBarLayoutParams instanceof FrameLayout.LayoutParams)) return;"
+
 
 def patch_source_tree(src_dir: str) -> bool:
     path = os.path.join(src_dir, TARGET)
@@ -64,7 +81,12 @@ def patch_source_tree(src_dir: str) -> bool:
 
     with open(path, "r", encoding="utf-8") as handle:
         content = handle.read()
-    if FIELD_MARKER in content and INIT_MARKER in content and STATE_MARKER in content:
+    if (
+        FIELD_MARKER in content
+        and INIT_MARKER in content
+        and STATE_MARKER in content
+        and TRANSITION_MARKER in content
+    ):
         return False
 
     if FIELD_MARKER not in content:
@@ -85,6 +107,10 @@ def patch_source_tree(src_dir: str) -> bool:
             content = content.replace(PARTIAL_STATE, PATCHED_STATE, 1)
         else:
             raise RuntimeError(f"mini-origin state anchor not found in {path}")
+    if TRANSITION_MARKER not in content:
+        if content.count(ORIGINAL_TRANSITION) != 1:
+            raise RuntimeError(f"mini-origin transition anchor not found in {path}")
+        content = content.replace(ORIGINAL_TRANSITION, PATCHED_TRANSITION, 1)
 
     with open(path, "w", encoding="utf-8") as handle:
         handle.write(content)
