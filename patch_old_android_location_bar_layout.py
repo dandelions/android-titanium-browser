@@ -26,14 +26,13 @@ TOOLBAR_PROGRESS_ANCHOR = """            CoordinatorLayout.LayoutParams progress
             progressBarParams.gravity = Gravity.BOTTOM;
             progressBarStub.setLayoutParams(progressBarParams);
 """
-TOOLBAR_PROGRESS_GUARD = """            if (!(progressBarStub.getLayoutParams() instanceof CoordinatorLayout.LayoutParams)) {
-                return;
+TOOLBAR_PROGRESS_GUARD = """            // Helium: skip transient desktop-mode toolbar layout parameters.
+            if (progressBarStub.getLayoutParams() instanceof CoordinatorLayout.LayoutParams) {
+                CoordinatorLayout.LayoutParams progressBarParams =
+                        (CoordinatorLayout.LayoutParams) progressBarStub.getLayoutParams();
+                progressBarParams.gravity = Gravity.BOTTOM;
+                progressBarStub.setLayoutParams(progressBarParams);
             }
-            // Helium: skip transient desktop-mode toolbar layout parameters.
-            CoordinatorLayout.LayoutParams progressBarParams =
-                    (CoordinatorLayout.LayoutParams) progressBarStub.getLayoutParams();
-            progressBarParams.gravity = Gravity.BOTTOM;
-            progressBarStub.setLayoutParams(progressBarParams);
 """
 TOOLBAR_MARGIN_ANCHOR = """        final ViewGroup.MarginLayoutParams layoutParams =
                 ((ViewGroup.MarginLayoutParams) mControlContainer.getLayoutParams());
