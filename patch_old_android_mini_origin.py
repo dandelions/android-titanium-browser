@@ -28,6 +28,18 @@ PATCHED_INIT = """        mDefaultLocationBarRightPadding = mLocationBar.getCont
                         : null;
 """
 INIT_MARKER = "locationBarLayoutParams instanceof FrameLayout.LayoutParams"
+PARTIAL_INIT = """        mDefaultLocationBarRightPadding = mLocationBar.getContainerView().getPaddingRight();
+        // Helium: skip transient desktop-mode location bar layout parameters.
+        if (!(mLocationBar.getContainerView().getLayoutParams() instanceof FrameLayout.LayoutParams)) {
+            mDefaultLocationBarLayoutParams = new FrameLayout.LayoutParams(0, 0);
+        } else {
+            // Helium: skip transient desktop-mode location bar layout parameters.
+            if (mLocationBar.getContainerView().getLayoutParams() instanceof FrameLayout.LayoutParams) {
+                mDefaultLocationBarLayoutParams =
+                        (FrameLayout.LayoutParams) mLocationBar.getContainerView().getLayoutParams();
+            }
+        }
+"""
 
 ORIGINAL_STATE = """    private void updateMiniOriginBarState(@MiniOriginEvent int event) {
         @MiniOriginState int newMiniOriginState = getNewMiniOriginState(event);
@@ -39,6 +51,10 @@ PATCHED_STATE = """    private void updateMiniOriginBarState(@MiniOriginEvent in
         @MiniOriginState int newMiniOriginState = getNewMiniOriginState(event);
 """
 STATE_MARKER = "Leave the bottom address bar untouched"
+PARTIAL_STATE = """    private void updateMiniOriginBarState(@MiniOriginEvent int event) {
+        @MiniOriginState int newMiniOriginState = getNewMiniOriginState(event);
+        if (newMiniOriginState == mMiniOriginBarState) return;
+"""
 
 
 def patch_source_tree(src_dir: str) -> bool:
@@ -56,13 +72,19 @@ def patch_source_tree(src_dir: str) -> bool:
             raise RuntimeError(f"mini-origin field anchor not found in {path}")
         content = content.replace(ORIGINAL_FIELD, PATCHED_FIELD, 1)
     if INIT_MARKER not in content:
-        if content.count(ORIGINAL_INIT) != 1:
+        if content.count(PARTIAL_INIT) == 1:
+            content = content.replace(PARTIAL_INIT, PATCHED_INIT, 1)
+        elif content.count(ORIGINAL_INIT) == 1:
+            content = content.replace(ORIGINAL_INIT, PATCHED_INIT, 1)
+        else:
             raise RuntimeError(f"mini-origin constructor anchor not found in {path}")
-        content = content.replace(ORIGINAL_INIT, PATCHED_INIT, 1)
     if STATE_MARKER not in content:
-        if content.count(ORIGINAL_STATE) != 1:
+        if content.count(ORIGINAL_STATE) == 1:
+            content = content.replace(ORIGINAL_STATE, PATCHED_STATE, 1)
+        elif content.count(PARTIAL_STATE) == 1:
+            content = content.replace(PARTIAL_STATE, PATCHED_STATE, 1)
+        else:
             raise RuntimeError(f"mini-origin state anchor not found in {path}")
-        content = content.replace(ORIGINAL_STATE, PATCHED_STATE, 1)
 
     with open(path, "w", encoding="utf-8") as handle:
         handle.write(content)
