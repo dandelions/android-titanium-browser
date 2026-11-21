@@ -11,7 +11,7 @@ TARGET = (
 
 ORIGINAL_FIELD = "    private FrameLayout.LayoutParams mDefaultLocationBarLayoutParams;\n"
 PATCHED_FIELD = """    // Helium: the bottom address bar is hosted by a LinearLayout on old-android.
-    private @Nullable FrameLayout.LayoutParams mDefaultLocationBarLayoutParams;
+    private FrameLayout.@Nullable LayoutParams mDefaultLocationBarLayoutParams;
 """
 FIELD_MARKER = "Helium: the bottom address bar is hosted by a LinearLayout"
 
