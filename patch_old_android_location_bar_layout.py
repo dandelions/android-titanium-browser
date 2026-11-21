@@ -26,6 +26,15 @@ TOOLBAR_PROGRESS_ANCHOR = """            CoordinatorLayout.LayoutParams progress
             progressBarParams.gravity = Gravity.BOTTOM;
             progressBarStub.setLayoutParams(progressBarParams);
 """
+TOOLBAR_PROGRESS_OLD_GUARD = """            if (!(progressBarStub.getLayoutParams() instanceof CoordinatorLayout.LayoutParams)) {
+                return;
+            }
+            // Helium: skip transient desktop-mode toolbar layout parameters.
+            CoordinatorLayout.LayoutParams progressBarParams =
+                    (CoordinatorLayout.LayoutParams) progressBarStub.getLayoutParams();
+            progressBarParams.gravity = Gravity.BOTTOM;
+            progressBarStub.setLayoutParams(progressBarParams);
+"""
 TOOLBAR_PROGRESS_GUARD = """            // Helium: skip transient desktop-mode toolbar layout parameters.
             if (progressBarStub.getLayoutParams() instanceof CoordinatorLayout.LayoutParams) {
                 CoordinatorLayout.LayoutParams progressBarParams =
@@ -62,7 +71,16 @@ def patch_source(root: Path) -> bool:
         changed = True
 
     toolbar_text = toolbar_path.read_text(encoding="utf-8")
-    if TOOLBAR_MARKER not in toolbar_text:
+    if toolbar_text.count(TOOLBAR_PROGRESS_OLD_GUARD) == 1:
+        toolbar_text = toolbar_text.replace(
+            TOOLBAR_PROGRESS_OLD_GUARD, TOOLBAR_PROGRESS_GUARD, 1
+        )
+        if toolbar_text.count(TOOLBAR_MARGIN_ANCHOR) != 1:
+            raise SystemExit(f"Expected one ToolbarManager margin anchor in {toolbar_path}")
+        toolbar_text = toolbar_text.replace(TOOLBAR_MARGIN_ANCHOR, TOOLBAR_MARGIN_GUARD, 1)
+        toolbar_path.write_text(toolbar_text, encoding="utf-8")
+        changed = True
+    elif TOOLBAR_MARKER not in toolbar_text:
         if toolbar_text.count(TOOLBAR_PROGRESS_ANCHOR) != 1:
             raise SystemExit(f"Expected one ToolbarManager progress-bar anchor in {toolbar_path}")
         if toolbar_text.count(TOOLBAR_MARGIN_ANCHOR) != 1:

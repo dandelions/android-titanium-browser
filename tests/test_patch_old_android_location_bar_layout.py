@@ -6,6 +6,30 @@ import patch_old_android_location_bar_layout as patch
 
 
 class OldAndroidLocationBarLayoutPatchTest(unittest.TestCase):
+    def test_migrates_constructor_return_guard(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            location_bar = root / patch.LOCATION_BAR_TABLET
+            toolbar_manager = root / patch.TOOLBAR_MANAGER
+            location_bar.parent.mkdir(parents=True)
+            toolbar_manager.parent.mkdir(parents=True)
+            location_bar.write_text(
+                patch.METHOD_ANCHOR + "    }\n", encoding="utf-8"
+            )
+            toolbar_manager.write_text(
+                "class ToolbarManager {\n"
+                + patch.TOOLBAR_PROGRESS_OLD_GUARD
+                + patch.TOOLBAR_MARGIN_ANCHOR
+                + "}\n",
+                encoding="utf-8",
+            )
+
+            self.assertTrue(patch.patch_source(root))
+            result = toolbar_manager.read_text(encoding="utf-8")
+            self.assertNotIn("                return;", result)
+            self.assertIn(patch.TOOLBAR_MARKER, result)
+            self.assertFalse(patch.patch_source(root))
+
     def test_patches_location_bar_and_toolbar_layouts_idempotently(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
