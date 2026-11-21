@@ -4095,6 +4095,7 @@ if is_old_version_branch; then
     python3 "$SCRIPT_DIR/patch_old_android_bottom_toolbar.py" .
     python3 "$SCRIPT_DIR/patch_old_android_zeroomega_toolbar.py" .
     python3 "$SCRIPT_DIR/patch_old_android_desktop_tabs.py" .
+    python3 "$SCRIPT_DIR/patch_old_android_mini_origin.py" .
     python3 "$SCRIPT_DIR/patch_old_android_extension_popup.py" .
 python3 "$SCRIPT_DIR/patch_renderer_mprotect.py" .
 python3 "$SCRIPT_DIR/patch_linker_reservation_size.py" .

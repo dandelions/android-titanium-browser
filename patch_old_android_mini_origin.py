@@ -1,0 +1,78 @@
+#!/usr/bin/env python3
+"""Skip mini-origin layout mutations when old-android reparents the location bar."""
+
+import os
+import sys
+
+TARGET = (
+    "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/"
+    "MiniOriginBarController.java"
+)
+
+ORIGINAL_FIELD = "    private FrameLayout.LayoutParams mDefaultLocationBarLayoutParams;\n"
+PATCHED_FIELD = """    // Helium: the bottom address bar is hosted by a LinearLayout on old-android.
+    private @Nullable FrameLayout.LayoutParams mDefaultLocationBarLayoutParams;
+"""
+FIELD_MARKER = "Helium: the bottom address bar is hosted by a LinearLayout"
+
+ORIGINAL_INIT = """        mDefaultLocationBarRightPadding = mLocationBar.getContainerView().getPaddingRight();
+        mDefaultLocationBarLayoutParams =
+                (FrameLayout.LayoutParams) mLocationBar.getContainerView().getLayoutParams();
+"""
+PATCHED_INIT = """        mDefaultLocationBarRightPadding = mLocationBar.getContainerView().getPaddingRight();
+        ViewGroup.LayoutParams locationBarLayoutParams =
+                mLocationBar.getContainerView().getLayoutParams();
+        mDefaultLocationBarLayoutParams =
+                locationBarLayoutParams instanceof FrameLayout.LayoutParams
+                        ? (FrameLayout.LayoutParams) locationBarLayoutParams
+                        : null;
+"""
+INIT_MARKER = "locationBarLayoutParams instanceof FrameLayout.LayoutParams"
+
+ORIGINAL_STATE = """    private void updateMiniOriginBarState(@MiniOriginEvent int event) {
+        @MiniOriginState int newMiniOriginState = getNewMiniOriginState(event);
+"""
+PATCHED_STATE = """    private void updateMiniOriginBarState(@MiniOriginEvent int event) {
+        // The mini-origin controller changes the location bar's parent-specific parameters.
+        // Leave the bottom address bar untouched when it has no FrameLayout parameters to restore.
+        if (mDefaultLocationBarLayoutParams == null) return;
+        @MiniOriginState int newMiniOriginState = getNewMiniOriginState(event);
+"""
+STATE_MARKER = "Leave the bottom address bar untouched"
+
+
+def patch_source_tree(src_dir: str) -> bool:
+    path = os.path.join(src_dir, TARGET)
+    if not os.path.isfile(path):
+        raise FileNotFoundError(path)
+
+    with open(path, "r", encoding="utf-8") as handle:
+        content = handle.read()
+    if FIELD_MARKER in content and INIT_MARKER in content and STATE_MARKER in content:
+        return False
+
+    if FIELD_MARKER not in content:
+        if content.count(ORIGINAL_FIELD) != 1:
+            raise RuntimeError(f"mini-origin field anchor not found in {path}")
+        content = content.replace(ORIGINAL_FIELD, PATCHED_FIELD, 1)
+    if INIT_MARKER not in content:
+        if content.count(ORIGINAL_INIT) != 1:
+            raise RuntimeError(f"mini-origin constructor anchor not found in {path}")
+        content = content.replace(ORIGINAL_INIT, PATCHED_INIT, 1)
+    if STATE_MARKER not in content:
+        if content.count(ORIGINAL_STATE) != 1:
+            raise RuntimeError(f"mini-origin state anchor not found in {path}")
+        content = content.replace(ORIGINAL_STATE, PATCHED_STATE, 1)
+
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(content)
+    print(f"Patched old-android mini-origin layout guard: {path}")
+    return True
+
+
+if __name__ == "__main__":
+    try:
+        patch_source_tree(sys.argv[1] if len(sys.argv) > 1 else ".")
+    except (FileNotFoundError, RuntimeError) as error:
+        print(f"[patch_old_android_mini_origin] {error}", file=sys.stderr)
+        raise SystemExit(1)
