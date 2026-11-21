@@ -11,7 +11,7 @@ MENU_MEDIATOR = Path(
     "ExtensionsMenuMediator.java"
 )
 DIRECT_MARKER = "Helium: preserve the Android popup tab context without scrubbing."
-OPTIONS_MARKER = "Helium: open extension options through the native Android options path."
+OPTIONS_MARKER = "Helium: open extension options from the extension's declared page URL."
 DIRECT_OLD = """  if (helium_android_popup_direct_query) {
     base::ListValue direct_result;
     direct_result.Append(tabs_internal::CreateTabObjectHelper(
@@ -39,8 +39,13 @@ OPTIONS_OLD = """        if (mToolbarBridge != null) {
         }
         mMenuBridge.executeAction(extensionId, getCurrentWebContents());
 """
-OPTIONS_NEW = """        // Helium: open extension options through the native Android options path.
-        mMenuBridge.openOptionsPage(extensionId);
+OPTIONS_NEW = """        // Helium: open extension options from the extension's declared page URL.
+        String optionsUrl = mMenuBridge.getOptionsPageUrl(extensionId);
+        if (optionsUrl != null && !optionsUrl.isEmpty()) {
+            openUrlFromMenu(optionsUrl);
+            return;
+        }
+        mMenuBridge.executeAction(extensionId, getCurrentWebContents());
 """
 
 
