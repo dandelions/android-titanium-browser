@@ -81,6 +81,15 @@ BOTTOM_BAR_CONFIG_UTILS = Path(
     "chrome/browser/ui/android/bottombar/java/src/org/chromium/chrome/browser/ui/"
     "bottombar/BottomBarConfigUtils.java"
 )
+DESKTOP_TAB_SETTINGS = Path(
+    "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/settings/"
+    "AddressBarSettingsFragment.java"
+)
+DESKTOP_TAB_MANAGER = Path(
+    "chrome/android/java/src/org/chromium/chrome/browser/toolbar/ToolbarManager.java"
+)
+DESKTOP_TAB_XML = Path("chrome/browser/ui/android/toolbar/java/res/xml/address_bar_settings.xml")
+DESKTOP_TAB_STRINGS = Path("chrome/browser/ui/android/strings/android_chrome_strings.grd")
 ANDROID_FEATURE_LIST = Path("chrome/browser/flags/android/chrome_feature_list.cc")
 ANDROID_JAVA_FEATURE_LIST = Path(
     "chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/"
@@ -463,7 +472,28 @@ def verify_bottom_toolbar(root):
             f"bottom bar is not unconditionally eligible on old-android: {config_path}"
         )
 
-    print("Verified old-android bottom toolbar availability")
+    settings_path, settings = read(root, DESKTOP_TAB_SETTINGS)
+    manager_path, manager = read(root, DESKTOP_TAB_MANAGER)
+    xml_path, xml = read(root, DESKTOP_TAB_XML)
+    strings_path, strings = read(root, DESKTOP_TAB_STRINGS)
+    if "return true;" not in settings or "updateHideDesktopTabsPreference();" not in settings:
+        raise SystemExit(f"address bar settings are not available in all modes: {settings_path}")
+    if (
+        'android:key="hide_desktop_tab_strip"' not in xml
+        or "hide_desktop_tab_strip_title" not in xml
+    ):
+        raise SystemExit(f"desktop tab-strip setting is missing: {xml_path}")
+    for marker in (
+        "shouldHideDesktopTabStrip()",
+        "registerOnSharedPreferenceChangeListener(this)",
+        "unregisterOnSharedPreferenceChangeListener(this)",
+    ):
+        if marker not in manager:
+            raise SystemExit(f"desktop tab-strip runtime hook is missing ({marker}): {manager_path}")
+    if "IDS_HIDE_DESKTOP_TAB_STRIP_TITLE" not in strings:
+        raise SystemExit(f"desktop tab-strip setting string is missing: {strings_path}")
+
+    print("Verified old-android bottom toolbar and desktop tab settings")
 
 
 if __name__ == "__main__":

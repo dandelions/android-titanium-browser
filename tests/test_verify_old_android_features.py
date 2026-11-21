@@ -94,6 +94,25 @@ SINGLE_PROCESS_FILES = {
     ),
 }
 
+DESKTOP_TAB_FILES = {
+    "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/settings/"
+    "AddressBarSettingsFragment.java": (
+        "return true;\n        updateHideDesktopTabsPreference();"
+    ),
+    "chrome/android/java/src/org/chromium/chrome/browser/toolbar/ToolbarManager.java": (
+        "shouldHideDesktopTabStrip()\n"
+        "registerOnSharedPreferenceChangeListener(this)\n"
+        "unregisterOnSharedPreferenceChangeListener(this)"
+    ),
+    "chrome/browser/ui/android/toolbar/java/res/xml/address_bar_settings.xml": (
+        'android:key="hide_desktop_tab_strip"\n'
+        'android:title="@string/hide_desktop_tab_strip_title"'
+    ),
+    "chrome/browser/ui/android/strings/android_chrome_strings.grd": (
+        "IDS_HIDE_DESKTOP_TAB_STRIP_TITLE"
+    ),
+}
+
 
 class VerifyOldAndroidFeaturesTest(unittest.TestCase):
     def test_accepts_required_feature_markers(self):
@@ -112,6 +131,7 @@ class VerifyOldAndroidFeaturesTest(unittest.TestCase):
         }
         files.update(NEWTAB_FILES)
         files.update(SINGLE_PROCESS_FILES)
+        files.update(DESKTOP_TAB_FILES)
         with tempfile.TemporaryDirectory() as temp:
             root = pathlib.Path(temp)
             for relative, content in files.items():
@@ -302,6 +322,16 @@ class VerifyOldAndroidFeaturesTest(unittest.TestCase):
             "chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/"
             "ChromeFeatureList.java"
         ] = "newCachedFlag(ANDROID_BOTTOM_BAR, false, /* defaultValueInTests= */ true);"
+        files.update({
+            key: value
+            for key, value in SINGLE_PROCESS_FILES.items()
+            if key not in {
+                "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/settings/AddressBarSettingsFragment.java",
+                "chrome/android/java/src/org/chromium/chrome/browser/toolbar/ToolbarManager.java",
+                "chrome/browser/ui/android/toolbar/java/res/xml/address_bar_settings.xml",
+                "chrome/browser/ui/android/strings/android_chrome_strings.grd",
+            }
+        })
         with tempfile.TemporaryDirectory() as temp:
             root = pathlib.Path(temp)
             for relative, content in files.items():
