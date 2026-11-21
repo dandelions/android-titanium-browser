@@ -3951,6 +3951,7 @@ CURRENT_BRANCH="$(git -C "$SCRIPT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null |
 if [[ "$CURRENT_BRANCH" == old-* ]] || [ "${OLD_VERSION:-0}" = "1" ] || [ "${OLD_ANDROID:-0}" = "1" ] || [ "${CAR_COMPAT:-0}" = "1" ]; then
     # Apply UI mode (Desktop / Mobile form factor) switch patch & TabModel safety only to old compatibility builds.
     python3 "$SCRIPT_DIR/patch_ui_mode.py" .
+    python3 "$SCRIPT_DIR/patch_old_android_location_bar_layout.py" .
     sed -i 's/  CHECK(tab);/  if (!tab) return;/' chrome/browser/ui/android/tab_model/tab_model_observer_jni_bridge.cc 2>/dev/null || true
     sed -i 's/        assert tab.isInitialized();/        if (tab == null || !tab.isInitialized()) return;/' chrome/android/java/src/org/chromium/chrome/browser/tabmodel/TabModelObserverJniBridge.java 2>/dev/null || true
 else
