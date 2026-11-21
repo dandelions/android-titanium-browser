@@ -33,6 +33,8 @@ class OldAndroidMiniOriginPatchTest(unittest.TestCase):
             self.assertTrue(patch.patch_source_tree(root))
             result = path.read_text(encoding="utf-8")
             self.assertIn(patch.FIELD_MARKER, result)
+            self.assertIn("private @Nullable FrameLayout.LayoutParams", result)
+            self.assertNotIn("FrameLayout.@Nullable LayoutParams", result)
             self.assertIn(patch.INIT_MARKER, result)
             self.assertIn(patch.STATE_MARKER, result)
             self.assertIn("locationBarLayoutParams instanceof FrameLayout.LayoutParams", result)
