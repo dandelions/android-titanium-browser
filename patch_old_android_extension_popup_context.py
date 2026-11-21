@@ -56,8 +56,33 @@ def patch_file(path: Path, old: str, new: str, marker: str) -> bool:
     return True
 
 
+def patch_direct_query(path: Path) -> bool:
+    if not path.is_file():
+        raise SystemExit(f"Expected Chromium file not found: {path}")
+    text = path.read_text(encoding="utf-8")
+    if DIRECT_MARKER in text:
+        return False
+    if DIRECT_OLD in text:
+        path.write_text(text.replace(DIRECT_OLD, DIRECT_NEW, 1), encoding="utf-8")
+        return True
+    if "ExtensionTabUtil::kDontScrubTab" in text and "helium_android_popup_direct_query" in text:
+        anchor = "    ExtensionTabUtil::ScrubTabBehavior dont_scrub = {\n"
+        if text.count(anchor) < 1:
+            raise SystemExit(f"Existing popup context patch found without a migration anchor in {path}")
+        path.write_text(
+            text.replace(
+                anchor,
+                "    // Helium: preserve the Android popup tab context without scrubbing.\n" + anchor,
+                1,
+            ),
+            encoding="utf-8",
+        )
+        return True
+    raise SystemExit(f"Expected one popup context anchor in {path}")
+
+
 def patch_source(root: Path) -> bool:
-    changed = patch_file(root / TABS_API, DIRECT_OLD, DIRECT_NEW, DIRECT_MARKER)
+    changed = patch_direct_query(root / TABS_API)
     changed |= patch_file(root / MENU_MEDIATOR, OPTIONS_OLD, OPTIONS_NEW, OPTIONS_MARKER)
     return changed
 
