@@ -80,6 +80,7 @@ TOGGLE_NEW = """    public static boolean shouldShowSettingsToggle(Context conte
     }
 """
 TOGGLE_MARKER = "Helium: the address bar settings own toolbar placement on old-android."
+LEGACY_TOGGLE_MARKER = "Helium: keep the bottom toolbar option visible on every old-android device."
 ACTIVITY_OBSERVER_OLD = """            if (BottomBarConfigUtils.shouldShowSettingsToggle(this)) {
                 new BottomBarEnabledChangeObserver(
                         this,
@@ -144,7 +145,19 @@ def patch_config_utils(src_dir: str) -> bool:
     with open(path, "r", encoding="utf-8") as handle:
         content = handle.read()
 
-    if CONFIG_MARKER in content and TOGGLE_MARKER in content:
+    if CONFIG_MARKER in content and (TOGGLE_MARKER in content or LEGACY_TOGGLE_MARKER in content):
+        if LEGACY_TOGGLE_MARKER in content:
+            content = content.replace(
+                "        // Helium: keep the bottom toolbar option visible on every old-android device.\n"
+                "        return true;",
+                "        // Helium: the address bar settings own toolbar placement on old-android.\n"
+                "        return false;",
+                1,
+            )
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write(content)
+            print(f"Updated old-android bottom bar setting visibility: {path}")
+            return True
         return False
 
     if ELIGIBLE_OLD in content:
