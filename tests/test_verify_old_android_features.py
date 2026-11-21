@@ -95,10 +95,9 @@ SINGLE_PROCESS_FILES = {
 }
 
 DESKTOP_TAB_FILES = {
+    "chrome/android/java/src/org/chromium/chrome/browser/settings/MainSettings.java": "return true;",
     "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/settings/"
-    "AddressBarSettingsFragment.java": (
-        "return true;\n        updateHideDesktopTabsPreference();"
-    ),
+    "AddressBarSettingsFragment.java": "updateHideDesktopTabsPreference();",
     "chrome/android/java/src/org/chromium/chrome/browser/toolbar/ToolbarManager.java": (
         "shouldHideDesktopTabStrip()\n"
         "registerOnSharedPreferenceChangeListener(this)\n"
@@ -326,6 +325,7 @@ class VerifyOldAndroidFeaturesTest(unittest.TestCase):
             key: value
             for key, value in SINGLE_PROCESS_FILES.items()
             if key not in {
+                "chrome/android/java/src/org/chromium/chrome/browser/settings/MainSettings.java",
                 "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/settings/AddressBarSettingsFragment.java",
                 "chrome/android/java/src/org/chromium/chrome/browser/toolbar/ToolbarManager.java",
                 "chrome/browser/ui/android/toolbar/java/res/xml/address_bar_settings.xml",
