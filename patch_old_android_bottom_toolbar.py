@@ -74,11 +74,11 @@ TOGGLE_OLD = """    public static boolean shouldShowSettingsToggle(Context conte
 
 """
 TOGGLE_NEW = """    public static boolean shouldShowSettingsToggle(Context context) {
-        // Helium: keep the bottom toolbar option visible on every old-android device.
-        return true;
+        // Helium: the address bar settings own toolbar placement on old-android.
+        return false;
     }
 """
-TOGGLE_MARKER = "Helium: keep the bottom toolbar option visible on every old-android device."
+TOGGLE_MARKER = "Helium: the address bar settings own toolbar placement on old-android."
 
 
 def patch_feature_list(src_dir: str) -> bool:

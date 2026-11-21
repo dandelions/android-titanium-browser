@@ -71,6 +71,7 @@ class OldAndroidBottomToolbarPatchTest(unittest.TestCase):
             config = paths[PATCH.CONFIG_UTILS].read_text()
             self.assertIn("Helium: expose and allow the bottom toolbar", config)
             self.assertIn("return true;", config)
+            self.assertIn("return false;", config)
             self.assertNotIn("DeviceInfo", config)
             self.assertNotIn("DeviceFormFactor", config)
             default_setting = paths[PATCH.JAVA_FEATURE_LIST].read_text()
