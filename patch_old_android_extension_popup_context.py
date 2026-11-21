@@ -56,6 +56,19 @@ OPTIONS_NEW = """        // Helium: open extension options from the extension's 
         }
         mMenuBridge.executeAction(extensionId, getCurrentWebContents());
 """
+OPTIONS_DUPLICATE = """        // Helium: open extension options from the extension's declared page URL.
+        String optionsUrl = mMenuBridge.getOptionsPageUrl(extensionId);
+        if (optionsUrl != null && !optionsUrl.isEmpty()) {
+            openUrlFromMenu(optionsUrl);
+            return;
+        }
+        String optionsUrl = mMenuBridge.getOptionsPageUrl(extensionId);
+        if (optionsUrl != null && !optionsUrl.isEmpty()) {
+            openUrlFromMenu(optionsUrl);
+            return;
+        }
+        mMenuBridge.executeAction(extensionId, getCurrentWebContents());
+"""
 
 
 def patch_file(path: Path, old: str, new: str, marker: str) -> bool:
@@ -99,6 +112,10 @@ def patch_options_path(path: Path) -> bool:
     if not path.is_file():
         raise SystemExit(f"Expected Chromium file not found: {path}")
     text = path.read_text(encoding="utf-8")
+    if OPTIONS_DUPLICATE in text:
+        text = text.replace(OPTIONS_DUPLICATE, OPTIONS_NEW, 1)
+        path.write_text(text, encoding="utf-8")
+        return True
     if OPTIONS_MARKER in text:
         return False
     if OPTIONS_OLD in text:
