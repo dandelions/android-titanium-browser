@@ -28,6 +28,8 @@ import org.chromium.base.DeviceInfo;
     private void overrideDescriptionIfFoldable() {
 """,
             patch.ADDRESS_BAR_XML: patch.XML_ANCHOR,
+            patch.ADDRESS_BAR_PREFERENCE: patch.ADDRESS_BAR_SET_OLD,
+            patch.POSITION_CONTROLLER: patch.POSITION_OLD,
             patch.TOOLBAR_MANAGER: """import android.content.SharedPreferences;
 
 public class ToolbarManager
@@ -62,6 +64,8 @@ public class ToolbarManager
                     patch.MAIN_SETTINGS,
                     patch.ADDRESS_BAR_FRAGMENT,
                     patch.ADDRESS_BAR_XML,
+                    patch.ADDRESS_BAR_PREFERENCE,
+                    patch.POSITION_CONTROLLER,
                     patch.TOOLBAR_MANAGER,
                     patch.STRINGS,
                 )
@@ -69,6 +73,8 @@ public class ToolbarManager
             self.assertIn(patch.MAIN_MARKER, first[patch.MAIN_SETTINGS])
             self.assertIn(patch.XML_MARKER, first[patch.ADDRESS_BAR_XML])
             self.assertIn(patch.MANAGER_MARKER, first[patch.TOOLBAR_MANAGER])
+            self.assertIn(patch.POSITION_MARKER, first[patch.POSITION_CONTROLLER])
+            self.assertIn(patch.ADDRESS_BAR_SET_MARKER, first[patch.ADDRESS_BAR_PREFERENCE])
             self.assertIn(patch.STRING_MARKER, first[patch.STRINGS])
 
             self.assertFalse(patch.patch_source(root))

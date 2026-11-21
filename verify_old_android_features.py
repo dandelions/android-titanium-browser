@@ -86,6 +86,18 @@ DESKTOP_TAB_SETTINGS = Path(
     "AddressBarSettingsFragment.java"
 )
 DESKTOP_TAB_MAIN_SETTINGS = Path("chrome/android/java/src/org/chromium/chrome/browser/settings/MainSettings.java")
+DESKTOP_TAB_POSITION = Path(
+    "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/"
+    "ToolbarPositionController.java"
+)
+DESKTOP_TAB_ADDRESS_PREF = Path(
+    "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/settings/"
+    "AddressBarPreference.java"
+)
+EXTENSION_POPUP = Path(
+    "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/"
+    "ExtensionActionPopup.java"
+)
 DESKTOP_TAB_MANAGER = Path(
     "chrome/android/java/src/org/chromium/chrome/browser/toolbar/ToolbarManager.java"
 )
@@ -475,12 +487,18 @@ def verify_bottom_toolbar(root):
 
     settings_path, settings = read(root, DESKTOP_TAB_SETTINGS)
     main_settings_path, main_settings = read(root, DESKTOP_TAB_MAIN_SETTINGS)
+    position_path, position = read(root, DESKTOP_TAB_POSITION)
+    address_pref_path, address_pref = read(root, DESKTOP_TAB_ADDRESS_PREF)
+    popup_path, popup = read(root, EXTENSION_POPUP)
     manager_path, manager = read(root, DESKTOP_TAB_MANAGER)
     xml_path, xml = read(root, DESKTOP_TAB_XML)
     strings_path, strings = read(root, DESKTOP_TAB_STRINGS)
     if (
         "return true;" not in main_settings
         or "updateHideDesktopTabsPreference();" not in settings
+        or "Helium: desktop mode can use the bottom address bar on old-android." not in position
+        or "Helium: the address-bar choice also controls whether bottom controls are inflated." not in address_pref
+        or "Helium: ZeroOmega and similar popups may report their auto-size after first paint." not in popup
     ):
         raise SystemExit(
             f"address bar settings are not available in all modes: {main_settings_path} / {settings_path}"

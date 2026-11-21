@@ -45,6 +45,7 @@ CONFIG_UTILS = (
     "chrome/browser/ui/android/bottombar/java/src/org/chromium/chrome/browser/ui/"
     "bottombar/BottomBarConfigUtils.java"
 )
+CHROME_TABBED_ACTIVITY = "chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java"
 ELIGIBLE_OLD = """        return !DeviceFormFactor.isNonMultiDisplayContextOnTablet(context)
                 && !DeviceInfo.isAutomotive()
                 && ChromeFeatureList.sAndroidBottomBar.isEnabled();
@@ -79,6 +80,22 @@ TOGGLE_NEW = """    public static boolean shouldShowSettingsToggle(Context conte
     }
 """
 TOGGLE_MARKER = "Helium: the address bar settings own toolbar placement on old-android."
+ACTIVITY_OBSERVER_OLD = """            if (BottomBarConfigUtils.shouldShowSettingsToggle(this)) {
+                new BottomBarEnabledChangeObserver(
+                        this,
+                        getLifecycleDispatcher(),
+                        mBottomBarHostManager != null,
+                        this::doRecreateActivity);
+            }
+"""
+ACTIVITY_OBSERVER_NEW = """            // Helium: the address-bar position is the sole bottom-toolbar setting.
+            new BottomBarEnabledChangeObserver(
+                    this,
+                    getLifecycleDispatcher(),
+                    mBottomBarHostManager != null,
+                    this::doRecreateActivity);
+"""
+ACTIVITY_OBSERVER_MARKER = "Helium: the address-bar position is the sole bottom-toolbar setting."
 
 
 def patch_feature_list(src_dir: str) -> bool:
@@ -175,12 +192,38 @@ def patch_default_user_enabled(src_dir: str) -> bool:
     return True
 
 
+def patch_activity_observer(src_dir: str) -> bool:
+    path = os.path.join(src_dir, CHROME_TABBED_ACTIVITY)
+    if not os.path.isfile(path):
+        raise FileNotFoundError(path)
+
+    with open(path, "r", encoding="utf-8") as handle:
+        content = handle.read()
+
+    if ACTIVITY_OBSERVER_MARKER in content:
+        return False
+    if ACTIVITY_OBSERVER_OLD not in content:
+        raise RuntimeError(f"bottom bar observer anchor not found in {path}")
+
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(content.replace(ACTIVITY_OBSERVER_OLD, ACTIVITY_OBSERVER_NEW, 1))
+    print(f"Bound bottom bar recreation to address bar preference: {path}")
+    return True
+
+
 def patch_source_tree(src_dir: str) -> bool:
     feature_changed = patch_feature_list(src_dir)
     java_flag_changed = patch_java_feature_flag(src_dir)
     config_changed = patch_config_utils(src_dir)
     default_changed = patch_default_user_enabled(src_dir)
-    return feature_changed or java_flag_changed or config_changed or default_changed
+    observer_changed = patch_activity_observer(src_dir)
+    return (
+        feature_changed
+        or java_flag_changed
+        or config_changed
+        or default_changed
+        or observer_changed
+    )
 
 
 if __name__ == "__main__":

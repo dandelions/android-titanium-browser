@@ -98,6 +98,15 @@ DESKTOP_TAB_FILES = {
     "chrome/android/java/src/org/chromium/chrome/browser/settings/MainSettings.java": "return true;",
     "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/settings/"
     "AddressBarSettingsFragment.java": "updateHideDesktopTabsPreference();",
+    "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/"
+    "ToolbarPositionController.java": (
+        "Helium: follow the toolbar preference on the NTP and while editing\n"
+        "Helium: desktop mode can use the bottom address bar on old-android."
+    ),
+    "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/settings/"
+    "AddressBarPreference.java": "Helium: the address-bar choice also controls whether bottom controls are inflated.",
+    "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/"
+    "ExtensionActionPopup.java": "Helium: ZeroOmega and similar popups may report their auto-size after first paint.",
     "chrome/android/java/src/org/chromium/chrome/browser/toolbar/ToolbarManager.java": (
         "shouldHideDesktopTabStrip()\n"
         "registerOnSharedPreferenceChangeListener(this)\n"
@@ -326,6 +335,9 @@ class VerifyOldAndroidFeaturesTest(unittest.TestCase):
             for key, value in SINGLE_PROCESS_FILES.items()
             if key not in {
                 "chrome/android/java/src/org/chromium/chrome/browser/settings/MainSettings.java",
+                "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/ToolbarPositionController.java",
+                "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/settings/AddressBarPreference.java",
+                "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionActionPopup.java",
                 "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/settings/AddressBarSettingsFragment.java",
                 "chrome/android/java/src/org/chromium/chrome/browser/toolbar/ToolbarManager.java",
                 "chrome/browser/ui/android/toolbar/java/res/xml/address_bar_settings.xml",

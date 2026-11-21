@@ -19,6 +19,15 @@ DEFAULT_USER_ENABLED_SOURCE = '''    public static final BooleanCachedFeaturePar
             newBooleanCachedFeatureParam(ANDROID_BOTTOM_BAR, "default_user_enabled", true);
 '''
 
+ACTIVITY_SOURCE = '''            if (BottomBarConfigUtils.shouldShowSettingsToggle(this)) {
+                new BottomBarEnabledChangeObserver(
+                        this,
+                        getLifecycleDispatcher(),
+                        mBottomBarHostManager != null,
+                        this::doRecreateActivity);
+            }
+'''
+
 CONFIG_SOURCE = """import org.chromium.base.DeviceInfo;
 import org.chromium.build.annotations.NullMarked;
 import org.chromium.components.embedder_support.util.UrlUtilities;
@@ -47,6 +56,7 @@ class OldAndroidBottomToolbarPatchTest(unittest.TestCase):
             PATCH.FEATURE_LIST: root / PATCH.FEATURE_LIST,
             PATCH.JAVA_FEATURE_LIST: root / PATCH.JAVA_FEATURE_LIST,
             PATCH.CONFIG_UTILS: root / PATCH.CONFIG_UTILS,
+            PATCH.CHROME_TABBED_ACTIVITY: root / PATCH.CHROME_TABBED_ACTIVITY,
         }
         for path in paths.values():
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -55,6 +65,7 @@ class OldAndroidBottomToolbarPatchTest(unittest.TestCase):
             JAVA_FEATURE_SOURCE + DEFAULT_USER_ENABLED_SOURCE
         )
         paths[PATCH.CONFIG_UTILS].write_text(CONFIG_SOURCE)
+        paths[PATCH.CHROME_TABBED_ACTIVITY].write_text(ACTIVITY_SOURCE)
         return paths
 
     def test_enables_bottom_bar_for_car_desktop_and_mobile(self):
@@ -77,6 +88,9 @@ class OldAndroidBottomToolbarPatchTest(unittest.TestCase):
             default_setting = paths[PATCH.JAVA_FEATURE_LIST].read_text()
             self.assertIn(PATCH.DEFAULT_USER_ENABLED_MARKER, default_setting)
             self.assertIn('"default_user_enabled", false', default_setting)
+            activity = paths[PATCH.CHROME_TABBED_ACTIVITY].read_text()
+            self.assertIn(PATCH.ACTIVITY_OBSERVER_MARKER, activity)
+            self.assertNotIn("shouldShowSettingsToggle(this)", activity)
 
     def test_preserves_explicit_default_user_setting_patch(self):
         with tempfile.TemporaryDirectory() as temp:

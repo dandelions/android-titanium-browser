@@ -4358,6 +4358,7 @@ if is_old_version_branch; then
     python3 "$SCRIPT_DIR/patch_old_android_bottom_toolbar.py" "$SRC_DIR"
     python3 "$SCRIPT_DIR/patch_old_android_zeroomega_toolbar.py" "$SRC_DIR"
     python3 "$SCRIPT_DIR/patch_old_android_desktop_tabs.py" "$SRC_DIR"
+    python3 "$SCRIPT_DIR/patch_old_android_extension_popup.py" "$SRC_DIR"
 python3 "$SCRIPT_DIR/patch_renderer_mprotect.py" "$SRC_DIR"
 python3 "$SCRIPT_DIR/patch_linker_reservation_size.py" "$SRC_DIR"
 python3 "$SCRIPT_DIR/patch_linker_relro_sharing.py" "$SRC_DIR"

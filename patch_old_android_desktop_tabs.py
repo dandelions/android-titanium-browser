@@ -11,6 +11,10 @@ ADDRESS_BAR_FRAGMENT = Path(
     "AddressBarSettingsFragment.java"
 )
 ADDRESS_BAR_XML = Path("chrome/browser/ui/android/toolbar/java/res/xml/address_bar_settings.xml")
+ADDRESS_BAR_PREFERENCE = Path(
+    "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/settings/"
+    "AddressBarPreference.java"
+)
 TOOLBAR_MANAGER = Path("chrome/android/java/src/org/chromium/chrome/browser/toolbar/ToolbarManager.java")
 STRINGS = Path("chrome/browser/ui/android/strings/android_chrome_strings.grd")
 
@@ -57,6 +61,17 @@ FRAGMENT_UPDATE_METHOD = """    private void updateHideDesktopTabsPreference() {
 
 """
 FRAGMENT_MARKER = "private void updateHideDesktopTabsPreference()"
+
+ADDRESS_BAR_SET_OLD = """        sharedPreferencesManager.writeInt(ChromePreferenceKeys.TOOLBAR_TOP_ANCHORED, sharedPref);
+"""
+ADDRESS_BAR_SET_NEW = """        sharedPreferencesManager.writeInt(ChromePreferenceKeys.TOOLBAR_TOP_ANCHORED, sharedPref);
+        // Helium: the address-bar choice also controls whether bottom controls are inflated.
+        ChromeSharedPreferences.getInstance()
+                .writeBoolean(
+                        ChromePreferenceKeys.BOTTOM_BAR_ENABLED,
+                        isToolbarAtBottom(sharedPref));
+"""
+ADDRESS_BAR_SET_MARKER = "Helium: the address-bar choice also controls whether bottom controls are inflated."
 
 XML_ANCHOR = """    <org.chromium.chrome.browser.toolbar.settings.AddressBarPreference
         android:key="address_bar_preference"
@@ -130,6 +145,17 @@ MANAGER_METHODS = f"""    private boolean shouldHideDesktopTabStrip() {{
 """
 MANAGER_MARKER = "private boolean shouldHideDesktopTabStrip()"
 
+POSITION_CONTROLLER = Path(
+    "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/"
+    "ToolbarPositionController.java"
+)
+POSITION_OLD = """        return !isCustomTab
+                && !DeviceInfo.isAutomotive()
+                && !DeviceFormFactor.isNonMultiDisplayContextOnTablet(context);"""
+POSITION_NEW = """        // Helium: desktop mode can use the bottom address bar on old-android.
+        return !isCustomTab;"""
+POSITION_MARKER = "Helium: desktop mode can use the bottom address bar on old-android."
+
 STRING_ANCHOR = """      <message name="IDS_ADDRESS_BAR_SETTINGS_BOTTOM" desc="Title for the toggle that will show the address bar on the bottom. [CHAR_LIMIT=32]">
         Bottom
       </message>
@@ -181,6 +207,11 @@ def patch_source(root: Path) -> bool:
     changed |= patch_file(root, ADDRESS_BAR_XML, ((XML_ANCHOR, XML_NEW, XML_MARKER),))
     changed |= patch_file(
         root,
+        ADDRESS_BAR_PREFERENCE,
+        ((ADDRESS_BAR_SET_OLD, ADDRESS_BAR_SET_NEW, ADDRESS_BAR_SET_MARKER),),
+    )
+    changed |= patch_file(
+        root,
         TOOLBAR_MANAGER,
         (
             (MANAGER_IMPORT_OLD, MANAGER_IMPORT_NEW, "import android.content.SharedPreferences.OnSharedPreferenceChangeListener;"),
@@ -193,6 +224,7 @@ def patch_source(root: Path) -> bool:
         ),
     )
     changed |= patch_file(root, STRINGS, ((STRING_ANCHOR, STRING_NEW, STRING_MARKER),))
+    changed |= patch_file(root, POSITION_CONTROLLER, ((POSITION_OLD, POSITION_NEW, POSITION_MARKER),))
     return changed
 
 
