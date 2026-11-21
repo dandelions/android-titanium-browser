@@ -75,13 +75,18 @@ class OldAndroidBottomToolbarPatchTest(unittest.TestCase):
             self.assertTrue(PATCH.patch_source_tree(temp))
 
             self.assertIn(
-                "BASE_FEATURE(kAndroidBottomBar, base::FEATURE_ENABLED_BY_DEFAULT);",
+                "BASE_FEATURE(kAndroidBottomBar, base::FEATURE_DISABLED_BY_DEFAULT);",
                 paths[PATCH.FEATURE_LIST].read_text(),
             )
-            self.assertIn(PATCH.JAVA_FLAG_MARKER, paths[PATCH.JAVA_FEATURE_LIST].read_text())
+            java_features = paths[PATCH.JAVA_FEATURE_LIST].read_text()
+            self.assertIn(PATCH.JAVA_FLAG_MARKER, java_features)
+            self.assertIn(
+                "newCachedFlag(ANDROID_BOTTOM_BAR, false, /* defaultValueInTests= */ true);",
+                java_features,
+            )
             config = paths[PATCH.CONFIG_UTILS].read_text()
-            self.assertIn("Helium: expose and allow the bottom toolbar", config)
-            self.assertIn("return true;", config)
+            self.assertIn("Helium: the address bar preference owns the only toolbar row.", config)
+            self.assertNotIn("Helium: expose and allow the bottom toolbar", config)
             self.assertIn("return false;", config)
             self.assertNotIn("DeviceInfo", config)
             self.assertNotIn("DeviceFormFactor", config)
@@ -91,6 +96,51 @@ class OldAndroidBottomToolbarPatchTest(unittest.TestCase):
             activity = paths[PATCH.CHROME_TABBED_ACTIVITY].read_text()
             self.assertIn(PATCH.ACTIVITY_OBSERVER_MARKER, activity)
             self.assertNotIn("shouldShowSettingsToggle(this)", activity)
+
+    def test_migrates_legacy_enabled_feature_flags(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            paths = {
+                PATCH.FEATURE_LIST: root / PATCH.FEATURE_LIST,
+                PATCH.JAVA_FEATURE_LIST: root / PATCH.JAVA_FEATURE_LIST,
+                PATCH.CONFIG_UTILS: root / PATCH.CONFIG_UTILS,
+                PATCH.CHROME_TABBED_ACTIVITY: root / PATCH.CHROME_TABBED_ACTIVITY,
+            }
+            for path in paths.values():
+                path.parent.mkdir(parents=True, exist_ok=True)
+            paths[PATCH.FEATURE_LIST].write_text(
+                "// Helium: the bottom toolbar must be available on car head units as well.\n"
+                "BASE_FEATURE(kAndroidBottomBar, base::FEATURE_ENABLED_BY_DEFAULT);\n"
+            )
+            paths[PATCH.JAVA_FEATURE_LIST].write_text(
+                "    public static final CachedFlag sAndroidBottomBar =\n"
+                "            newCachedFlag(ANDROID_BOTTOM_BAR, true, /* defaultValueInTests= */ true);\n"
+                + DEFAULT_USER_ENABLED_SOURCE
+            )
+            paths[PATCH.CONFIG_UTILS].write_text(
+                CONFIG_SOURCE.replace(
+                    "return !DeviceFormFactor.isNonMultiDisplayContextOnTablet(context)\n"
+                    "                && !DeviceInfo.isAutomotive()\n"
+                    "                && ChromeFeatureList.sAndroidBottomBar.isEnabled();",
+                    "// Helium: expose and allow the bottom toolbar on every old-android form factor.\n"
+                    "        // The matching native feature is enabled by the old-android build patch.\n"
+                    "        return true;",
+                ).replace(
+                    "return isBottomBarEligible(context)\n"
+                    "                && ChromeFeatureList.sAndroidBottomBarShowSettingsToggle.getValue();",
+                    "// Helium: keep the bottom toolbar option visible on every old-android device.\n"
+                    "        return true;",
+                )
+            )
+            paths[PATCH.CHROME_TABBED_ACTIVITY].write_text(ACTIVITY_SOURCE)
+
+            self.assertTrue(PATCH.patch_source_tree(temp))
+            self.assertIn(PATCH.FEATURE_MARKER, paths[PATCH.FEATURE_LIST].read_text())
+            self.assertIn(PATCH.JAVA_FLAG_MARKER, paths[PATCH.JAVA_FEATURE_LIST].read_text())
+            migrated_config = paths[PATCH.CONFIG_UTILS].read_text()
+            self.assertIn(PATCH.CONFIG_MARKER, migrated_config)
+            self.assertIn("return false;", migrated_config)
+            self.assertFalse(PATCH.patch_source_tree(temp))
 
     def test_preserves_explicit_default_user_setting_patch(self):
         with tempfile.TemporaryDirectory() as temp:

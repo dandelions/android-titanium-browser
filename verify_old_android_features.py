@@ -466,23 +466,29 @@ def verify_bottom_toolbar(root):
         )
 
     features_path, features = read(root, ANDROID_FEATURE_LIST)
-    if "BASE_FEATURE(kAndroidBottomBar, base::FEATURE_ENABLED_BY_DEFAULT);" not in features:
-        raise SystemExit(f"bottom bar feature is not enabled: {features_path}")
+    if (
+        "Helium: keep the separate Android bottom bar disabled" not in features
+        or "BASE_FEATURE(kAndroidBottomBar, base::FEATURE_DISABLED_BY_DEFAULT);" not in features
+    ):
+        raise SystemExit(f"separate Android bottom bar is not disabled: {features_path}")
 
     java_features_path, java_features = read(root, ANDROID_JAVA_FEATURE_LIST)
-    if "newCachedFlag(ANDROID_BOTTOM_BAR, true, /* defaultValueInTests= */ true);" not in java_features:
+    if (
+        "Helium: keep the separate Android bottom bar disabled" not in java_features
+        or "newCachedFlag(ANDROID_BOTTOM_BAR, false, /* defaultValueInTests= */ true);"
+        not in java_features
+    ):
         raise SystemExit(
-            f"bottom bar Java cached flag is not enabled by default: {java_features_path}"
+            f"separate Android bottom bar Java flag is not disabled: {java_features_path}"
         )
 
     config_path, config = read(root, BOTTOM_BAR_CONFIG_UTILS)
     if (
-        "Helium: expose and allow the bottom toolbar on every old-android form factor"
-        not in config
-        or "return true;" not in config
+        "Helium: the address bar preference owns the only toolbar row." not in config
+        or "return false;" not in config
     ):
         raise SystemExit(
-            f"bottom bar is not unconditionally eligible on old-android: {config_path}"
+            f"separate bottom bar is not disabled on old-android: {config_path}"
         )
 
     settings_path, settings = read(root, DESKTOP_TAB_SETTINGS)
@@ -497,7 +503,7 @@ def verify_bottom_toolbar(root):
         "return true;" not in main_settings
         or "updateHideDesktopTabsPreference();" not in settings
         or "Helium: desktop mode can use the bottom address bar on old-android." not in position
-        or "Helium: the address-bar choice also controls whether bottom controls are inflated." not in address_pref
+        or "Helium: address-bar position is independent of the separate bottom bar." not in address_pref
         or "Helium: ZeroOmega and similar popups may report their auto-size after first paint." not in popup
     ):
         raise SystemExit(

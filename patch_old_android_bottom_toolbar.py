@@ -1,20 +1,21 @@
 #!/usr/bin/env python3
-"""Offer the bottom toolbar in every UI mode of the old-android build.
+"""Keep the address bar as the only bottom toolbar on old-android.
 
-Chrome gates the "Show bottom toolbar" option on a phone, non-automotive form
-factor and on a flag that is disabled by default, so the option never appears on
-car head units and disappears after switching to the desktop UI mode. Enable the
-flag and drop the form factor restrictions; the user's own switch in Settings
-still decides whether the bottom toolbar is used.
+The AndroidBottomBar feature is a separate action bar. Enabling it together with
+ToolbarPositionController creates two stacked rows when the address bar is moved
+to the bottom, so old-android keeps that feature disabled and uses the address
+bar position setting for the single toolbar row.
 """
 import os
 import sys
 
 FEATURE_LIST = "chrome/browser/flags/android/chrome_feature_list.cc"
 FEATURE_OLD = "BASE_FEATURE(kAndroidBottomBar, base::FEATURE_DISABLED_BY_DEFAULT);"
-FEATURE_NEW = """// Helium: the bottom toolbar must be available on car head units as well.
-BASE_FEATURE(kAndroidBottomBar, base::FEATURE_ENABLED_BY_DEFAULT);"""
-FEATURE_MARKER = "Helium: the bottom toolbar must be available"
+FEATURE_NEW = """// Helium: keep the separate Android bottom bar disabled; the address bar
+// position setting owns the single toolbar row on old-android.
+BASE_FEATURE(kAndroidBottomBar, base::FEATURE_DISABLED_BY_DEFAULT);"""
+FEATURE_MARKER = "Helium: keep the separate Android bottom bar disabled"
+LEGACY_FEATURE_MARKER = "Helium: the bottom toolbar must be available"
 
 JAVA_FEATURE_LIST = (
     "chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/"
@@ -23,10 +24,12 @@ JAVA_FEATURE_LIST = (
 JAVA_FLAG_OLD = """    public static final CachedFlag sAndroidBottomBar =
             newCachedFlag(ANDROID_BOTTOM_BAR, false, /* defaultValueInTests= */ true);
 """
-JAVA_FLAG_NEW = """    public static final CachedFlag sAndroidBottomBar =
-            newCachedFlag(ANDROID_BOTTOM_BAR, true, /* defaultValueInTests= */ true);
+JAVA_FLAG_NEW = """    // Helium: keep the separate Android bottom bar disabled.
+    public static final CachedFlag sAndroidBottomBar =
+            newCachedFlag(ANDROID_BOTTOM_BAR, false, /* defaultValueInTests= */ true);
 """
-JAVA_FLAG_MARKER = "newCachedFlag(ANDROID_BOTTOM_BAR, true, /* defaultValueInTests= */ true);"
+JAVA_FLAG_MARKER = "Helium: keep the separate Android bottom bar disabled"
+LEGACY_JAVA_FLAG = "newCachedFlag(ANDROID_BOTTOM_BAR, true, /* defaultValueInTests= */ true);"
 
 DEFAULT_USER_ENABLED_OLD = (
     'newBooleanCachedFeatureParam(ANDROID_BOTTOM_BAR, "default_user_enabled", true);'
@@ -50,9 +53,8 @@ ELIGIBLE_OLD = """        return !DeviceFormFactor.isNonMultiDisplayContextOnTab
                 && !DeviceInfo.isAutomotive()
                 && ChromeFeatureList.sAndroidBottomBar.isEnabled();
 """
-ELIGIBLE_NEW = """        // Helium: expose and allow the bottom toolbar on every old-android form factor.
-        // The matching native feature is enabled by the old-android build patch.
-        return true;
+ELIGIBLE_NEW = """        // Helium: the address bar preference owns the only toolbar row.
+        return false;
 """
 IMPORTS_OLD = """import org.chromium.base.DeviceInfo;
 import org.chromium.build.annotations.NullMarked;
@@ -67,7 +69,11 @@ FORM_FACTOR_IMPORT_NEW = """import org.chromium.components.embedder_support.util
 LEGACY_ELIGIBLE = """        // Helium: offer the bottom toolbar in desktop mode and on car units too.
         return ChromeFeatureList.sAndroidBottomBar.isEnabled();
 """
-CONFIG_MARKER = "Helium: expose and allow the bottom toolbar on every old-android form factor"
+LEGACY_DISABLED_ELIGIBLE = """        // Helium: expose and allow the bottom toolbar on every old-android form factor.
+        // The matching native feature is enabled by the old-android build patch.
+        return true;
+"""
+CONFIG_MARKER = "Helium: the address bar preference owns the only toolbar row."
 TOGGLE_OLD = """    public static boolean shouldShowSettingsToggle(Context context) {
         return isBottomBarEligible(context)
                 && ChromeFeatureList.sAndroidBottomBarShowSettingsToggle.getValue();
@@ -98,7 +104,6 @@ ACTIVITY_OBSERVER_NEW = """            // Helium: the address-bar position is th
 """
 ACTIVITY_OBSERVER_MARKER = "Helium: the address-bar position is the sole bottom-toolbar setting."
 
-
 def patch_feature_list(src_dir: str) -> bool:
     path = os.path.join(src_dir, FEATURE_LIST)
     if not os.path.isfile(path):
@@ -109,11 +114,20 @@ def patch_feature_list(src_dir: str) -> bool:
 
     if FEATURE_MARKER in content:
         return False
-    if FEATURE_OLD not in content:
+    if LEGACY_FEATURE_MARKER in content:
+        content = content.replace(
+            "// Helium: the bottom toolbar must be available on car head units as well.\n"
+            "BASE_FEATURE(kAndroidBottomBar, base::FEATURE_ENABLED_BY_DEFAULT);",
+            FEATURE_NEW,
+            1,
+        )
+    elif FEATURE_OLD in content:
+        content = content.replace(FEATURE_OLD, FEATURE_NEW, 1)
+    else:
         raise RuntimeError(f"bottom bar feature definition not found in {path}")
 
     with open(path, "w", encoding="utf-8") as handle:
-        handle.write(content.replace(FEATURE_OLD, FEATURE_NEW, 1))
+        handle.write(content)
     print(f"Patched old-android bottom bar feature flag: {path}")
     return True
 
@@ -128,11 +142,20 @@ def patch_java_feature_flag(src_dir: str) -> bool:
 
     if JAVA_FLAG_MARKER in content:
         return False
-    if content.count(JAVA_FLAG_OLD) != 1:
+    if content.count(JAVA_FLAG_OLD) == 1:
+        content = content.replace(JAVA_FLAG_OLD, JAVA_FLAG_NEW, 1)
+    elif content.count(LEGACY_JAVA_FLAG) == 1:
+        content = content.replace(
+            "    public static final CachedFlag sAndroidBottomBar =\n"
+            "            newCachedFlag(ANDROID_BOTTOM_BAR, true, /* defaultValueInTests= */ true);",
+            JAVA_FLAG_NEW.rstrip("\n"),
+            1,
+        )
+    else:
         raise RuntimeError(f"bottom bar Java feature flag not found in {path}")
 
     with open(path, "w", encoding="utf-8") as handle:
-        handle.write(content.replace(JAVA_FLAG_OLD, JAVA_FLAG_NEW, 1))
+        handle.write(content)
     print(f"Patched old-android bottom bar Java feature flag: {path}")
     return True
 
@@ -145,8 +168,12 @@ def patch_config_utils(src_dir: str) -> bool:
     with open(path, "r", encoding="utf-8") as handle:
         content = handle.read()
 
-    if CONFIG_MARKER in content and (TOGGLE_MARKER in content or LEGACY_TOGGLE_MARKER in content):
+    if (CONFIG_MARKER in content or LEGACY_DISABLED_ELIGIBLE in content) and (
+        TOGGLE_MARKER in content or LEGACY_TOGGLE_MARKER in content
+    ):
         if LEGACY_TOGGLE_MARKER in content:
+            if LEGACY_DISABLED_ELIGIBLE in content:
+                content = content.replace(LEGACY_DISABLED_ELIGIBLE, ELIGIBLE_NEW, 1)
             content = content.replace(
                 "        // Helium: keep the bottom toolbar option visible on every old-android device.\n"
                 "        return true;",
@@ -159,11 +186,15 @@ def patch_config_utils(src_dir: str) -> bool:
             print(f"Updated old-android bottom bar setting visibility: {path}")
             return True
         return False
+    if CONFIG_MARKER in content:
+        return False
 
     if ELIGIBLE_OLD in content:
         content = content.replace(ELIGIBLE_OLD, ELIGIBLE_NEW, 1)
     elif LEGACY_ELIGIBLE in content:
         content = content.replace(LEGACY_ELIGIBLE, ELIGIBLE_NEW, 1)
+    elif LEGACY_DISABLED_ELIGIBLE in content:
+        content = content.replace(LEGACY_DISABLED_ELIGIBLE, ELIGIBLE_NEW, 1)
     elif CONFIG_MARKER not in content:
         raise RuntimeError(f"bottom bar eligibility anchor not found in {path}")
 

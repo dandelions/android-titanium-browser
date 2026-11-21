@@ -20,6 +20,8 @@ class OldAndroidLocationBarLayoutPatchTest(unittest.TestCase):
                 "class ToolbarManager {\n"
                 + patch.TOOLBAR_PROGRESS_OLD_GUARD
                 + patch.TOOLBAR_MARGIN_ANCHOR
+                + patch.TOOLBAR_TABLET_MARGIN_ANCHOR
+                + patch.TOOLBAR_TABLET_MARGIN_ANCHOR
                 + "}\n",
                 encoding="utf-8",
             )
@@ -28,6 +30,30 @@ class OldAndroidLocationBarLayoutPatchTest(unittest.TestCase):
             result = toolbar_manager.read_text(encoding="utf-8")
             self.assertNotIn("                return;", result)
             self.assertIn(patch.TOOLBAR_MARKER, result)
+            self.assertFalse(patch.patch_source(root))
+
+    def test_upgrades_existing_toolbar_patch_with_tablet_layout_guards(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            location_bar = root / patch.LOCATION_BAR_TABLET
+            toolbar_manager = root / patch.TOOLBAR_MANAGER
+            location_bar.parent.mkdir(parents=True)
+            toolbar_manager.parent.mkdir(parents=True)
+            location_bar.write_text(patch.MARKER + "\n", encoding="utf-8")
+            toolbar_manager.write_text(
+                "class ToolbarManager {\n"
+                + patch.TOOLBAR_MARKER
+                + "\n"
+                + patch.TOOLBAR_TABLET_MARGIN_ANCHOR
+                + patch.TOOLBAR_TABLET_MARGIN_ANCHOR
+                + "}\n",
+                encoding="utf-8",
+            )
+
+            self.assertTrue(patch.patch_source(root))
+            result = toolbar_manager.read_text(encoding="utf-8")
+            self.assertEqual(2, result.count(patch.TOOLBAR_TABLET_MARGIN_MARKER))
+            self.assertEqual(2, result.count("instanceof ViewGroup.MarginLayoutParams"))
             self.assertFalse(patch.patch_source(root))
 
     def test_patches_location_bar_and_toolbar_layouts_idempotently(self):
@@ -57,6 +83,12 @@ class OldAndroidLocationBarLayoutPatchTest(unittest.TestCase):
                 "        final ViewGroup.MarginLayoutParams layoutParams =\n"
                 "                ((ViewGroup.MarginLayoutParams) mControlContainer.getLayoutParams());\n"
                 "    }\n"
+                "    void toolbarTabletMargins() {\n"
+                + patch.TOOLBAR_TABLET_MARGIN_ANCHOR
+                + "    }\n"
+                "    void toolbarTabletMarginChanged() {\n"
+                + patch.TOOLBAR_TABLET_MARGIN_ANCHOR
+                + "    }\n"
                 "}\n",
                 encoding="utf-8",
             )

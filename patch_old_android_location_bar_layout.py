@@ -52,6 +52,15 @@ TOOLBAR_MARGIN_GUARD = """        if (!(mControlContainer.getLayoutParams() inst
         final ViewGroup.MarginLayoutParams layoutParams =
                 ((ViewGroup.MarginLayoutParams) mControlContainer.getLayoutParams());
 """
+TOOLBAR_TABLET_MARGIN_MARKER = "Helium: skip transient desktop-mode toolbar-tablet layout parameters"
+TOOLBAR_TABLET_MARGIN_ANCHOR = """        var lp = (ViewGroup.MarginLayoutParams) toolbarTabletLayout.getLayoutParams();
+"""
+TOOLBAR_TABLET_MARGIN_GUARD = """        // Helium: skip transient desktop-mode toolbar-tablet layout parameters.
+        if (!(toolbarTabletLayout.getLayoutParams() instanceof ViewGroup.MarginLayoutParams)) {
+            return;
+        }
+        var lp = (ViewGroup.MarginLayoutParams) toolbarTabletLayout.getLayoutParams();
+"""
 def patch_source(root: Path) -> bool:
     path = root / LOCATION_BAR_TABLET
     toolbar_path = root / TOOLBAR_MANAGER
@@ -69,6 +78,19 @@ def patch_source(root: Path) -> bool:
         changed = True
 
     toolbar_text = toolbar_path.read_text(encoding="utf-8")
+    unguarded_toolbar_text = toolbar_text.replace(TOOLBAR_TABLET_MARGIN_GUARD, "")
+    toolbar_tablet_margin_count = unguarded_toolbar_text.count(TOOLBAR_TABLET_MARGIN_ANCHOR)
+    if toolbar_tablet_margin_count:
+        if toolbar_tablet_margin_count != 2:
+            raise SystemExit(
+                f"Expected two ToolbarManager toolbar-tablet margin anchors in {toolbar_path}, "
+                f"found {toolbar_tablet_margin_count}"
+            )
+        toolbar_text = toolbar_text.replace(
+            TOOLBAR_TABLET_MARGIN_ANCHOR, TOOLBAR_TABLET_MARGIN_GUARD
+        )
+        changed = True
+
     if toolbar_text.count(TOOLBAR_PROGRESS_OLD_GUARD) == 1:
         toolbar_text = toolbar_text.replace(
             TOOLBAR_PROGRESS_OLD_GUARD, TOOLBAR_PROGRESS_GUARD, 1
@@ -87,9 +109,10 @@ def patch_source(root: Path) -> bool:
             TOOLBAR_PROGRESS_ANCHOR, TOOLBAR_PROGRESS_GUARD, 1
         )
         toolbar_text = toolbar_text.replace(TOOLBAR_MARGIN_ANCHOR, TOOLBAR_MARGIN_GUARD, 1)
-        toolbar_path.write_text(toolbar_text, encoding="utf-8")
         changed = True
 
+    if changed:
+        toolbar_path.write_text(toolbar_text, encoding="utf-8")
     return changed
 
 

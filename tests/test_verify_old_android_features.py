@@ -80,17 +80,18 @@ SINGLE_PROCESS_FILES = {
         '<include layout="@layout/omnibox_back_button"/>'
     ),
     "chrome/browser/flags/android/chrome_feature_list.cc": (
-        "BASE_FEATURE(kAndroidBottomBar, base::FEATURE_ENABLED_BY_DEFAULT);"
+        "// Helium: keep the separate Android bottom bar disabled\n"
+        "BASE_FEATURE(kAndroidBottomBar, base::FEATURE_DISABLED_BY_DEFAULT);"
     ),
     "chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/"
     "ChromeFeatureList.java": (
-        "newCachedFlag(ANDROID_BOTTOM_BAR, true, /* defaultValueInTests= */ true);"
+        "// Helium: keep the separate Android bottom bar disabled\n"
+        "newCachedFlag(ANDROID_BOTTOM_BAR, false, /* defaultValueInTests= */ true);"
     ),
     "chrome/browser/ui/android/bottombar/java/src/org/chromium/chrome/browser/ui/"
     "bottombar/BottomBarConfigUtils.java": (
-        "// Helium: expose and allow the bottom toolbar on every old-android form factor.\n"
-        "// The matching native feature is enabled by the old-android build patch.\n"
-        "return true;"
+        "// Helium: the address bar preference owns the only toolbar row.\n"
+        "return false;"
     ),
 }
 
@@ -104,7 +105,7 @@ DESKTOP_TAB_FILES = {
         "Helium: desktop mode can use the bottom address bar on old-android."
     ),
     "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/settings/"
-    "AddressBarPreference.java": "Helium: the address-bar choice also controls whether bottom controls are inflated.",
+    "AddressBarPreference.java": "Helium: address-bar position is independent of the separate bottom bar.",
     "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/"
     "ExtensionActionPopup.java": "Helium: ZeroOmega and similar popups may report their auto-size after first paint.",
     "chrome/android/java/src/org/chromium/chrome/browser/toolbar/ToolbarManager.java": (

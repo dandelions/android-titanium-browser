@@ -65,13 +65,17 @@ FRAGMENT_MARKER = "private void updateHideDesktopTabsPreference()"
 ADDRESS_BAR_SET_OLD = """        sharedPreferencesManager.writeInt(ChromePreferenceKeys.TOOLBAR_TOP_ANCHORED, sharedPref);
 """
 ADDRESS_BAR_SET_NEW = """        sharedPreferencesManager.writeInt(ChromePreferenceKeys.TOOLBAR_TOP_ANCHORED, sharedPref);
+        // Helium: address-bar position is independent of the separate bottom bar.
+"""
+ADDRESS_BAR_SET_MARKER = "Helium: address-bar position is independent of the separate bottom bar."
+ADDRESS_BAR_SET_LEGACY_MARKER = "Helium: the address-bar choice also controls whether bottom controls are inflated."
+ADDRESS_BAR_SET_LEGACY = """        sharedPreferencesManager.writeInt(ChromePreferenceKeys.TOOLBAR_TOP_ANCHORED, sharedPref);
         // Helium: the address-bar choice also controls whether bottom controls are inflated.
         ChromeSharedPreferences.getInstance()
                 .writeBoolean(
                         ChromePreferenceKeys.BOTTOM_BAR_ENABLED,
                         isToolbarAtBottom(sharedPref));
 """
-ADDRESS_BAR_SET_MARKER = "Helium: the address-bar choice also controls whether bottom controls are inflated."
 
 XML_ANCHOR = """    <org.chromium.chrome.browser.toolbar.settings.AddressBarPreference
         android:key="address_bar_preference"
@@ -208,7 +212,10 @@ def patch_source(root: Path) -> bool:
     changed |= patch_file(
         root,
         ADDRESS_BAR_PREFERENCE,
-        ((ADDRESS_BAR_SET_OLD, ADDRESS_BAR_SET_NEW, ADDRESS_BAR_SET_MARKER),),
+        (
+            (ADDRESS_BAR_SET_OLD, ADDRESS_BAR_SET_NEW, ADDRESS_BAR_SET_MARKER),
+            (ADDRESS_BAR_SET_LEGACY, ADDRESS_BAR_SET_NEW, ADDRESS_BAR_SET_MARKER),
+        ),
     )
     changed |= patch_file(
         root,
