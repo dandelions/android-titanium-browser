@@ -11,9 +11,6 @@ LOCATION_BAR_TABLET = Path(
 TOOLBAR_MANAGER = Path(
     "chrome/android/java/src/org/chromium/chrome/browser/toolbar/ToolbarManager.java"
 )
-MINI_ORIGIN_BAR = Path(
-    "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/MiniOriginBarController.java"
-)
 METHOD_ANCHOR = "    private void adjustBackgroundForSuggestions() {\n"
 GUARD = """        // Helium: desktop-mode activity recreation can briefly leave this view attached
         // with LinearLayout.LayoutParams before it returns to its FrameLayout holder.
@@ -55,31 +52,10 @@ TOOLBAR_MARGIN_GUARD = """        if (!(mControlContainer.getLayoutParams() inst
         final ViewGroup.MarginLayoutParams layoutParams =
                 ((ViewGroup.MarginLayoutParams) mControlContainer.getLayoutParams());
 """
-MINI_ORIGIN_MARKER = "Helium: skip transient desktop-mode location bar layout parameters"
-MINI_ORIGIN_CONSTRUCTOR_ANCHOR = """        mDefaultLocationBarLayoutParams =
-                (FrameLayout.LayoutParams) mLocationBar.getContainerView().getLayoutParams();
-"""
-MINI_ORIGIN_CONSTRUCTOR_GUARD = """        // Helium: skip transient desktop-mode location bar layout parameters.
-        if (!(mLocationBar.getContainerView().getLayoutParams() instanceof FrameLayout.LayoutParams)) {
-            mDefaultLocationBarLayoutParams = new FrameLayout.LayoutParams(0, 0);
-        } else {
-            mDefaultLocationBarLayoutParams =
-                    (FrameLayout.LayoutParams) mLocationBar.getContainerView().getLayoutParams();
-        }
-"""
-MINI_ORIGIN_STATE_GUARD = """            // Helium: skip transient desktop-mode location bar layout parameters.
-            if (mLocationBar.getContainerView().getLayoutParams() instanceof FrameLayout.LayoutParams) {
-                mDefaultLocationBarLayoutParams =
-                        (FrameLayout.LayoutParams) mLocationBar.getContainerView().getLayoutParams();
-            }
-"""
-
-
 def patch_source(root: Path) -> bool:
     path = root / LOCATION_BAR_TABLET
     toolbar_path = root / TOOLBAR_MANAGER
-    mini_origin_path = root / MINI_ORIGIN_BAR
-    for expected in (path, toolbar_path, mini_origin_path):
+    for expected in (path, toolbar_path):
         if not expected.is_file():
             raise SystemExit(f"Expected Chromium file not found: {expected}")
 
@@ -112,22 +88,6 @@ def patch_source(root: Path) -> bool:
         )
         toolbar_text = toolbar_text.replace(TOOLBAR_MARGIN_ANCHOR, TOOLBAR_MARGIN_GUARD, 1)
         toolbar_path.write_text(toolbar_text, encoding="utf-8")
-        changed = True
-
-    mini_origin_text = mini_origin_path.read_text(encoding="utf-8")
-    if MINI_ORIGIN_MARKER not in mini_origin_text:
-        if mini_origin_text.count(MINI_ORIGIN_CONSTRUCTOR_ANCHOR) != 1:
-            raise SystemExit(f"Expected one MiniOriginBarController constructor anchor in {mini_origin_path}")
-        state_anchor = """            mDefaultLocationBarLayoutParams =
-                    (FrameLayout.LayoutParams) mLocationBar.getContainerView().getLayoutParams();
-"""
-        if mini_origin_text.count(state_anchor) != 1:
-            raise SystemExit(f"Expected one MiniOriginBarController state anchor in {mini_origin_path}")
-        mini_origin_text = mini_origin_text.replace(
-            MINI_ORIGIN_CONSTRUCTOR_ANCHOR, MINI_ORIGIN_CONSTRUCTOR_GUARD, 1
-        )
-        mini_origin_text = mini_origin_text.replace(state_anchor, MINI_ORIGIN_STATE_GUARD, 1)
-        mini_origin_path.write_text(mini_origin_text, encoding="utf-8")
         changed = True
 
     return changed
