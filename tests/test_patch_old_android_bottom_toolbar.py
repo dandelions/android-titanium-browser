@@ -15,6 +15,10 @@ FEATURE_SOURCE = "BASE_FEATURE(kAndroidBottomBar, base::FEATURE_DISABLED_BY_DEFA
 JAVA_FEATURE_SOURCE = """    public static final CachedFlag sAndroidBottomBar =
             newCachedFlag(ANDROID_BOTTOM_BAR, false, /* defaultValueInTests= */ true);
 """
+DEFAULT_USER_ENABLED_SOURCE = '''    public static final BooleanCachedFeatureParam sAndroidBottomBarDefaultUserEnabled =
+            newBooleanCachedFeatureParam(ANDROID_BOTTOM_BAR, "default_user_enabled", true);
+'''
+
 CONFIG_SOURCE = """import org.chromium.base.DeviceInfo;
 import org.chromium.build.annotations.NullMarked;
 import org.chromium.components.embedder_support.util.UrlUtilities;
@@ -47,7 +51,9 @@ class OldAndroidBottomToolbarPatchTest(unittest.TestCase):
         for path in paths.values():
             path.parent.mkdir(parents=True, exist_ok=True)
         paths[PATCH.FEATURE_LIST].write_text(FEATURE_SOURCE)
-        paths[PATCH.JAVA_FEATURE_LIST].write_text(JAVA_FEATURE_SOURCE)
+        paths[PATCH.JAVA_FEATURE_LIST].write_text(
+            JAVA_FEATURE_SOURCE + DEFAULT_USER_ENABLED_SOURCE
+        )
         paths[PATCH.CONFIG_UTILS].write_text(CONFIG_SOURCE)
         return paths
 
@@ -67,6 +73,23 @@ class OldAndroidBottomToolbarPatchTest(unittest.TestCase):
             self.assertIn("return true;", config)
             self.assertNotIn("DeviceInfo", config)
             self.assertNotIn("DeviceFormFactor", config)
+            default_setting = paths[PATCH.JAVA_FEATURE_LIST].read_text()
+            self.assertIn(PATCH.DEFAULT_USER_ENABLED_MARKER, default_setting)
+            self.assertIn('"default_user_enabled", false', default_setting)
+
+    def test_preserves_explicit_default_user_setting_patch(self):
+        with tempfile.TemporaryDirectory() as temp:
+            paths = self._write_sources(Path(temp))
+            user_setting = paths[PATCH.JAVA_FEATURE_LIST]
+            user_setting.write_text(
+                user_setting.read_text().replace(
+                    PATCH.DEFAULT_USER_ENABLED_OLD,
+                    PATCH.DEFAULT_USER_ENABLED_NEW,
+                )
+            )
+
+            self.assertTrue(PATCH.patch_source_tree(temp))
+            self.assertIn(PATCH.DEFAULT_USER_ENABLED_MARKER, user_setting.read_text())
 
     def test_is_idempotent(self):
         with tempfile.TemporaryDirectory() as temp:

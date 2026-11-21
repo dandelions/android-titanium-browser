@@ -28,6 +28,19 @@ JAVA_FLAG_NEW = """    public static final CachedFlag sAndroidBottomBar =
 """
 JAVA_FLAG_MARKER = "newCachedFlag(ANDROID_BOTTOM_BAR, true, /* defaultValueInTests= */ true);"
 
+DEFAULT_USER_ENABLED_OLD = (
+    'newBooleanCachedFeatureParam(ANDROID_BOTTOM_BAR, "default_user_enabled", true);'
+)
+DEFAULT_USER_ENABLED_NEW = (
+    '// Helium: keep the address bar and navigation controls on one row by default.\n'
+    '            newBooleanCachedFeatureParam(ANDROID_BOTTOM_BAR, "default_user_enabled", false);'
+)
+DEFAULT_USER_ENABLED_MARKER = "Helium: keep the address bar and navigation controls on one row by default."
+DEFAULT_USER_ENABLED_PATH = (
+    "chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/"
+    "ChromeFeatureList.java"
+)
+
 CONFIG_UTILS = (
     "chrome/browser/ui/android/bottombar/java/src/org/chromium/chrome/browser/ui/"
     "bottombar/BottomBarConfigUtils.java"
@@ -143,11 +156,31 @@ def patch_config_utils(src_dir: str) -> bool:
     return True
 
 
+def patch_default_user_enabled(src_dir: str) -> bool:
+    path = os.path.join(src_dir, DEFAULT_USER_ENABLED_PATH)
+    if not os.path.isfile(path):
+        raise FileNotFoundError(path)
+
+    with open(path, "r", encoding="utf-8") as handle:
+        content = handle.read()
+
+    if DEFAULT_USER_ENABLED_MARKER in content:
+        return False
+    if content.count(DEFAULT_USER_ENABLED_OLD) != 1:
+        raise RuntimeError(f"bottom bar default user setting not found in {path}")
+
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(content.replace(DEFAULT_USER_ENABLED_OLD, DEFAULT_USER_ENABLED_NEW, 1))
+    print(f"Set old-android bottom bar default to disabled: {path}")
+    return True
+
+
 def patch_source_tree(src_dir: str) -> bool:
     feature_changed = patch_feature_list(src_dir)
     java_flag_changed = patch_java_feature_flag(src_dir)
     config_changed = patch_config_utils(src_dir)
-    return feature_changed or java_flag_changed or config_changed
+    default_changed = patch_default_user_enabled(src_dir)
+    return feature_changed or java_flag_changed or config_changed or default_changed
 
 
 if __name__ == "__main__":
