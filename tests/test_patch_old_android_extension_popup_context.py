@@ -62,7 +62,9 @@ class OldAndroidExtensionPopupContextPatchTest(unittest.TestCase):
             path = Path(directory) / patch.MENU_MEDIATOR
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(
-                patch.OPTIONS_DUPLICATE,
+                patch.OPTIONS_EXISTING_URL_CHECK
+                + "        // Helium: open extension options through the native Android options path.\n"
+                + "        mMenuBridge.openOptionsPage(extensionId);\n",
                 encoding="utf-8",
             )
 

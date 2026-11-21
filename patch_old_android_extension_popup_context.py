@@ -56,12 +56,12 @@ OPTIONS_NEW = """        // Helium: open extension options from the extension's 
         }
         mMenuBridge.executeAction(extensionId, getCurrentWebContents());
 """
-OPTIONS_DUPLICATE = """        // Helium: open extension options from the extension's declared page URL.
-        String optionsUrl = mMenuBridge.getOptionsPageUrl(extensionId);
+OPTIONS_DUPLICATE = """        String optionsUrl = mMenuBridge.getOptionsPageUrl(extensionId);
         if (optionsUrl != null && !optionsUrl.isEmpty()) {
             openUrlFromMenu(optionsUrl);
             return;
         }
+        // Helium: open extension options from the extension's declared page URL.
         String optionsUrl = mMenuBridge.getOptionsPageUrl(extensionId);
         if (optionsUrl != null && !optionsUrl.isEmpty()) {
             openUrlFromMenu(optionsUrl);
