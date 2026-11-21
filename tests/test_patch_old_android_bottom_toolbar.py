@@ -27,6 +27,13 @@ ACTIVITY_SOURCE = '''            if (BottomBarConfigUtils.shouldShowSettingsTogg
                         this::doRecreateActivity);
             }
 '''
+ACTIVITY_MIGRATED_SOURCE = '''            // Helium: the address-bar position is the sole bottom-toolbar setting.
+            new BottomBarEnabledChangeObserver(
+                    this,
+                    getLifecycleDispatcher(),
+                    mBottomBarHostManager != null,
+                    this::doRecreateActivity);
+'''
 
 CONFIG_SOURCE = """import org.chromium.base.DeviceInfo;
 import org.chromium.build.annotations.NullMarked;
@@ -142,6 +149,17 @@ class OldAndroidBottomToolbarPatchTest(unittest.TestCase):
             self.assertIn(PATCH.CONFIG_MARKER, migrated_config)
             self.assertIn("return false;", migrated_config)
             self.assertFalse(PATCH.patch_source_tree(temp))
+
+    def test_migrates_existing_observer_block(self):
+        with tempfile.TemporaryDirectory() as temp:
+            paths = self._write_sources(Path(temp))
+            paths[PATCH.CHROME_TABBED_ACTIVITY].write_text(ACTIVITY_MIGRATED_SOURCE)
+
+            self.assertTrue(PATCH.patch_source_tree(temp))
+            activity = paths[PATCH.CHROME_TABBED_ACTIVITY].read_text()
+            self.assertIn(PATCH.ACTIVITY_OBSERVER_MARKER, activity)
+            self.assertNotIn("BottomBarEnabledChangeObserver", activity)
+            self.assertNotIn("bottom-toolbar setting.", activity)
 
     def test_preserves_explicit_default_user_setting_patch(self):
         with tempfile.TemporaryDirectory() as temp:

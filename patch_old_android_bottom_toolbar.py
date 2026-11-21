@@ -97,6 +97,13 @@ ACTIVITY_OBSERVER_OLD = """            if (BottomBarConfigUtils.shouldShowSettin
 """
 ACTIVITY_OBSERVER_NEW = """            // Helium: the separate bottom bar is disabled on old-android; do not observe its preference.
 """
+ACTIVITY_OBSERVER_MIGRATED = """            // Helium: the address-bar position is the sole bottom-toolbar setting.
+            new BottomBarEnabledChangeObserver(
+                    this,
+                    getLifecycleDispatcher(),
+                    mBottomBarHostManager != null,
+                    this::doRecreateActivity);
+"""
 ACTIVITY_OBSERVER_MARKER = "Helium: the separate bottom bar is disabled on old-android; do not observe its preference."
 ACTIVITY_OBSERVER_IMPORT = "import org.chromium.chrome.browser.bottombar.BottomBarEnabledChangeObserver;\n"
 
@@ -240,9 +247,12 @@ def patch_activity_observer(src_dir: str) -> bool:
             return False
         content = updated
     else:
-        if ACTIVITY_OBSERVER_OLD not in content:
+        if ACTIVITY_OBSERVER_OLD in content:
+            content = content.replace(ACTIVITY_OBSERVER_OLD, ACTIVITY_OBSERVER_NEW, 1)
+        elif ACTIVITY_OBSERVER_MIGRATED in content:
+            content = content.replace(ACTIVITY_OBSERVER_MIGRATED, ACTIVITY_OBSERVER_NEW, 1)
+        else:
             raise RuntimeError(f"bottom bar observer anchor not found in {path}")
-        content = content.replace(ACTIVITY_OBSERVER_OLD, ACTIVITY_OBSERVER_NEW, 1)
         content = content.replace(ACTIVITY_OBSERVER_IMPORT, "", 1)
 
     with open(path, "w", encoding="utf-8") as handle:
