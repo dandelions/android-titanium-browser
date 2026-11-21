@@ -167,54 +167,48 @@ def patch_config_utils(src_dir: str) -> bool:
 
     with open(path, "r", encoding="utf-8") as handle:
         content = handle.read()
+    original = content
 
-    if (CONFIG_MARKER in content or LEGACY_DISABLED_ELIGIBLE in content) and (
-        TOGGLE_MARKER in content or LEGACY_TOGGLE_MARKER in content
-    ):
-        if LEGACY_TOGGLE_MARKER in content:
-            if LEGACY_DISABLED_ELIGIBLE in content:
-                content = content.replace(LEGACY_DISABLED_ELIGIBLE, ELIGIBLE_NEW, 1)
-            content = content.replace(
-                "        // Helium: keep the bottom toolbar option visible on every old-android device.\n"
-                "        return true;",
-                "        // Helium: the address bar settings own toolbar placement on old-android.\n"
-                "        return false;",
-                1,
-            )
-            with open(path, "w", encoding="utf-8") as handle:
-                handle.write(content)
-            print(f"Updated old-android bottom bar setting visibility: {path}")
-            return True
-        return False
-    if CONFIG_MARKER in content:
-        return False
-
-    if ELIGIBLE_OLD in content:
-        content = content.replace(ELIGIBLE_OLD, ELIGIBLE_NEW, 1)
-    elif LEGACY_ELIGIBLE in content:
-        content = content.replace(LEGACY_ELIGIBLE, ELIGIBLE_NEW, 1)
-    elif LEGACY_DISABLED_ELIGIBLE in content:
-        content = content.replace(LEGACY_DISABLED_ELIGIBLE, ELIGIBLE_NEW, 1)
-    elif CONFIG_MARKER not in content:
-        raise RuntimeError(f"bottom bar eligibility anchor not found in {path}")
+    eligibility_anchors = (
+        ELIGIBLE_OLD,
+        LEGACY_ELIGIBLE,
+        LEGACY_DISABLED_ELIGIBLE,
+        "        // Helium: expose and allow the bottom toolbar on every old-android form factor.\n"
+        "        // The matching native feature is enabled by the old-android build patch.\n"
+        "        return true;\n",
+    )
+    if CONFIG_MARKER not in content:
+        for anchor in eligibility_anchors:
+            if anchor in content:
+                content = content.replace(anchor, ELIGIBLE_NEW, 1)
+                break
+        else:
+            raise RuntimeError(f"bottom bar eligibility anchor not found in {path}")
 
     if IMPORTS_OLD in content:
         content = content.replace(IMPORTS_OLD, IMPORTS_NEW, 1)
-    elif FORM_FACTOR_IMPORT_OLD in content:
-        raise RuntimeError(f"bottom bar imports are partially patched in {path}")
-
     if FORM_FACTOR_IMPORT_OLD in content:
         content = content.replace(FORM_FACTOR_IMPORT_OLD, FORM_FACTOR_IMPORT_NEW, 1)
 
     if TOGGLE_OLD in content:
         content = content.replace(TOGGLE_OLD, TOGGLE_NEW, 1)
+    elif LEGACY_TOGGLE_MARKER in content:
+        legacy_toggle = (
+            "        // Helium: keep the bottom toolbar option visible on every old-android device.\n"
+            "        return true;"
+        )
+        if legacy_toggle not in content:
+            raise RuntimeError(f"legacy bottom bar setting toggle anchor not found in {path}")
+        content = content.replace(legacy_toggle, TOGGLE_NEW.split("{\n", 1)[1].rsplit("\n}", 1)[0], 1)
     elif TOGGLE_MARKER not in content:
         raise RuntimeError(f"bottom bar setting toggle anchor not found in {path}")
 
-    with open(path, "w", encoding="utf-8") as handle:
-        handle.write(content)
-    print(f"Patched old-android bottom bar eligibility: {path}")
-    return True
+    if content != original:
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(content)
+        print(f"Patched old-android bottom bar eligibility: {path}")
+        return True
+    return False
 
 
 def patch_default_user_enabled(src_dir: str) -> bool:
