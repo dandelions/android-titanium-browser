@@ -65,7 +65,7 @@ def patch_direct_query(path: Path) -> bool:
     if DIRECT_OLD in text:
         path.write_text(text.replace(DIRECT_OLD, DIRECT_NEW, 1), encoding="utf-8")
         return True
-    if "ExtensionTabUtil::kDontScrubTab" in text and "helium_android_popup_direct_query" in text:
+    if "ExtensionTabUtil::kDontScrubTab" in text:
         anchor = "    ExtensionTabUtil::ScrubTabBehavior dont_scrub = {\n"
         if text.count(anchor) < 1:
             raise SystemExit(f"Existing popup context patch found without a migration anchor in {path}")
