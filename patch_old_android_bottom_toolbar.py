@@ -95,14 +95,10 @@ ACTIVITY_OBSERVER_OLD = """            if (BottomBarConfigUtils.shouldShowSettin
                         this::doRecreateActivity);
             }
 """
-ACTIVITY_OBSERVER_NEW = """            // Helium: the address-bar position is the sole bottom-toolbar setting.
-            new BottomBarEnabledChangeObserver(
-                    this,
-                    getLifecycleDispatcher(),
-                    mBottomBarHostManager != null,
-                    this::doRecreateActivity);
+ACTIVITY_OBSERVER_NEW = """            // Helium: the separate bottom bar is disabled on old-android; do not observe its preference.
 """
-ACTIVITY_OBSERVER_MARKER = "Helium: the address-bar position is the sole bottom-toolbar setting."
+ACTIVITY_OBSERVER_MARKER = "Helium: the separate bottom bar is disabled on old-android; do not observe its preference."
+ACTIVITY_OBSERVER_IMPORT = "import org.chromium.chrome.browser.bottombar.BottomBarEnabledChangeObserver;\n"
 
 def patch_feature_list(src_dir: str) -> bool:
     path = os.path.join(src_dir, FEATURE_LIST)
@@ -239,13 +235,19 @@ def patch_activity_observer(src_dir: str) -> bool:
         content = handle.read()
 
     if ACTIVITY_OBSERVER_MARKER in content:
-        return False
-    if ACTIVITY_OBSERVER_OLD not in content:
-        raise RuntimeError(f"bottom bar observer anchor not found in {path}")
+        updated = content.replace(ACTIVITY_OBSERVER_IMPORT, "", 1)
+        if updated == content:
+            return False
+        content = updated
+    else:
+        if ACTIVITY_OBSERVER_OLD not in content:
+            raise RuntimeError(f"bottom bar observer anchor not found in {path}")
+        content = content.replace(ACTIVITY_OBSERVER_OLD, ACTIVITY_OBSERVER_NEW, 1)
+        content = content.replace(ACTIVITY_OBSERVER_IMPORT, "", 1)
 
     with open(path, "w", encoding="utf-8") as handle:
-        handle.write(content.replace(ACTIVITY_OBSERVER_OLD, ACTIVITY_OBSERVER_NEW, 1))
-    print(f"Bound bottom bar recreation to address bar preference: {path}")
+        handle.write(content)
+    print(f"Disabled bottom bar preference observer on old-android: {path}")
     return True
 
 

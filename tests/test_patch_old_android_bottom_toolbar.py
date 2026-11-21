@@ -95,6 +95,7 @@ class OldAndroidBottomToolbarPatchTest(unittest.TestCase):
             self.assertIn('"default_user_enabled", false', default_setting)
             activity = paths[PATCH.CHROME_TABBED_ACTIVITY].read_text()
             self.assertIn(PATCH.ACTIVITY_OBSERVER_MARKER, activity)
+            self.assertNotIn("BottomBarEnabledChangeObserver", activity)
             self.assertNotIn("shouldShowSettingsToggle(this)", activity)
 
     def test_migrates_legacy_enabled_feature_flags(self):
