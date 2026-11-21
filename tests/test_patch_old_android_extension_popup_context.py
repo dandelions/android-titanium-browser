@@ -45,6 +45,18 @@ class OldAndroidExtensionPopupContextPatchTest(unittest.TestCase):
             self.assertEqual(direct, tabs_api.read_text(encoding="utf-8"))
             self.assertEqual(options, mediator.read_text(encoding="utf-8"))
 
+    def test_migrates_options_page_call_from_previous_hotfix(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / patch.MENU_MEDIATOR
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(patch.OPTIONS_LEGACY, encoding="utf-8")
+
+            self.assertTrue(patch.patch_options_path(path))
+            result = path.read_text(encoding="utf-8")
+            self.assertIn("mMenuBridge.getOptionsPageUrl(extensionId)", result)
+            self.assertNotIn("mMenuBridge.openOptionsPage(extensionId)", result)
+            self.assertFalse(patch.patch_options_path(path))
+
 
 if __name__ == "__main__":
     unittest.main()

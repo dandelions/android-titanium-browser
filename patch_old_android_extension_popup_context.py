@@ -39,6 +39,9 @@ OPTIONS_OLD = """        if (mToolbarBridge != null) {
         }
         mMenuBridge.executeAction(extensionId, getCurrentWebContents());
 """
+OPTIONS_LEGACY = """        // Helium: open extension options through the native Android options path.
+        mMenuBridge.openOptionsPage(extensionId);
+"""
 OPTIONS_NEW = """        // Helium: open extension options from the extension's declared page URL.
         String optionsUrl = mMenuBridge.getOptionsPageUrl(extensionId);
         if (optionsUrl != null && !optionsUrl.isEmpty()) {
@@ -86,9 +89,25 @@ def patch_direct_query(path: Path) -> bool:
     raise SystemExit(f"Expected one popup context anchor in {path}")
 
 
+def patch_options_path(path: Path) -> bool:
+    if not path.is_file():
+        raise SystemExit(f"Expected Chromium file not found: {path}")
+    text = path.read_text(encoding="utf-8")
+    if OPTIONS_MARKER in text:
+        return False
+    if OPTIONS_OLD in text:
+        text = text.replace(OPTIONS_OLD, OPTIONS_NEW, 1)
+    elif OPTIONS_LEGACY in text:
+        text = text.replace(OPTIONS_LEGACY, OPTIONS_NEW, 1)
+    else:
+        raise SystemExit(f"Expected one popup context anchor in {path}")
+    path.write_text(text, encoding="utf-8")
+    return True
+
+
 def patch_source(root: Path) -> bool:
     changed = patch_direct_query(root / TABS_API)
-    changed |= patch_file(root / MENU_MEDIATOR, OPTIONS_OLD, OPTIONS_NEW, OPTIONS_MARKER)
+    changed |= patch_options_path(root / MENU_MEDIATOR)
     return changed
 
 
