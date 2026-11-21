@@ -58,6 +58,7 @@ fi
 if [ -f titanium/chromium_src/services/downstream/device/geolocation/android/java/src/org/chromium/device/geolocation/CoarseLocationRequests.java ]; then
     sed -i 's|static boolean isSupported() {|& if (android.os.Build.VERSION.SDK_INT < 31) return false;|;s|LocationManager locationManager, LocationListener listener) {|& if (android.os.Build.VERSION.SDK_INT < 31) return false;|' titanium/chromium_src/services/downstream/device/geolocation/android/java/src/org/chromium/device/geolocation/CoarseLocationRequests.java # api
 fi
+sed -i '/private static boolean isLocalNetworkAccessPermissionRequired() {/{n;s|return true;|return Build.VERSION.SDK_INT >= 37;|}' components/permissions/android/java/src/org/chromium/components/permissions/PermissionUtil.java # api
 
 # sed -i 's|int ExpirationMilestoneForFlag(const char\* flag) {|int ExpirationMilestoneForFlag(const char* flag) { if ((true)) return -1;|' chrome/browser/unexpire_flags.cc
 for flag in "align-wakeups" "android-bottom-bar" "cct-open-in-browser-button-if-allowed-by-embedder" "darken-websites-checkbox-in-themes-setting" "enable-accessibility-sequential-focus" "enforce-incognito-isolation" "inline-pdf-v2" "jump-start-omnibox" "lock-controls-on-tablets-v2" "offline-auto-fetch" "use-fullscreen-insets-api"; do
@@ -2505,7 +2506,7 @@ sed -i 's|if (id == R.id.manage_all_windows_menu_id) {|if (id == R.id.incognito_
 perl -0pi -e 's|current_toolchain == default_toolchain,|current_toolchain == default_toolchain \|\|\n        current_toolchain == "//build/toolchain/android:android_clang_arm64_webview",|' build/timestamp.gni
 
 # crbug.com/406136787: load unpacked
-sed -i 's|assert treeId.equals(documentId);|&\n if ("com.android.externalstorage.documents".equals(mAuthority)) { String fastId = mRelativePath.isEmpty() ? treeId : (treeId.endsWith(":") ? treeId + mRelativePath : treeId + "/" + mRelativePath); Uri fast = DocumentsContract.buildDocumentUriUsingTree(tree, fastId); return contentUriExists(fast) ? fast : null; }|' base/android/java/src/org/chromium/base/VirtualDocumentPath.java
+sed -i 's|ResolveResult current = queryDocument(tree, rootUri, null);|if ("com.android.externalstorage.documents".equals(mAuthority) \&\& mRelativePath.length > 0) { String rel = String.join("/", mRelativePath); ResolveResult fast = queryDocument(tree, DocumentsContract.buildDocumentUriUsingTree(tree, mTreeId.endsWith(":") ? mTreeId + rel : mTreeId + "/" + rel), null); if (fast.status == FileError.FILE_OK) return fast; }\n&|' base/android/java/src/org/chromium/base/VirtualDocumentPath.java
 
 # crbug.com/40831291: bottom address bar
 POPUP_SPEC_CALCULATOR=ui/android/java/src/org/chromium/ui/widget/PopupSpecCalculator.java
