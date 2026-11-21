@@ -525,7 +525,7 @@ def verify_bottom_toolbar(root):
         or "Helium: ZeroOmega and similar popups may report their auto-size after first paint." not in popup
         or "Helium: preserve the Android popup tab context without scrubbing." not in popup_context
         or "ExtensionTabUtil::kDontScrubTab" not in popup_context
-        or "Helium: open extension options through the native Android options path." not in mediator
+        or "Helium: open extension options from the extension's declared page URL." not in mediator
     ):
         raise SystemExit(
             f"address bar settings are not available in all modes: {main_settings_path} / {settings_path}"

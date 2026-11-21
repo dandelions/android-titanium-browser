@@ -118,7 +118,7 @@ DESKTOP_TAB_FILES = {
     ),
     "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/"
     "ExtensionsMenuMediator.java": (
-        "Helium: open extension options through the native Android options path."
+        "Helium: open extension options from the extension's declared page URL."
     ),
     "chrome/android/java/src/org/chromium/chrome/browser/toolbar/ToolbarManager.java": (
         "shouldHideDesktopTabStrip()\n"
