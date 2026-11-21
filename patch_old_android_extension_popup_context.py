@@ -42,6 +42,12 @@ OPTIONS_OLD = """        if (mToolbarBridge != null) {
 OPTIONS_LEGACY = """        // Helium: open extension options through the native Android options path.
         mMenuBridge.openOptionsPage(extensionId);
 """
+OPTIONS_EXISTING_URL_CHECK = """        String optionsUrl = mMenuBridge.getOptionsPageUrl(extensionId);
+        if (optionsUrl != null && !optionsUrl.isEmpty()) {
+            openUrlFromMenu(optionsUrl);
+            return;
+        }
+"""
 OPTIONS_NEW = """        // Helium: open extension options from the extension's declared page URL.
         String optionsUrl = mMenuBridge.getOptionsPageUrl(extensionId);
         if (optionsUrl != null && !optionsUrl.isEmpty()) {
@@ -97,6 +103,8 @@ def patch_options_path(path: Path) -> bool:
         return False
     if OPTIONS_OLD in text:
         text = text.replace(OPTIONS_OLD, OPTIONS_NEW, 1)
+    elif OPTIONS_EXISTING_URL_CHECK + OPTIONS_LEGACY in text:
+        text = text.replace(OPTIONS_EXISTING_URL_CHECK + OPTIONS_LEGACY, OPTIONS_NEW, 1)
     elif OPTIONS_LEGACY in text:
         text = text.replace(OPTIONS_LEGACY, OPTIONS_NEW, 1)
     else:

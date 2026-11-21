@@ -57,6 +57,22 @@ class OldAndroidExtensionPopupContextPatchTest(unittest.TestCase):
             self.assertNotIn("mMenuBridge.openOptionsPage(extensionId)", result)
             self.assertFalse(patch.patch_options_path(path))
 
+    def test_migrates_duplicate_options_url_check_from_interrupted_hotfix(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / patch.MENU_MEDIATOR
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                patch.OPTIONS_EXISTING_URL_CHECK + patch.OPTIONS_LEGACY,
+                encoding="utf-8",
+            )
+
+            self.assertTrue(patch.patch_options_path(path))
+            result = path.read_text(encoding="utf-8")
+            self.assertEqual(result.count("String optionsUrl ="), 1)
+            self.assertIn("mMenuBridge.executeAction(extensionId, getCurrentWebContents());", result)
+            self.assertNotIn("mMenuBridge.openOptionsPage(extensionId)", result)
+            self.assertFalse(patch.patch_options_path(path))
+
 
 if __name__ == "__main__":
     unittest.main()
