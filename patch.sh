@@ -3965,8 +3965,12 @@ fi
 
 # Restore Titanium's native store flow in previously patched source trees.
 python3 "$SCRIPT_DIR/patch_titanium_store.py" .
-# Do not default-pin locally installed extensions on Android.
-python3 "$SCRIPT_DIR/patch_toolbar_actions_model.py" .
+# Do not default-pin locally installed extensions on Android. Old-android has a
+# branch-specific ZeroOmega pinning patch applied with the compatibility fixes.
+if [[ "$CURRENT_BRANCH" != old-* ]] && [ "${OLD_VERSION:-0}" != "1" ] && \
+    [ "${OLD_ANDROID:-0}" != "1" ] && [ "${CAR_COMPAT:-0}" != "1" ]; then
+    python3 "$SCRIPT_DIR/patch_toolbar_actions_model.py" .
+fi
 # 严格分支隔离判定：
 # 标准分支（main, lemur）绝对禁止任何 API 28 / 低版本修改，仅允许作用于 old-version / old-android 分支
 is_old_version_branch() {

@@ -4220,8 +4220,12 @@ fi
 
 # Restore Titanium's native store flow in previously patched source trees.
 python3 "$SCRIPT_DIR/patch_titanium_store.py" "$SRC_DIR"
-# Do not default-pin locally installed extensions on Android.
-python3 "$SCRIPT_DIR/patch_toolbar_actions_model.py" "$SRC_DIR"
+# Do not default-pin locally installed extensions on Android. Old-android has a
+# branch-specific ZeroOmega pinning patch applied with the compatibility fixes.
+if [[ "$CURRENT_BRANCH" != old-* ]] && [ "${OLD_VERSION:-0}" != "1" ] && \
+    [ "${OLD_ANDROID:-0}" != "1" ] && [ "${CAR_COMPAT:-0}" != "1" ]; then
+    python3 "$SCRIPT_DIR/patch_toolbar_actions_model.py" "$SRC_DIR"
+fi
 
 CURRENT_BRANCH="$(git -C "$SCRIPT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
 
