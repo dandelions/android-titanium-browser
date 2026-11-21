@@ -71,6 +71,10 @@ SINGLE_PROCESS_FILES = {
         "auto RunProxyResolver(\n"
         "#if !BUILDFLAG(IS_ANDROID)\nauto RunProfileImporter"
     ),
+    "chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedRootUiCoordinator.java": (
+        "// Helium: API 28 car units have no gesture-navigation bottom chin.\n"
+        "return EdgeToEdgeUtils.isEdgelessTopInsetSupported(mActivity);"
+    ),
     "chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/"
     "LocationBarPhone.java": (
         "protected @Nullable ImageButton mBackButton;\n"
@@ -108,6 +112,14 @@ DESKTOP_TAB_FILES = {
     "AddressBarPreference.java": "Helium: address-bar position is independent of the separate bottom bar.",
     "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/"
     "ExtensionActionPopup.java": "Helium: ZeroOmega and similar popups may report their auto-size after first paint.",
+    "chrome/browser/extensions/api/tabs/tabs_api.cc": (
+        "Helium: preserve the Android popup tab context without scrubbing.\n"
+        "ExtensionTabUtil::kDontScrubTab"
+    ),
+    "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/"
+    "ExtensionsMenuMediator.java": (
+        "Helium: open extension options through the native Android options path."
+    ),
     "chrome/android/java/src/org/chromium/chrome/browser/toolbar/ToolbarManager.java": (
         "shouldHideDesktopTabStrip()\n"
         "registerOnSharedPreferenceChangeListener(this)\n"

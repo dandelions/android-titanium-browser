@@ -11,6 +11,23 @@ TABBED_DELEGATE_REL = (
     "chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/"
     "TabbedAppMenuPropertiesDelegate.java"
 )
+TABBED_ROOT_UI_COORDINATOR_REL = (
+    "chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/"
+    "TabbedRootUiCoordinator.java"
+)
+TABBED_ROOT_UI_COORDINATOR_SUPPORTS_OLD = """    protected boolean supportsEdgeToEdge() {
+        // EdgeToEdgeController is needed either for the bottom chin (gesture nav) or for top
+        // edge-to-edge on phones (migrated from TopInsetCoordinator, which supports 3-button nav).
+        return EdgeToEdgeUtils.isEdgeToEdgeBottomChinSupportedByDevice(mActivity)
+                || EdgeToEdgeUtils.isEdgelessTopInsetSupported(mActivity);
+    }
+"""
+TABBED_ROOT_UI_COORDINATOR_SUPPORTS_NEW = """    protected boolean supportsEdgeToEdge() {
+        // Helium: API 28 car units have no gesture-navigation bottom chin. Keep top inset support
+        // available without adding a non-interactive bottom inset below the address bar.
+        return EdgeToEdgeUtils.isEdgelessTopInsetSupported(mActivity);
+    }
+"""
 EXT_TOOLBAR_COORD_IMPL_REL = (
     "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/"
     "ExtensionsToolbarCoordinatorImpl.java"
@@ -265,6 +282,24 @@ def patch_device_form_factor(src_dir: Path) -> None:
 
     path.write_text(text, encoding="utf-8")
     print(f"[patch_ui_mode] Patched {path} with UI mode and crash recovery")
+
+
+def patch_tabbed_root_ui_coordinator(src_dir: Path) -> None:
+    path = src_dir / TABBED_ROOT_UI_COORDINATOR_REL
+    if not path.exists():
+        print(f"[patch_ui_mode] Notice: {path} not found, skipping bottom chin patch.")
+        return
+
+    text = path.read_text(encoding="utf-8")
+    old_supports = TABBED_ROOT_UI_COORDINATOR_SUPPORTS_OLD
+    new_supports = TABBED_ROOT_UI_COORDINATOR_SUPPORTS_NEW
+    marker = "Helium: API 28 car units have no gesture-navigation bottom chin."
+    if marker not in text:
+        if text.count(old_supports) != 1:
+            raise SystemExit(f"TabbedRootUiCoordinator bottom chin anchor not found in {path}")
+        text = text.replace(old_supports, new_supports, 1)
+        path.write_text(text, encoding="utf-8")
+        print(f"Disabled the API 28 bottom chin inset: {path}")
 
 
 def patch_ids(src_dir: Path) -> None:
@@ -704,6 +739,7 @@ def main() -> None:
         patch_device_form_factor(src_dir)
         patch_ids(src_dir)
         patch_chrome_activity(src_dir)
+        patch_tabbed_root_ui_coordinator(src_dir)
         patch_tabbed_app_menu_delegate(src_dir)
         print(f"[patch_ui_mode] Applied UI mode with crash recovery to old-version branch in {src_dir}")
     else:

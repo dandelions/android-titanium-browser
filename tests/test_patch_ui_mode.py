@@ -4,8 +4,10 @@ from pathlib import Path
 
 from patch_ui_mode import (
     DEVICE_FORM_FACTOR_REL,
+    TABBED_ROOT_UI_COORDINATOR_REL,
     clean_ui_mode_from_standard_branches,
     patch_device_form_factor,
+    patch_tabbed_root_ui_coordinator,
 )
 
 
@@ -87,6 +89,31 @@ class PatchUiModeTest(unittest.TestCase):
             clean_ui_mode_from_standard_branches(root)
             cleaned = dff.read_text(encoding="utf-8")
             self.assertEqual(MOCK_DEVICE_FORM_FACTOR, cleaned)
+
+    def test_old_android_disables_bottom_chin_but_keeps_top_inset(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            coordinator = root / TABBED_ROOT_UI_COORDINATOR_REL
+            coordinator.parent.mkdir(parents=True, exist_ok=True)
+            coordinator.write_text(
+                """    protected boolean supportsEdgeToEdge() {
+        // EdgeToEdgeController is needed either for the bottom chin (gesture nav) or for top
+        // edge-to-edge on phones (migrated from TopInsetCoordinator, which supports 3-button nav).
+        return EdgeToEdgeUtils.isEdgeToEdgeBottomChinSupportedByDevice(mActivity)
+                || EdgeToEdgeUtils.isEdgelessTopInsetSupported(mActivity);
+    }
+""",
+                encoding="utf-8",
+            )
+
+            self.assertIsNone(patch_tabbed_root_ui_coordinator(root))
+            patched = coordinator.read_text(encoding="utf-8")
+            self.assertIn("API 28 car units have no gesture-navigation bottom chin", patched)
+            self.assertIn("EdgeToEdgeUtils.isEdgelessTopInsetSupported(mActivity)", patched)
+            self.assertNotIn("isEdgeToEdgeBottomChinSupportedByDevice(mActivity)", patched)
+            before_second = patched
+            self.assertIsNone(patch_tabbed_root_ui_coordinator(root))
+            self.assertEqual(before_second, coordinator.read_text(encoding="utf-8"))
 
     def test_clean_tabbed_delegate_removes_all_ui_mode_items(self):
         from patch_ui_mode import TABBED_DELEGATE_REL

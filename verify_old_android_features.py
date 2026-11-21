@@ -103,6 +103,9 @@ DESKTOP_TAB_MANAGER = Path(
 )
 DESKTOP_TAB_XML = Path("chrome/browser/ui/android/toolbar/java/res/xml/address_bar_settings.xml")
 DESKTOP_TAB_STRINGS = Path("chrome/browser/ui/android/strings/android_chrome_strings.grd")
+TABBED_ROOT_UI_COORDINATOR = Path(
+    "chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedRootUiCoordinator.java"
+)
 ANDROID_FEATURE_LIST = Path("chrome/browser/flags/android/chrome_feature_list.cc")
 ANDROID_JAVA_FEATURE_LIST = Path(
     "chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/"
@@ -450,6 +453,13 @@ def verify_single_process_extensions(root):
 
 
 def verify_bottom_toolbar(root):
+    coordinator_path, coordinator = read(root, TABBED_ROOT_UI_COORDINATOR)
+    if (
+        "Helium: API 28 car units have no gesture-navigation bottom chin." not in coordinator
+        or "EdgeToEdgeUtils.isEdgeToEdgeBottomChinSupportedByDevice(mActivity)" in coordinator
+    ):
+        raise SystemExit(f"API 28 bottom chin inset is still enabled: {coordinator_path}")
+
     location_path, location_bar = read(root, LOCATION_BAR_PHONE)
     if "protected @Nullable ImageButton mBackButton;" not in location_bar:
         raise SystemExit(f"location bar back button is not optional: {location_path}")
@@ -499,12 +509,23 @@ def verify_bottom_toolbar(root):
     manager_path, manager = read(root, DESKTOP_TAB_MANAGER)
     xml_path, xml = read(root, DESKTOP_TAB_XML)
     strings_path, strings = read(root, DESKTOP_TAB_STRINGS)
+    popup_context_path = root / "chrome/browser/extensions/api/tabs/tabs_api.cc"
+    if not popup_context_path.is_file():
+        raise SystemExit(f"Android popup tabs API source is missing: {popup_context_path}")
+    popup_context = popup_context_path.read_text(encoding="utf-8")
+    mediator_path = root / "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsMenuMediator.java"
+    if not mediator_path.is_file():
+        raise SystemExit(f"Android extensions menu mediator is missing: {mediator_path}")
+    mediator = mediator_path.read_text(encoding="utf-8")
     if (
         "return true;" not in main_settings
         or "updateHideDesktopTabsPreference();" not in settings
         or "Helium: desktop mode can use the bottom address bar on old-android." not in position
         or "Helium: address-bar position is independent of the separate bottom bar." not in address_pref
         or "Helium: ZeroOmega and similar popups may report their auto-size after first paint." not in popup
+        or "Helium: preserve the Android popup tab context without scrubbing." not in popup_context
+        or "ExtensionTabUtil::kDontScrubTab" not in popup_context
+        or "Helium: open extension options through the native Android options path." not in mediator
     ):
         raise SystemExit(
             f"address bar settings are not available in all modes: {main_settings_path} / {settings_path}"

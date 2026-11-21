@@ -2473,14 +2473,41 @@ LEMUR_MENU_METHODS = """    // Helium: Lemur Browser-style rounded bottom popup 
 """
 
 
-def _without_ui_mode_methods(methods: str) -> str:
-    methods = re.sub(
+def remove_ui_mode_banner_from_tabbed_delegate(path: Path) -> bool:
+    if not path.is_file():
+        return False
+
+    text = path.read_text(encoding="utf-8")
+    start_marker = "    // Helium: Lemur Browser-style rounded bottom popup menu panel.\n"
+    method_anchor = "    private ListItem buildSettingsItem() {\n"
+    start_pos = text.find(start_marker)
+    if start_pos < 0:
+        return False
+    end_pos = text.find(method_anchor, start_pos)
+    if end_pos < 0:
+        return False
+
+    methods = text[start_pos:end_pos]
+    cleaned_methods = _without_ui_mode_banner(methods)
+    if cleaned_methods == methods:
+        return False
+
+    path.write_text(text[:start_pos] + cleaned_methods + text[end_pos:], encoding="utf-8")
+    return True
+
+
+def _without_ui_mode_banner(methods: str) -> str:
+    return re.sub(
         r"\n        // UI Mode \(移动版 / 桌面版\) switcher banner\n.*?        dialog\.setContentView\(",
         "\n        dialog.setContentView(",
         methods,
         count=1,
         flags=re.DOTALL,
     )
+
+
+def _without_ui_mode_methods(methods: str) -> str:
+    methods = _without_ui_mode_banner(methods)
     methods = re.sub(
         r"\n        // Tool 9: 界面模式\n.*?        scrollView\.post\(",
         "\n        scrollView.post(",
@@ -2612,7 +2639,9 @@ def patch_tabbed_app_menu_delegate(src_dir: Path) -> None:
                 raise SystemExit(f"buildSettingsItem anchor not found after Lemur marker in {path}")
             # 外观菜单 / 界面模式是由其它补丁注入到同一区段的，替换 Lemur 方法块时必须保留，
             # 否则只剩调用点、没有定义，chrome_java 会报 cannot find symbol。
-            preserved = _preserved_menu_methods(text[start_idx:end_idx], LEMUR_MENU_METHODS)
+            existing_methods = text[start_idx:end_idx]
+            preserved = _preserved_menu_methods(existing_methods, LEMUR_MENU_METHODS)
+            preserved = _without_ui_mode_banner(preserved)
             text = text[:start_idx] + LEMUR_MENU_METHODS + preserved + text[end_idx:]
         else:
             last_brace = text.rfind("}")
@@ -3153,14 +3182,19 @@ def main() -> None:
     patch_extensions_menu_mediator(src_dir)
     patch_app_menu_properties_delegate(src_dir)
     patch_app_menu_handler_impl(src_dir)
-    if not is_old_compat_branch(src_dir):
-        global LEMUR_MENU_METHODS, TABBED_IMPORTS
+    global LEMUR_MENU_METHODS, TABBED_IMPORTS
+    if is_old_compat_branch(src_dir):
+        # Keep the mode chooser in the extensions/tools sheet, but remove the duplicate
+        # banner from the primary three-line menu.
+        LEMUR_MENU_METHODS = _without_ui_mode_banner(LEMUR_MENU_METHODS)
+    else:
         LEMUR_MENU_METHODS = _without_ui_mode_methods(LEMUR_MENU_METHODS)
         TABBED_IMPORTS = [
             item for item in TABBED_IMPORTS if "DeviceFormFactor" not in item
         ]
     patch_tabbed_app_menu_delegate(src_dir)
     if is_old_compat_branch(src_dir):
+        remove_ui_mode_banner_from_tabbed_delegate(src_dir / TABBED_DELEGATE_REL)
         try:
             from patch_ui_mode import patch_device_form_factor, patch_ids, patch_chrome_activity
             patch_device_form_factor(src_dir)

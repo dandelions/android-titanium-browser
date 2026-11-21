@@ -16,6 +16,7 @@ from patch_lemur_app_menu import (
     patch_extensions_menu_coordinator,
     patch_extensions_menu_mediator,
     patch_extensions_toolbar_coordinator_impl,
+    remove_ui_mode_banner_from_tabbed_delegate,
     patch_tabbed_app_menu_delegate,
     unpatch_app_menu_handler_impl,
     unpatch_app_menu_properties_delegate,
@@ -180,6 +181,25 @@ class TestPatchLemurAppMenu(unittest.TestCase):
         # 幂等：重复执行不得重复追加。
         patch_tabbed_app_menu_delegate(self.work_dir)
         self.assertEqual(patched, self.tabbed_path.read_text(encoding="utf-8"))
+
+    def test_old_android_removes_primary_menu_ui_mode_banner(self):
+        self.tabbed_path.write_text(
+            """class TabbedAppMenuPropertiesDelegate {
+    // Helium: Lemur Browser-style rounded bottom popup menu panel.
+        // UI Mode (移动版 / 桌面版) switcher banner
+        dialog.setContentView(
+    private ListItem buildSettingsItem() {
+        return null;
+    }
+}
+""",
+            encoding="utf-8",
+        )
+
+        self.assertTrue(remove_ui_mode_banner_from_tabbed_delegate(self.tabbed_path))
+        cleaned = self.tabbed_path.read_text(encoding="utf-8")
+        self.assertNotIn("UI Mode (移动版 / 桌面版) switcher banner", cleaned)
+        self.assertFalse(remove_ui_mode_banner_from_tabbed_delegate(self.tabbed_path))
 
     def test_unpatch_corrupted_extensions_menu_mediator_state(self):
         """Tests that when fallback context menu button is used without declaration, unpatch repairs it."""
