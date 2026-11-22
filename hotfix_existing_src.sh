@@ -1711,7 +1711,7 @@ grep -q 'setBrowserControlsState(BrowserControlsState.SHOWN)' "$DEVTOOLS_ACTIVIT
 grep -q 'public static void activateInspectedPage' "$DEVTOOLS_WINDOW_ANDROID_JAVA" || \
     perl -0pi -e 's~(\n    /\*\*\n     \* Attaches the DevTools frontend web contents to the browser window\.)~\n    public static void activateInspectedPage(WebContents webContents) {\n        DevToolsWindowAndroidJni.get().activateInspectedPage(webContents);\n    }\n$1~' "$DEVTOOLS_WINDOW_ANDROID_JAVA"
 grep -q '^        void activateInspectedPage(WebContents webContents);' "$DEVTOOLS_WINDOW_ANDROID_JAVA" || \
-    sed -i '/void attachToBrowser(WebContents webContents, long nativeBrowserWindowPtr);/i\        void activateInspectedPage(WebContents webContents);\n' "$DEVTOOLS_WINDOW_ANDROID_JAVA"
+    sed -i '/void attachToBrowser(/i\        void activateInspectedPage(WebContents webContents);\n' "$DEVTOOLS_WINDOW_ANDROID_JAVA"
 grep -q 'web_contents_delegate.h' "$DEVTOOLS_WINDOW_ANDROID_CC" || \
     sed -i '/#include "content\/public\/browser\/web_contents.h"/a\#include "content/public/browser/web_contents_delegate.h"' "$DEVTOOLS_WINDOW_ANDROID_CC"
 grep -q 'JNI_DevToolsWindowAndroid_ActivateInspectedPage' "$DEVTOOLS_WINDOW_ANDROID_CC" || \
