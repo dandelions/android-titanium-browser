@@ -3082,6 +3082,7 @@ sed -i '/case blink::kWebNavigationPolicyNewForegroundTab:/,/return WindowOpenDi
 sed -i '/case blink::kWebNavigationPolicyNewWindow:/,/return WindowOpenDisposition::NEW_WINDOW;/ s|return WindowOpenDisposition::NEW_WINDOW;|if (base::CommandLine::ForCurrentProcess()->HasSwitch("open-new-links-in-current-tab"))\n        return WindowOpenDisposition::CURRENT_TAB;\n      return WindowOpenDisposition::NEW_WINDOW;|' content/renderer/render_frame_impl.cc
 sed -i '/case blink::kWebNavigationPolicyNewPopup:/,/return WindowOpenDisposition::NEW_POPUP;/ s|return WindowOpenDisposition::NEW_POPUP;|if (base::CommandLine::ForCurrentProcess()->HasSwitch("open-new-links-in-current-tab"))\n        return WindowOpenDisposition::CURRENT_TAB;\n      return WindowOpenDisposition::NEW_POPUP;|' content/renderer/render_frame_impl.cc
 fi
+if [ -f ui/base/mojom/window_open_disposition_mojom_traits.h ]; then
 grep -q '#include "base/command_line.h"' ui/base/mojom/window_open_disposition_mojom_traits.h || sed -i '0,/^#include /s|^#include |#include "base/command_line.h"\n#include |' ui/base/mojom/window_open_disposition_mojom_traits.h
 if ! grep -q 'open-new-links-in-current-tab' ui/base/mojom/window_open_disposition_mojom_traits.h; then
 sed -i '/case WindowOpenDisposition::NEW_FOREGROUND_TAB:/,/return ui::mojom::WindowOpenDisposition::NEW_FOREGROUND_TAB;/ s|return ui::mojom::WindowOpenDisposition::NEW_FOREGROUND_TAB;|if (base::CommandLine::ForCurrentProcess()->HasSwitch("open-new-links-in-current-tab"))\n          return ui::mojom::WindowOpenDisposition::CURRENT_TAB;\n        return ui::mojom::WindowOpenDisposition::NEW_FOREGROUND_TAB;|' ui/base/mojom/window_open_disposition_mojom_traits.h
@@ -3096,6 +3097,7 @@ sed -i '/case ui::mojom::WindowOpenDisposition::NEW_FOREGROUND_TAB:/,/return tru
 sed -i '/case ui::mojom::WindowOpenDisposition::NEW_BACKGROUND_TAB:/,/return true;/ s|return true;|if (base::CommandLine::ForCurrentProcess()->HasSwitch("open-new-links-in-current-tab"))\n          *out = WindowOpenDisposition::CURRENT_TAB;\n        return true;|' ui/base/mojom/window_open_disposition_mojom_traits.h
 sed -i '/case ui::mojom::WindowOpenDisposition::NEW_POPUP:/,/return true;/ s|return true;|if (base::CommandLine::ForCurrentProcess()->HasSwitch("open-new-links-in-current-tab"))\n          *out = WindowOpenDisposition::CURRENT_TAB;\n        return true;|' ui/base/mojom/window_open_disposition_mojom_traits.h
 sed -i '/case ui::mojom::WindowOpenDisposition::NEW_WINDOW:/,/return true;/ s|return true;|if (base::CommandLine::ForCurrentProcess()->HasSwitch("open-new-links-in-current-tab"))\n          *out = WindowOpenDisposition::CURRENT_TAB;\n        return true;|' ui/base/mojom/window_open_disposition_mojom_traits.h
+fi
 fi
 grep -q '#include "base/command_line.h"' content/browser/web_contents/web_contents_impl.cc || sed -i '0,/^#include /s|^#include |#include "base/command_line.h"\n#include |' content/browser/web_contents/web_contents_impl.cc
 if ! grep -q 'Helium: force new-tab OpenURL dispositions into current tab' content/browser/web_contents/web_contents_impl.cc; then
