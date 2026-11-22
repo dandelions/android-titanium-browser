@@ -1256,6 +1256,58 @@ perl -0pi -e 's|\@Nullable Bitmap getActionIcon\(JniPtr<NativeExtensionsMenuDele
 perl -0pi -e 's|void executeAction\(\n                JniPtr<NativeExtensionsMenuDelegateAndroid> self,\n                \@JniType\("std::string"\) String extensionId\);|void executeAction(\n                JniPtr<NativeExtensionsMenuDelegateAndroid> self,\n                \@JniType("std::string") String extensionId,\n                \@Nullable \@JniType("content::WebContents*") WebContents webContents);|' "$BRIDGE"
 perl -0pi -e 's|List<ExtensionsMenuTypes\.MenuEntryState> getMenuEntries\(\n                JniPtr<NativeExtensionsMenuDelegateAndroid> self\);|List<ExtensionsMenuTypes.MenuEntryState> getMenuEntries(\n                JniPtr<NativeExtensionsMenuDelegateAndroid> self,\n                \@Nullable \@JniType("content::WebContents*") WebContents webContents);|' "$BRIDGE"
 perl -0pi -e 's|ExtensionsMenuTypes\.MenuEntryState getMenuEntry\(\n                JniPtr<NativeExtensionsMenuDelegateAndroid> self, int actionIndex\);|ExtensionsMenuTypes.MenuEntryState getMenuEntry(\n                JniPtr<NativeExtensionsMenuDelegateAndroid> self,\n                int actionIndex,\n                \@Nullable \@JniType("content::WebContents*") WebContents webContents);|' "$BRIDGE"
+python3 - "$BRIDGE" <<'PYCODE'
+from pathlib import Path
+import re
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+original = text
+
+text = re.sub(
+    r"@Nullable Bitmap getActionIcon\(\s*JniPtr<NativeExtensionsMenuDelegateAndroid> self,\s*int actionIndex\);",
+    '@Nullable Bitmap getActionIcon(\n'
+    '                JniPtr<NativeExtensionsMenuDelegateAndroid> self,\n'
+    '                int actionIndex,\n'
+    '                @Nullable @JniType("content::WebContents*") WebContents webContents);',
+    text,
+    count=1,
+    flags=re.S,
+)
+text = re.sub(
+    r"public @Nullable Bitmap getActionIcon\(int actionIndex\) \{\s*"
+    r"return ExtensionsMenuBridgeJni\.get\(\)\.getActionIcon\(mNative, actionIndex\);\s*\}",
+    "public @Nullable Bitmap getActionIcon(int actionIndex) {\n"
+    "        return getActionIcon(actionIndex, null);\n"
+    "    }",
+    text,
+    count=1,
+    flags=re.S,
+)
+
+overloads = """    public ExtensionsMenuTypes.MenuEntryState getMenuEntry(
+            int actionIndex, @Nullable WebContents webContents) {
+        return ExtensionsMenuBridgeJni.get().getMenuEntry(mNative, actionIndex, webContents);
+    }
+
+    public @Nullable Bitmap getActionIcon(int actionIndex, @Nullable WebContents webContents) {
+        return ExtensionsMenuBridgeJni.get().getActionIcon(mNative, actionIndex, webContents);
+    }
+
+    public void executeAction(String extensionId, @Nullable WebContents webContents) {
+        ExtensionsMenuBridgeJni.get().executeAction(mNative, extensionId, webContents);
+    }
+
+"""
+anchor = "    public List<ExtensionsMenuTypes.MenuEntryState> getMenuEntries() {"
+marker = "getActionIcon(int actionIndex, @Nullable WebContents webContents)"
+if marker not in text and anchor in text:
+    text = text.replace(anchor, overloads + anchor, 1)
+
+if text != original:
+    path.write_text(text)
+PYCODE
 
 grep -q 'org.chromium.build.annotations.Nullable' "$MENU_MEDIATOR" || sed -i '/import org.chromium.build.annotations.NullMarked;/a\import org.chromium.build.annotations.Nullable;' "$MENU_MEDIATOR"
 # Clean stale getCurrentWebContents helpers before inserting the morning-version helper.
