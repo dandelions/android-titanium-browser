@@ -1995,10 +1995,15 @@ if "HeliumAndroidCreateTabObjectIncognitoFix" not in text:
         raise SystemExit(f"CreateTabObject tab_list pattern not found in {path}")
     text = text.replace(old_create, new_create, 1)
 
-    old_active = """  bool is_active = tab_interface && tab_interface->IsActivated();
+    old_active_candidates = (
+        """  bool is_active = tab_interface && tab_interface->IsActivated();
   tab_object.active = is_active;
-  tab_object.selected = is_active;"""
-    new_active = """  bool is_active = tab_interface && tab_interface->IsActivated();
+  tab_object.selected = is_active;""",
+        """  bool is_active = tab_interface ? tab_interface->IsActivated() : true;
+  tab_object.active = is_active;
+  tab_object.selected = is_active;""",
+    )
+    new_active = """  bool is_active = tab_interface ? tab_interface->IsActivated() : true;
 #if BUILDFLAG(IS_ANDROID)
   for (TabModel* model : TabModelList::models()) {
     if (model == tab_list) {
@@ -2009,9 +2014,12 @@ if "HeliumAndroidCreateTabObjectIncognitoFix" not in text:
 #endif
   tab_object.active = is_active;
   tab_object.selected = is_active;"""
-    if old_active not in text:
+    for old_active in old_active_candidates:
+        if old_active in text:
+            text = text.replace(old_active, new_active, 1)
+            break
+    else:
         raise SystemExit(f"CreateTabObject is_active pattern not found in {path}")
-    text = text.replace(old_active, new_active, 1)
 
 if "HeliumAndroidGetTabListInterfaceIncognitoFix" not in text:
     old_gtli = """bool ExtensionTabUtil::GetTabListInterface(content::WebContents& web_contents,
