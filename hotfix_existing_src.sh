@@ -2014,7 +2014,7 @@ fi
 grep -q '#include "base/command_line.h"' "$NAV_POLICY" || \
     sed -i '0,/^#include /s|^#include |#include "base/command_line.h"\n#include |' "$NAV_POLICY"
 if ! grep -q 'open-new-links-in-current-tab' "$NAV_POLICY"; then
-    if grep -q 'kNewForegroundTab' ui/base/window_open_disposition.h 2>/dev/null; then
+    if grep -q 'kNewForegroundTab' ui/base/mojom/window_open_disposition.mojom 2>/dev/null; then
     sed -i '/case blink::kWebNavigationPolicyNewBackgroundTab:/,/return WindowOpenDisposition::kNewBackgroundTab;/ s|return WindowOpenDisposition::kNewBackgroundTab;|if (base::CommandLine::ForCurrentProcess()->HasSwitch("open-new-links-in-current-tab"))\n        return WindowOpenDisposition::kCurrentTab;\n      return WindowOpenDisposition::kNewBackgroundTab;|' "$NAV_POLICY"
     sed -i '/case blink::kWebNavigationPolicyNewForegroundTab:/,/return WindowOpenDisposition::kNewForegroundTab;/ s|return WindowOpenDisposition::kNewForegroundTab;|if (base::CommandLine::ForCurrentProcess()->HasSwitch("open-new-links-in-current-tab"))\n        return WindowOpenDisposition::kCurrentTab;\n      return WindowOpenDisposition::kNewForegroundTab;|' "$NAV_POLICY"
     sed -i '/case blink::kWebNavigationPolicyNewWindow:/,/return WindowOpenDisposition::kNewWindow;/ s|return WindowOpenDisposition::kNewWindow;|if (base::CommandLine::ForCurrentProcess()->HasSwitch("open-new-links-in-current-tab"))\n        return WindowOpenDisposition::kCurrentTab;\n      return WindowOpenDisposition::kNewWindow;|' "$NAV_POLICY"
@@ -2062,7 +2062,7 @@ if ! grep -q 'Helium: force new-tab OpenURL dispositions into current tab' "$WEB
 
 }' "$WEB_CONTENTS_IMPL"
 fi
-if grep -q 'kNewForegroundTab' ui/base/window_open_disposition.h 2>/dev/null; then
+if grep -q 'kNewForegroundTab' ui/base/mojom/window_open_disposition.mojom 2>/dev/null; then
     sed -i 's/WindowOpenDisposition::NEW_FOREGROUND_TAB/WindowOpenDisposition::kNewForegroundTab/g; s/WindowOpenDisposition::NEW_BACKGROUND_TAB/WindowOpenDisposition::kNewBackgroundTab/g; s/WindowOpenDisposition::NEW_POPUP/WindowOpenDisposition::kNewPopup/g; s/WindowOpenDisposition::NEW_WINDOW/WindowOpenDisposition::kNewWindow/g; s/WindowOpenDisposition::CURRENT_TAB/WindowOpenDisposition::kCurrentTab/g' "$WEB_CONTENTS_IMPL"
 fi
 
