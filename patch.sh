@@ -3298,12 +3298,15 @@ block = '''    private static boolean shouldReplaceUrlForRestore(@Nullable Strin
         return shouldReplaceUrlForRestore(url) ? UrlConstants.NTP_URL : assumeNonNull(url);
     }
 '''
-if block in text:
-    raise SystemExit(0)
-anchor = "    private static boolean sDeferredStartupComplete;\n"
-if anchor not in text:
-    raise SystemExit(f"TabPersistentStoreImpl anchor not found in {path}")
-path.write_text(text.replace(anchor, anchor + "\n" + block, 1))
+occurrences = text.count(block)
+if occurrences > 1:
+    text = text.replace(block, "", occurrences - 1)
+elif occurrences == 0:
+    anchor = "    private static boolean sDeferredStartupComplete;\n"
+    if anchor not in text:
+        raise SystemExit(f"TabPersistentStoreImpl anchor not found in {path}")
+    text = text.replace(anchor, anchor + "\n" + block, 1)
+path.write_text(text)
 PYCODE
 sed -i '/boolean isIncognito = isIncognitoTabBeingRestored(tabToRestore, tabState);/a\
         if (shouldReplaceUrlForRestore(tabToRestore.url)) {\
