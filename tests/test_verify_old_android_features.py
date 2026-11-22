@@ -71,6 +71,16 @@ SINGLE_PROCESS_FILES = {
         "auto RunProxyResolver(\n"
         "#if !BUILDFLAG(IS_ANDROID)\nauto RunProfileImporter"
     ),
+    "extensions/browser/process_map.cc": (
+        "Helium: single-process builds render extension pages in the browser\n"
+        "  process, which ProcessMap cannot track, so accept privileged extension\n"
+        "  contexts there instead of rejecting every extension API call.\n"
+        "  if (content::RenderProcessHost::run_renderer_in_process() && extension &&\n"
+        "      (context_type == mojom::ContextType::kPrivilegedExtension ||\n"
+        "       context_type == mojom::ContextType::kOffscreenExtension)) {\n"
+        "    return true;\n"
+        "  }"
+    ),
     "chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedRootUiCoordinator.java": (
         "// Helium: API 28 car units have no gesture-navigation bottom chin.\n"
         "return EdgeToEdgeUtils.isEdgelessTopInsetSupported(mActivity);"

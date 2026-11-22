@@ -70,6 +70,7 @@ SYSTEM_NETWORK_CONTEXT_MANAGER = Path(
 PROXY_RESOLVER_FACTORY = Path("chrome/browser/net/chrome_mojo_proxy_resolver_factory.cc")
 UTILITY_PROCESS_HOST = Path("content/browser/service_host/utility_process_host.cc")
 UTILITY_SERVICES = Path("chrome/utility/services.cc")
+PROCESS_MAP = Path("extensions/browser/process_map.cc")
 LOCATION_BAR_PHONE = Path(
     "chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/"
     "LocationBarPhone.java"
@@ -443,6 +444,16 @@ def verify_single_process_extensions(root):
         raise SystemExit(f"Android PAC utility service registration is missing: {services_path}")
     if "services.Add(RunProxyResolver);" not in services:
         raise SystemExit(f"Android PAC utility resolver is not registered: {services_path}")
+
+    process_map_path, process_map = read(root, PROCESS_MAP)
+    if "Helium: single-process builds render extension pages in the browser" not in process_map:
+        raise SystemExit(
+            f"single-process extension context allowance is missing: {process_map_path}"
+        )
+    if "content::RenderProcessHost::run_renderer_in_process() && extension" not in process_map:
+        raise SystemExit(
+            f"single-process extension context guard is missing: {process_map_path}"
+        )
     if "Helium: expose the PAC resolver factory to the Android utility process." not in services:
         raise SystemExit(f"Android PAC utility resolver implementation is missing: {services_path}")
     resolver_guard = "#if !BUILDFLAG(IS_ANDROID)\nauto RunProxyResolver"
