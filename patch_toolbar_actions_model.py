@@ -17,6 +17,11 @@ OLD_WEBSTORE = """  const bool is_pinned_by_feature =
       !is_enterprise_extension && !is_installed_from_sync &&
       is_feature_enabled && is_toggle_on;
 """
+OLD_V158 = """  const bool is_pinned_by_feature =
+      pin_mode == extensions::ManagedToolbarPinMode::kNotSet &&
+      !is_enterprise_extension && !is_installed_from_sync &&
+      !is_installed_by_default && is_feature_enabled && is_toggle_on;
+"""
 NEW = "  const bool is_pinned_by_feature = false;\n"
 
 
@@ -28,6 +33,9 @@ def patch_model(path: Path) -> bool:
         return False
     if OLD_WEBSTORE in text:
         path.write_text(text.replace(OLD_WEBSTORE, NEW, 1), encoding="utf-8")
+        return True
+    if OLD_V158 in text:
+        path.write_text(text.replace(OLD_V158, NEW, 1), encoding="utf-8")
         return True
     if OLD_VANILLA in text:
         path.write_text(text.replace(OLD_VANILLA, NEW, 1), encoding="utf-8")
