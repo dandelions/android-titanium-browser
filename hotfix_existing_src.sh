@@ -1993,9 +1993,12 @@ import sys
 
 path = Path(sys.argv[1])
 decl = "        void activateInspectedPage(WebContents webContents);\n"
-lines = path.read_text().splitlines(keepends=True)
 
-start = next((i for i, l in enumerate(lines) if "interface Natives {" in l), None)
+# Phase 1: drop every existing declaration.
+lines = [line for line in path.read_text().splitlines(keepends=True) if line != decl]
+
+# Phase 2: insert exactly one declaration inside the Natives interface.
+start = next((i for i, line in enumerate(lines) if "interface Natives {" in line), None)
 if start is None:
     raise SystemExit(f"Natives interface not found in {path}")
 depth = 0
@@ -2008,21 +2011,15 @@ for i in range(start, len(lines)):
 if end is None:
     raise SystemExit(f"Natives interface end not found in {path}")
 
-body = [l for l in lines[start + 1:end] if l != decl]
-insert_at = next((i for i, l in enumerate(body) if "void attachToBrowser(" in l), None)
+body = lines[start + 1:end]
+insert_at = next((i for i, line in enumerate(body) if "void attachToBrowser(" in line), None)
 if insert_at is None:
-    body.append(decl)
+    body.append(decl + "\n")
 else:
-    body.insert(insert_at, decl + "\\n")
+    body.insert(insert_at, decl + "\n")
 
 lines[start + 1:end] = body
-# Remove any remaining copies outside the Natives interface.
-outside = []
-for index, line in enumerate(lines):
-    if line == decl and not (start < index < end):
-        continue
-    outside.append(line)
-path.write_text("".join(outside))
+path.write_text("".join(lines))
 PYCODE "$DEVTOOLS_WINDOW_ANDROID_JAVA"
 grep -q 'web_contents_delegate.h' "$DEVTOOLS_WINDOW_ANDROID_CC" || \
     sed -i '/#include "content\/public\/browser\/web_contents.h"/a\#include "content/public/browser/web_contents_delegate.h"' "$DEVTOOLS_WINDOW_ANDROID_CC"

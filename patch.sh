@@ -124,9 +124,12 @@ import sys
 
 path = Path(sys.argv[1])
 decl = "        void activateInspectedPage(WebContents webContents);\n"
-lines = path.read_text().splitlines(keepends=True)
 
-start = next((i for i, l in enumerate(lines) if "interface Natives {" in l), None)
+# Phase 1: drop every existing declaration.
+lines = [line for line in path.read_text().splitlines(keepends=True) if line != decl]
+
+# Phase 2: insert exactly one declaration inside the Natives interface.
+start = next((i for i, line in enumerate(lines) if "interface Natives {" in line), None)
 if start is None:
     raise SystemExit(f"Natives interface not found in {path}")
 depth = 0
@@ -139,21 +142,15 @@ for i in range(start, len(lines)):
 if end is None:
     raise SystemExit(f"Natives interface end not found in {path}")
 
-body = [l for l in lines[start + 1:end] if l != decl]
-insert_at = next((i for i, l in enumerate(body) if "void attachToBrowser(" in l), None)
+body = lines[start + 1:end]
+insert_at = next((i for i, line in enumerate(body) if "void attachToBrowser(" in line), None)
 if insert_at is None:
-    body.append(decl)
+    body.append(decl + "\n")
 else:
-    body.insert(insert_at, decl + "\\n")
+    body.insert(insert_at, decl + "\n")
 
 lines[start + 1:end] = body
-# Remove any remaining copies outside the Natives interface.
-outside = []
-for index, line in enumerate(lines):
-    if line == decl and not (start < index < end):
-        continue
-    outside.append(line)
-path.write_text("".join(outside))
+path.write_text("".join(lines))
 PYCODE chrome/browser/devtools/android/java/src/org/chromium/chrome/browser/devtools/DevToolsWindowAndroid.java
 grep -q 'web_contents_delegate.h' chrome/browser/devtools/android/devtools_window_android.cc || sed -i '/#include "content\/public\/browser\/web_contents.h"/a\#include "content/public/browser/web_contents_delegate.h"' chrome/browser/devtools/android/devtools_window_android.cc
 grep -q 'JNI_DevToolsWindowAndroid_ActivateInspectedPage' chrome/browser/devtools/android/devtools_window_android.cc || perl -0pi -e 's~(\nstatic void JNI_DevToolsWindowAndroid_AttachToBrowser\()~\nstatic void JNI_DevToolsWindowAndroid_ActivateInspectedPage(\n    JNIEnv* env,\n    const jni_zero::JavaRef<jobject>& java_web_contents) {\n#if BUILDFLAG(ENABLE_DEVTOOLS_FRONTEND)\n  content::WebContents* web_contents =\n      content::WebContents::FromJavaWebContents(java_web_contents);\n  DevToolsWindow* window = DevToolsWindow::AsDevToolsWindow(web_contents);\n  if (!window) {\n    return;\n  }\n  content::WebContents* inspected_web_contents =\n      window->GetInspectedWebContents();\n  if (!inspected_web_contents || !inspected_web_contents->GetDelegate()) {\n    return;\n  }\n  inspected_web_contents->GetDelegate()->ActivateContents(\n      inspected_web_contents);\n  inspected_web_contents->Focus();\n#endif\n}\n$1~' chrome/browser/devtools/android/devtools_window_android.cc
