@@ -3080,10 +3080,17 @@ sed -i '/#include "chrome\/browser\/unexpire_flags_gen.inc"/a\
 fi
 grep -q '#include "base/command_line.h"' content/renderer/render_frame_impl.cc || sed -i '0,/^#include /s|^#include |#include "base/command_line.h"\n#include |' content/renderer/render_frame_impl.cc
 if ! grep -q 'open-new-links-in-current-tab' content/renderer/render_frame_impl.cc; then
+if grep -q 'kNewForegroundTab' ui/base/window_open_disposition.h 2>/dev/null; then
+sed -i '/case blink::kWebNavigationPolicyNewBackgroundTab:/,/return WindowOpenDisposition::kNewBackgroundTab;/ s|return WindowOpenDisposition::kNewBackgroundTab;|if (base::CommandLine::ForCurrentProcess()->HasSwitch("open-new-links-in-current-tab"))\n        return WindowOpenDisposition::kCurrentTab;\n      return WindowOpenDisposition::kNewBackgroundTab;|' content/renderer/render_frame_impl.cc
+sed -i '/case blink::kWebNavigationPolicyNewForegroundTab:/,/return WindowOpenDisposition::kNewForegroundTab;/ s|return WindowOpenDisposition::kNewForegroundTab;|if (base::CommandLine::ForCurrentProcess()->HasSwitch("open-new-links-in-current-tab"))\n        return WindowOpenDisposition::kCurrentTab;\n      return WindowOpenDisposition::kNewForegroundTab;|' content/renderer/render_frame_impl.cc
+sed -i '/case blink::kWebNavigationPolicyNewWindow:/,/return WindowOpenDisposition::kNewWindow;/ s|return WindowOpenDisposition::kNewWindow;|if (base::CommandLine::ForCurrentProcess()->HasSwitch("open-new-links-in-current-tab"))\n        return WindowOpenDisposition::kCurrentTab;\n      return WindowOpenDisposition::kNewWindow;|' content/renderer/render_frame_impl.cc
+sed -i '/case blink::kWebNavigationPolicyNewPopup:/,/return WindowOpenDisposition::kNewPopup;/ s|return WindowOpenDisposition::kNewPopup;|if (base::CommandLine::ForCurrentProcess()->HasSwitch("open-new-links-in-current-tab"))\n        return WindowOpenDisposition::kCurrentTab;\n      return WindowOpenDisposition::kNewPopup;|' content/renderer/render_frame_impl.cc
+else
 sed -i '/case blink::kWebNavigationPolicyNewBackgroundTab:/,/return WindowOpenDisposition::NEW_BACKGROUND_TAB;/ s|return WindowOpenDisposition::NEW_BACKGROUND_TAB;|if (base::CommandLine::ForCurrentProcess()->HasSwitch("open-new-links-in-current-tab"))\n        return WindowOpenDisposition::CURRENT_TAB;\n      return WindowOpenDisposition::NEW_BACKGROUND_TAB;|' content/renderer/render_frame_impl.cc
 sed -i '/case blink::kWebNavigationPolicyNewForegroundTab:/,/return WindowOpenDisposition::NEW_FOREGROUND_TAB;/ s|return WindowOpenDisposition::NEW_FOREGROUND_TAB;|if (base::CommandLine::ForCurrentProcess()->HasSwitch("open-new-links-in-current-tab"))\n        return WindowOpenDisposition::CURRENT_TAB;\n      return WindowOpenDisposition::NEW_FOREGROUND_TAB;|' content/renderer/render_frame_impl.cc
 sed -i '/case blink::kWebNavigationPolicyNewWindow:/,/return WindowOpenDisposition::NEW_WINDOW;/ s|return WindowOpenDisposition::NEW_WINDOW;|if (base::CommandLine::ForCurrentProcess()->HasSwitch("open-new-links-in-current-tab"))\n        return WindowOpenDisposition::CURRENT_TAB;\n      return WindowOpenDisposition::NEW_WINDOW;|' content/renderer/render_frame_impl.cc
 sed -i '/case blink::kWebNavigationPolicyNewPopup:/,/return WindowOpenDisposition::NEW_POPUP;/ s|return WindowOpenDisposition::NEW_POPUP;|if (base::CommandLine::ForCurrentProcess()->HasSwitch("open-new-links-in-current-tab"))\n        return WindowOpenDisposition::CURRENT_TAB;\n      return WindowOpenDisposition::NEW_POPUP;|' content/renderer/render_frame_impl.cc
+fi
 fi
 if [ -f ui/base/mojom/window_open_disposition_mojom_traits.h ]; then
 grep -q '#include "base/command_line.h"' ui/base/mojom/window_open_disposition_mojom_traits.h || sed -i '0,/^#include /s|^#include |#include "base/command_line.h"\n#include |' ui/base/mojom/window_open_disposition_mojom_traits.h
@@ -3118,6 +3125,9 @@ sed -i '/WebContents\* WebContentsImpl::OpenURL(/,/^#if DCHECK_IS_ON()/ { /^#if 
   }\
 
 }' content/browser/web_contents/web_contents_impl.cc
+fi
+if grep -q 'kNewForegroundTab' ui/base/window_open_disposition.h 2>/dev/null; then
+sed -i 's/WindowOpenDisposition::NEW_FOREGROUND_TAB/WindowOpenDisposition::kNewForegroundTab/g; s/WindowOpenDisposition::NEW_BACKGROUND_TAB/WindowOpenDisposition::kNewBackgroundTab/g; s/WindowOpenDisposition::NEW_POPUP/WindowOpenDisposition::kNewPopup/g; s/WindowOpenDisposition::NEW_WINDOW/WindowOpenDisposition::kNewWindow/g; s/WindowOpenDisposition::CURRENT_TAB/WindowOpenDisposition::kCurrentTab/g' content/browser/web_contents/web_contents_impl.cc
 fi
 
 # crbug.com/helium: disable tab close undo snackbar
