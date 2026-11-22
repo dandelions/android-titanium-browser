@@ -452,7 +452,32 @@ perl -0pi -e 's|std::make_unique<ExtensionActionDelegateAndroid>\(browser_, exte
 sed -i 's|intent.putExtra(DevToolsActivity.WEB_CONTENTS_KEY, webContents);|&intent.putExtra("org.chromium.chrome.browser.devtools.DevTools.Incognito", webContents.isIncognito());|' chrome/android/java/src/org/chromium/chrome/browser/devtools/DevToolsActivity.java
 sed -i 's|TabModel tabModel = getTabModelSelector().getModel(false);|TabModel tabModel = getTabModelSelector().getModel(getIntentDataProvider().isOffTheRecord());|' chrome/android/java/src/org/chromium/chrome/browser/devtools/DevToolsActivity.java
 sed -i 's|import org.chromium.chrome.browser.flags.ActivityType;|&\nimport org.chromium.chrome.browser.flags.CustomTabProfileType;|' chrome/android/java/src/org/chromium/chrome/browser/devtools/DevToolsIntentDataProvider.java
-sed -i '/^public class DevToolsIntentDataProvider extends BrowserServicesIntentDataProvider {$/a\ @Override public @CustomTabProfileType int getCustomTabMode() { return mIntent.getBooleanExtra("org.chromium.chrome.browser.devtools.DevTools.Incognito", false) ? CustomTabProfileType.INCOGNITO : CustomTabProfileType.REGULAR; }' chrome/android/java/src/org/chromium/chrome/browser/devtools/DevToolsIntentDataProvider.java
+python3 - chrome/android/java/src/org/chromium/chrome/browser/devtools/DevToolsIntentDataProvider.java <<'PYCODE'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+line = ' @Override public @CustomTabProfileType int getCustomTabMode() { return mIntent.getBooleanExtra("org.chromium.chrome.browser.devtools.DevTools.Incognito", false) ? CustomTabProfileType.INCOGNITO : CustomTabProfileType.REGULAR; }\n'
+text = path.read_text()
+lines = text.splitlines(keepends=True)
+kept = []
+seen = False
+for item in lines:
+    if item == line:
+        if seen:
+            continue
+        seen = True
+    kept.append(item)
+if not seen:
+    anchor = "public class DevToolsIntentDataProvider extends BrowserServicesIntentDataProvider {\n"
+    out = []
+    for item in kept:
+        out.append(item)
+        if item == anchor:
+            out.append(line)
+    kept = out
+path.write_text("".join(kept))
+PYCODE
 sed -i 's|case CustomTabProfileType.INCOGNITO:|& if (getIntentDataProvider().getActivityType() == ActivityType.DEV_TOOLS) return null;|' chrome/android/java/src/org/chromium/chrome/browser/customtabs/BaseCustomTabActivity.java
 
 # dev: viewport
@@ -3254,20 +3279,32 @@ grep -q 'private static boolean shouldDisableUndoSnackbar' chrome/android/java/s
 # crbug.com/helium: startup blank-screen recovery guards
 sed -i '/import org.chromium.components.embedder_support.util.UrlUtilities;/i\
 import org.chromium.components.embedder_support.util.UrlConstants;' chrome/android/java/src/org/chromium/chrome/browser/tabmodel/TabPersistentStoreImpl.java
-sed -i '/private static boolean sDeferredStartupComplete;/a\
-\
-    private static boolean shouldReplaceUrlForRestore(@Nullable String url) {\
-        return TextUtils.isEmpty(url)\
-                || url.startsWith("chrome-extension://")\
-                || url.equals("about:blank")\
-                || url.startsWith("chrome://newtab")\
-                || url.startsWith("chrome://new-tab-page")\
-                || url.startsWith("chrome-native://newtab");\
-    }\
-\
-    private static String safeUrlForRestore(@Nullable String url) {\
-        return shouldReplaceUrlForRestore(url) ? UrlConstants.NTP_URL : assumeNonNull(url);\
-    }' chrome/android/java/src/org/chromium/chrome/browser/tabmodel/TabPersistentStoreImpl.java
+python3 - chrome/android/java/src/org/chromium/chrome/browser/tabmodel/TabPersistentStoreImpl.java <<'PYCODE'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+block = '''    private static boolean shouldReplaceUrlForRestore(@Nullable String url) {
+        return TextUtils.isEmpty(url)
+                || url.startsWith("chrome-extension://")
+                || url.equals("about:blank")
+                || url.startsWith("chrome://newtab")
+                || url.startsWith("chrome://new-tab-page")
+                || url.startsWith("chrome-native://newtab");
+    }
+
+    private static String safeUrlForRestore(@Nullable String url) {
+        return shouldReplaceUrlForRestore(url) ? UrlConstants.NTP_URL : assumeNonNull(url);
+    }
+'''
+if block in text:
+    raise SystemExit(0)
+anchor = "    private static boolean sDeferredStartupComplete;\n"
+if anchor not in text:
+    raise SystemExit(f"TabPersistentStoreImpl anchor not found in {path}")
+path.write_text(text.replace(anchor, anchor + "\n" + block, 1))
+PYCODE
 sed -i '/boolean isIncognito = isIncognitoTabBeingRestored(tabToRestore, tabState);/a\
         if (shouldReplaceUrlForRestore(tabToRestore.url)) {\
             tabState = null;\
