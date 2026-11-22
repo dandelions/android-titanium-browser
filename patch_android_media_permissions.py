@@ -380,11 +380,45 @@ def patch_file_enum_worker_task(src_dir: str) -> None:
         String whereClause = additionalClause;
         String[] whereArgs = getCameraDirectory().isEmpty() ? new String[0] : new String[0];"""
 
-    if old_query_block not in content:
+    if old_query_block in content:
+        content = content.replace(old_query_block, new_query_block, 1)
+    elif "private static final String WHERE_DIRECTORIES =" in content:
+        content = content.replace(
+            "    private static final String WHERE_DIRECTORIES =\n"
+            "            MediaStore.Files.FileColumns.RELATIVE_PATH\n"
+            "                    + \" LIKE ? OR \"\n"
+            "                    + MediaStore.Files.FileColumns.RELATIVE_PATH\n"
+            "                    + \" LIKE ? OR \"\n"
+            "                    + MediaStore.Files.FileColumns.RELATIVE_PATH\n"
+            "                    + \" LIKE ? OR \"\n"
+            "                    + MediaStore.Files.FileColumns.RELATIVE_PATH\n"
+            "                    + \" LIKE ? OR \"\n"
+            "                    + MediaStore.Files.FileColumns.RELATIVE_PATH\n"
+            "                    + \" LIKE ? OR \"\n"
+            "                    + MediaStore.Files.FileColumns.RELATIVE_PATH\n"
+            "                    + \" LIKE ?\";",
+            "    // Helium: enumerate all media directories; media type remains the only filter.\n"
+            "    private static final String WHERE_DIRECTORIES = \"1\";",
+            1,
+        )
+        content = content.replace(
+            "        int count = 6 + (mIncludeImages ? 1 : 0) + (mIncludeVideos ? 1 : 0);\n"
+            "        int index = 0;\n"
+            "        String[] whereArgs = new String[count];\n"
+            "        whereArgs[index++] = cameraDir + \"%\";\n"
+            "        whereArgs[index++] = picturesDir + \"%\";\n"
+            "        whereArgs[index++] = moviesDir + \"%\";\n"
+            "        whereArgs[index++] = downloadsDir + \"%\";\n"
+            "        whereArgs[index++] = restoredDir + \"%\";\n"
+            "        whereArgs[index++] = screenshotsDir + \"%\";\n",
+            "        int count = (mIncludeImages ? 1 : 0) + (mIncludeVideos ? 1 : 0);\n"
+            "        int index = 0;\n"
+            "        String[] whereArgs = new String[count];\n",
+            1,
+        )
+    else:
         print("Error: query block anchor not found in FileEnumWorkerTask.java", file=sys.stderr)
         sys.exit(1)
-
-    content = content.replace(old_query_block, new_query_block, 1)
     with open(task_path, "w", encoding="utf-8") as f:
         f.write(content)
     print("Patched FileEnumWorkerTask.java to enumerate all device media directories")
