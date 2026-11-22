@@ -128,7 +128,73 @@ grep -q 'addInspectedPageSwitcher(WebContents devToolsWebContents)' chrome/andro
 grep -q 'addInspectedPageSwitcher(webContents)' chrome/android/java/src/org/chromium/chrome/browser/devtools/DevToolsActivity.java || perl -0pi -e 's~(DevToolsWindowAndroid\.attachToBrowser\(\n                    webContents, task\.getOrCreateNativeBrowserWindowPtr\(profile\)\);\n)~$1            addInspectedPageSwitcher(webContents);\n~' chrome/android/java/src/org/chromium/chrome/browser/devtools/DevToolsActivity.java
 grep -q 'setBrowserControlsState(BrowserControlsState.SHOWN)' chrome/android/java/src/org/chromium/chrome/browser/devtools/DevToolsActivity.java || sed -i '/super.finishNativeInitialization();/a\        getCustomTabToolbarCoordinator().setBrowserControlsState(BrowserControlsState.SHOWN);' chrome/android/java/src/org/chromium/chrome/browser/devtools/DevToolsActivity.java
 grep -q 'public static void activateInspectedPage' chrome/browser/devtools/android/java/src/org/chromium/chrome/browser/devtools/DevToolsWindowAndroid.java || perl -0pi -e 's~(\n    /\*\*\n     \* Attaches the DevTools frontend web contents to the browser window\.)~\n    public static void activateInspectedPage(WebContents webContents) {\n        DevToolsWindowAndroidJni.get().activateInspectedPage(webContents);\n    }\n$1~' chrome/browser/devtools/android/java/src/org/chromium/chrome/browser/devtools/DevToolsWindowAndroid.java
-grep -q '^        void activateInspectedPage(WebContents webContents);' chrome/browser/devtools/android/java/src/org/chromium/chrome/browser/devtools/DevToolsWindowAndroid.java || sed -i '/void attachToBrowser(/i\        void activateInspectedPage(WebContents webContents);\n' chrome/browser/devtools/android/java/src/org/chromium/chrome/browser/devtools/DevToolsWindowAndroid.java
+grep -q '^        void activateInspectedPage(WebContents webContents);' chrome/browser/devtools/android/java/src/org/chromium/chrome/browser/devtools/DevToolsWindowAndroid.java || python3 - "$DEVTOOLS_WINDOW_ANDROID_JAVA" <<'PYCODE'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+decl = "        void activateInspectedPage(WebContents webContents);\n"
+
+lines = text.splitlines(keepends=True)
+# Locate the @NativeMethods Natives interface range.
+start = None
+for index, line in enumerate(lines):
+    if "interface Natives {" in line:
+        start = index
+        break
+if start is None:
+    raise SystemExit(f"Natives interface not found in {path}")
+depth = 0
+end = None
+for index in range(start, len(lines)):
+    depth += lines[index].count("{") - lines[index].count("}")
+    if depth == 0:
+        end = index
+        break
+if end is None:
+    raise SystemExit(f"Natives interface end not found in {path}")
+
+body = lines[start + 1 : end]
+kept = [line for line in body if line != decl]
+updated_body = list(kept)
+insert_at = None
+for index, line in enumerate(updated_body):
+    if "void attachToBrowser(" in line:
+        insert_at = index
+        break
+if insert_at is None:
+    updated_body.append(decl)
+else:
+    updated_body.insert(insert_at, decl)
+
+lines[start + 1 : end] = updated_body
+text = "".join(lines)
+
+# Drop the same declaration if it landed outside the Natives interface.
+out = []
+inside = False
+depth = 0
+for line in text.splitlines(keepends=True):
+    if not inside and "interface Natives {" in line:
+        inside = True
+        depth = line.count("{") - line.count("}")
+        out.append(line)
+        continue
+    if inside:
+        depth += line.count("{") - line.count("}")
+        if line == decl and depth <= 0:
+            continue
+        out.append(line)
+        if depth == 0:
+            inside = False
+        continue
+    if line == decl:
+        continue
+    out.append(line)
+
+path.write_text("".join(out))
+PYCODE chrome/browser/devtools/android/java/src/org/chromium/chrome/browser/devtools/DevToolsWindowAndroid.java
 grep -q 'web_contents_delegate.h' chrome/browser/devtools/android/devtools_window_android.cc || sed -i '/#include "content\/public\/browser\/web_contents.h"/a\#include "content/public/browser/web_contents_delegate.h"' chrome/browser/devtools/android/devtools_window_android.cc
 grep -q 'JNI_DevToolsWindowAndroid_ActivateInspectedPage' chrome/browser/devtools/android/devtools_window_android.cc || perl -0pi -e 's~(\nstatic void JNI_DevToolsWindowAndroid_AttachToBrowser\()~\nstatic void JNI_DevToolsWindowAndroid_ActivateInspectedPage(\n    JNIEnv* env,\n    const jni_zero::JavaRef<jobject>& java_web_contents) {\n#if BUILDFLAG(ENABLE_DEVTOOLS_FRONTEND)\n  content::WebContents* web_contents =\n      content::WebContents::FromJavaWebContents(java_web_contents);\n  DevToolsWindow* window = DevToolsWindow::AsDevToolsWindow(web_contents);\n  if (!window) {\n    return;\n  }\n  content::WebContents* inspected_web_contents =\n      window->GetInspectedWebContents();\n  if (!inspected_web_contents || !inspected_web_contents->GetDelegate()) {\n    return;\n  }\n  inspected_web_contents->GetDelegate()->ActivateContents(\n      inspected_web_contents);\n  inspected_web_contents->Focus();\n#endif\n}\n$1~' chrome/browser/devtools/android/devtools_window_android.cc
 grep -q 'components/tabs/public/tab_interface.h' chrome/browser/devtools/devtools_window.cc || sed -i '/#include "components\/strings\/grit\/components_strings.h"/a\#include "components/tabs/public/tab_interface.h"' chrome/browser/devtools/devtools_window.cc
