@@ -953,6 +953,25 @@ PYCODE
 
 grep -q 'public View getContainerView()' "$ACTION_LIST_COORDINATOR" || \
     sed -i '/public class RecyclerViewDelegate {$/a\public View getContainerView() { return mContainer; }' "$ACTION_LIST_COORDINATOR"
+python3 - "$ACTION_LIST_COORDINATOR" <<'PYCODE'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+line = "public View getContainerView() { return mContainer; }\n"
+kept = []
+seen = False
+for item in text.splitlines(keepends=True):
+    if item == line:
+        if seen:
+            continue
+        seen = True
+    kept.append(item)
+updated = "".join(kept)
+if updated != text:
+    path.write_text(updated)
+PYCODE
 sed -i '/private void showPopupOnAnchor() {/,/private void closePopup() {/ s|if (buttonView == null) {|if (false) {|' "$ACTION_LIST_MEDIATOR"
 sed -i 's|buttonView.setIsPressed(true);|if (buttonView != null) buttonView.setIsPressed(true);|' "$ACTION_LIST_MEDIATOR"
 grep -q 'mRecyclerViewDelegate.getContainerView()' "$ACTION_LIST_MEDIATOR" || \
