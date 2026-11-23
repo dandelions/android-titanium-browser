@@ -108,6 +108,18 @@ ACTIVITY_OBSERVER_OLD = """            if (BottomBarConfigUtils.shouldShowSettin
                         this::doRecreateActivity);
             }
 """
+ACTIVITY_OBSERVER_V158 = """            // Observe BOTTOM_BAR_ENABLED when the Settings toggle or the education flow (where
+            // tapping \"Try it now\" in the opt-in dialog enables the bottom bar) can change it, so
+            // the activity recreates to inflate or remove the bottom bar. The observer registers
+            // itself with ActivityLifecycleDispatcher and unregisters on destroy.
+            if (BottomBarConfigUtils.shouldObserveBottomBarEnabledChanges(this)) {
+                new BottomBarEnabledChangeObserver(
+                        this,
+                        getLifecycleDispatcher(),
+                        mBottomBarHostManager != null,
+                        this::doRecreateActivity);
+            }
+"""
 ACTIVITY_OBSERVER_NEW = """            // Helium: the separate bottom bar is disabled on old-android; do not observe its preference.
 """
 ACTIVITY_OBSERVER_MIGRATED = """            // Helium: the address-bar position is the sole bottom-toolbar setting.
@@ -262,6 +274,8 @@ def patch_activity_observer(src_dir: str) -> bool:
     else:
         if ACTIVITY_OBSERVER_OLD in content:
             content = content.replace(ACTIVITY_OBSERVER_OLD, ACTIVITY_OBSERVER_NEW, 1)
+        elif ACTIVITY_OBSERVER_V158 in content:
+            content = content.replace(ACTIVITY_OBSERVER_V158, ACTIVITY_OBSERVER_NEW, 1)
         elif ACTIVITY_OBSERVER_MIGRATED in content:
             content = content.replace(ACTIVITY_OBSERVER_MIGRATED, ACTIVITY_OBSERVER_NEW, 1)
         else:

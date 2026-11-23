@@ -34,6 +34,18 @@ ACTIVITY_MIGRATED_SOURCE = '''            // Helium: the address-bar position is
                     mBottomBarHostManager != null,
                     this::doRecreateActivity);
 '''
+ACTIVITY_V158_SOURCE = '''            // Observe BOTTOM_BAR_ENABLED when the Settings toggle or the education flow (where
+            // tapping "Try it now" in the opt-in dialog enables the bottom bar) can change it, so
+            // the activity recreates to inflate or remove the bottom bar. The observer registers
+            // itself with ActivityLifecycleDispatcher and unregisters on destroy.
+            if (BottomBarConfigUtils.shouldObserveBottomBarEnabledChanges(this)) {
+                new BottomBarEnabledChangeObserver(
+                        this,
+                        getLifecycleDispatcher(),
+                        mBottomBarHostManager != null,
+                        this::doRecreateActivity);
+            }
+'''
 HOST_METHOD_SOURCE = '''    private @Nullable BottomBarHostManager getBottomBarHostManager() {
         if (mBottomBarHostManager == null && BottomBarConfigUtils.isBottomBarEnabled(this)) {
             mBottomBarHostManager = new BottomBarHostManager();
@@ -174,6 +186,21 @@ class OldAndroidBottomToolbarPatchTest(unittest.TestCase):
             self.assertIn(PATCH.ACTIVITY_OBSERVER_MARKER, activity)
             self.assertNotIn("BottomBarEnabledChangeObserver", activity)
             self.assertNotIn("bottom-toolbar setting.", activity)
+
+    def test_migrates_v158_bottom_bar_observer_and_disables_host(self):
+        with tempfile.TemporaryDirectory() as temp:
+            paths = self._write_sources(Path(temp))
+            paths[PATCH.CHROME_TABBED_ACTIVITY].write_text(
+                ACTIVITY_V158_SOURCE + HOST_METHOD_SOURCE
+            )
+
+            self.assertTrue(PATCH.patch_source_tree(temp))
+            activity = paths[PATCH.CHROME_TABBED_ACTIVITY].read_text()
+            self.assertNotIn("BottomBarEnabledChangeObserver", activity)
+            self.assertNotIn("shouldObserveBottomBarEnabledChanges(this)", activity)
+            self.assertIn(PATCH.BOTTOM_BAR_HOST_METHOD_MARKER, activity)
+            self.assertIn("return null;", activity)
+            self.assertNotIn("mBottomBarHostManager = new BottomBarHostManager();", activity)
 
     def test_preserves_explicit_default_user_setting_patch(self):
         with tempfile.TemporaryDirectory() as temp:
