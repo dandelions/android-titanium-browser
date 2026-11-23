@@ -2,6 +2,7 @@
 """Keep Android extension popup tabs and options pages in the real browser context."""
 
 from pathlib import Path
+import re
 import sys
 
 
@@ -117,7 +118,18 @@ def patch_options_path(path: Path) -> bool:
     # migrates partially applied older patches without duplicate locals.
     method_start = text.find("private void openExtensionOptionsFromMenu(String extensionId)")
     if method_start >= 0:
-        method_end = text.find("\n    }", method_start)
+        brace_start = text.find("{", method_start)
+        method_end = -1
+        if brace_start >= 0:
+            depth = 0
+            for index in range(brace_start, len(text)):
+                if text[index] == "{":
+                    depth += 1
+                elif text[index] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        method_end = index
+                        break
         if method_end >= 0:
             method = text[method_start:method_end]
             check = OPTIONS_EXISTING_URL_CHECK.strip("\n")
