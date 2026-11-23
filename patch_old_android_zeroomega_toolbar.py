@@ -8,6 +8,11 @@ import sys
 MODEL_PATH = Path("chrome/browser/ui/toolbar/toolbar_actions_model.cc")
 EXTENSION_ID = "hajncedpjcplegoofakinfikikjngdop"
 OLD_PIN_DEFAULT = "  const bool is_pinned_by_feature = false;\n"
+VANILLA_PIN_DEFAULT = """  const bool is_pinned_by_feature =
+      pin_mode == extensions::ManagedToolbarPinMode::kNotSet &&
+      !is_enterprise_extension && !is_installed_from_sync &&
+      is_feature_enabled && is_toggle_on;
+"""
 NEW_PIN_DEFAULT = f"""  const bool is_pinned_by_feature =
       extension->id() == \"{EXTENSION_ID}\" &&
       pin_mode == extensions::ManagedToolbarPinMode::kNotSet &&
@@ -51,6 +56,8 @@ def patch_model(path: Path) -> bool:
     if f'extension->id() == "{EXTENSION_ID}"' not in text:
         if OLD_PIN_DEFAULT in text:
             text = text.replace(OLD_PIN_DEFAULT, NEW_PIN_DEFAULT, 1)
+        elif VANILLA_PIN_DEFAULT in text:
+            text = text.replace(VANILLA_PIN_DEFAULT, NEW_PIN_DEFAULT, 1)
         else:
             raise SystemExit(f"Toolbar pin-default anchor not found in {path}")
 

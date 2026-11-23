@@ -42,6 +42,21 @@ class OldAndroidZeroOmegaToolbarPatchTest(unittest.TestCase):
             self.assertFalse(PATCH.patch_model(path))
             self.assertEqual(result, path.read_text(encoding="utf-8"))
 
+    def test_handles_unmodified_upstream_pin_expression(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "toolbar_actions_model.cc"
+            source = FIXTURE.read_text(encoding="utf-8")
+            source += PATCH.OLD_INITIALIZE
+            path.write_text(source, encoding="utf-8")
+
+            self.assertIn(PATCH.VANILLA_PIN_DEFAULT, source)
+            self.assertTrue(PATCH.patch_model(path))
+            result = path.read_text(encoding="utf-8")
+            self.assertIn(f'extension->id() == "{PATCH.EXTENSION_ID}" &&', result)
+            self.assertIn("Helium: migrate an existing ZeroOmega install", result)
+            self.assertFalse(PATCH.patch_model(path))
+            self.assertEqual(result, path.read_text(encoding="utf-8"))
+
     def test_fails_when_upstream_anchors_change(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "toolbar_actions_model.cc"
