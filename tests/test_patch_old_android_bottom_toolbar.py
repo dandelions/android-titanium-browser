@@ -70,9 +70,15 @@ class BottomBarConfigUtils {
         return isBottomBarEligible(context)
                 && ChromeFeatureList.sAndroidBottomBarShowSettingsToggle.getValue();
     }
-
-    
 }
+"""
+V158_MOVE_TOOLBAR_SOURCE = """    public static boolean shouldMoveToolbarSettingsToAppearance(Context context) {
+        return ChromeFeatureList.sAndroidBottomBar.isEnabled()
+                && !DeviceInfo.isAutomotive()
+                && (DeviceInfo.isFoldable()
+                        || !DeviceFormFactor.isNonMultiDisplayContextOnTablet(context))
+                && ChromeFeatureList.sAndroidBottomBarMoveToolbarSettingsToAppearance.getValue();
+    }
 """
 
 
@@ -90,7 +96,7 @@ class OldAndroidBottomToolbarPatchTest(unittest.TestCase):
         paths[PATCH.JAVA_FEATURE_LIST].write_text(
             JAVA_FEATURE_SOURCE + DEFAULT_USER_ENABLED_SOURCE
         )
-        paths[PATCH.CONFIG_UTILS].write_text(CONFIG_SOURCE)
+        paths[PATCH.CONFIG_UTILS].write_text(CONFIG_SOURCE + V158_MOVE_TOOLBAR_SOURCE)
         paths[PATCH.CHROME_TABBED_ACTIVITY].write_text(ACTIVITY_SOURCE + HOST_METHOD_SOURCE)
         return paths
 
@@ -123,6 +129,11 @@ class OldAndroidBottomToolbarPatchTest(unittest.TestCase):
             self.assertIn(PATCH.ACTIVITY_OBSERVER_MARKER, activity)
             self.assertNotIn("BottomBarEnabledChangeObserver", activity)
             self.assertNotIn("shouldShowSettingsToggle(this)", activity)
+            config = paths[PATCH.CONFIG_UTILS].read_text()
+            self.assertIn(PATCH.MOVE_TOOLBAR_MARKER, config)
+            self.assertIn("return false;", config)
+            self.assertNotIn("DeviceFormFactor", config)
+            self.assertNotIn("DeviceInfo", config)
             self.assertIn(PATCH.BOTTOM_BAR_HOST_METHOD_MARKER, activity)
             self.assertIn("private @Nullable BottomBarHostManager getBottomBarHostManager() {\n"
                           "        // Helium: old-android uses the address bar as the only bottom toolbar.\n"

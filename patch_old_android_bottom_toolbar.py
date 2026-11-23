@@ -7,6 +7,7 @@ to the bottom, so old-android keeps that feature disabled and uses the address
 bar position setting for the single toolbar row.
 """
 import os
+import re
 import sys
 
 FEATURE_LIST = "chrome/browser/flags/android/chrome_feature_list.cc"
@@ -87,6 +88,20 @@ LEGACY_DISABLED_ELIGIBLE = """        // Helium: expose and allow the bottom too
         return true;
 """
 CONFIG_MARKER = "Helium: the address bar preference owns the only toolbar row."
+MOVE_TOOLBAR_MARKER = "Helium: the address bar does not move into Appearance on old-android."
+MOVE_TOOLBAR_METHOD_OLD = """    public static boolean shouldMoveToolbarSettingsToAppearance(Context context) {
+        return ChromeFeatureList.sAndroidBottomBar.isEnabled()
+                && !DeviceInfo.isAutomotive()
+                && (DeviceInfo.isFoldable()
+                        || !DeviceFormFactor.isNonMultiDisplayContextOnTablet(context))
+                && ChromeFeatureList.sAndroidBottomBarMoveToolbarSettingsToAppearance.getValue();
+    }
+"""
+MOVE_TOOLBAR_METHOD_NEW = """    public static boolean shouldMoveToolbarSettingsToAppearance(Context context) {
+        // Helium: the address bar does not move into Appearance on old-android.
+        return false;
+    }
+"""
 TOGGLE_OLD = """    public static boolean shouldShowSettingsToggle(Context context) {
         return isBottomBarEligible(context)
                 && ChromeFeatureList.sAndroidBottomBarShowSettingsToggle.getValue();
@@ -213,6 +228,9 @@ def patch_config_utils(src_dir: str) -> bool:
         else:
             raise RuntimeError(f"bottom bar eligibility anchor not found in {path}")
 
+    if MOVE_TOOLBAR_MARKER not in content and MOVE_TOOLBAR_METHOD_OLD in content:
+        content = content.replace(MOVE_TOOLBAR_METHOD_OLD, MOVE_TOOLBAR_METHOD_NEW, 1)
+
     if IMPORTS_OLD in content:
         content = content.replace(IMPORTS_OLD, IMPORTS_NEW, 1)
     if FORM_FACTOR_IMPORT_OLD in content:
@@ -229,7 +247,14 @@ def patch_config_utils(src_dir: str) -> bool:
             raise RuntimeError(f"legacy bottom bar setting toggle anchor not found in {path}")
         content = content.replace(legacy_toggle, TOGGLE_NEW.split("{\n", 1)[1].rsplit("\n}", 1)[0], 1)
     elif TOGGLE_MARKER not in content:
-        raise RuntimeError(f"bottom bar setting toggle anchor not found in {path}")
+        toggle_match = re.search(
+            r"(?ms)^    public static boolean shouldShowSettingsToggle\(Context context\) \{.*?^    \}",
+            content,
+        )
+        if toggle_match:
+            content = content[:toggle_match.start()] + TOGGLE_NEW.rstrip() + "\n" + content[toggle_match.end():]
+        else:
+            raise RuntimeError(f"bottom bar setting toggle anchor not found in {path}")
 
     if content != original:
         with open(path, "w", encoding="utf-8") as handle:
