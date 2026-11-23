@@ -50,7 +50,18 @@ def migrate_source_tree(source_root: Path) -> bool:
             natives_start = text.find("interface Natives {")
             if natives_start < 0:
                 raise RuntimeError(f"Toolbar Natives interface not found in {path}")
-            natives_end = text.find("\n    }", natives_start)
+            brace_start = text.find("{", natives_start)
+            natives_end = -1
+            depth = 0
+            if brace_start >= 0:
+                for index in range(brace_start, len(text)):
+                    if text[index] == "{":
+                        depth += 1
+                    elif text[index] == "}":
+                        depth -= 1
+                        if depth == 0:
+                            natives_end = index
+                            break
             if natives_end < 0:
                 raise RuntimeError(f"Toolbar Natives interface end not found in {path}")
             natives_body = text[natives_start:natives_end]
