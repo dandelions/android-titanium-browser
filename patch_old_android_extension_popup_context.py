@@ -112,6 +112,23 @@ def patch_options_path(path: Path) -> bool:
     if not path.is_file():
         raise SystemExit(f"Expected Chromium file not found: {path}")
     text = path.read_text(encoding="utf-8")
+
+    # Keep exactly one declared options URL check inside the helper. This also
+    # migrates partially applied older patches without duplicate locals.
+    method_start = text.find("private void openExtensionOptionsFromMenu(String extensionId)")
+    if method_start >= 0:
+        method_end = text.find("\n    }", method_start)
+        if method_end >= 0:
+            method = text[method_start:method_end]
+            check = OPTIONS_EXISTING_URL_CHECK.strip("\n")
+            occurrences = method.count(check)
+            if occurrences > 1:
+                first = method.find(check)
+                method = method[:first + len(check)] + method[first + len(check):].replace(check, "", 1)
+                text = text[:method_start] + method + text[method_end:]
+                path.write_text(text, encoding="utf-8")
+                return True
+
     if OPTIONS_DUPLICATE in text:
         text = text.replace(OPTIONS_DUPLICATE, OPTIONS_NEW, 1)
         path.write_text(text, encoding="utf-8")
