@@ -46,11 +46,20 @@ def migrate_source_tree(source_root: Path) -> bool:
         original = text
         for old, new in REPLACEMENTS:
             text = text.replace(old, new)
-        if path.name == "ExtensionsToolbarBridge.java" and TOOLBAR_NATIVES_MARKER not in text:
-            anchor = "        void executeUserAction("
-            if anchor not in text:
-                raise RuntimeError(f"Toolbar Natives anchor not found in {path}")
-            text = text.replace(anchor, TOOLBAR_NATIVES_METHOD + "\n" + anchor, 1)
+        if path.name == "ExtensionsToolbarBridge.java":
+            natives_start = text.find("interface Natives {")
+            if natives_start < 0:
+                raise RuntimeError(f"Toolbar Natives interface not found in {path}")
+            natives_end = text.find("\n    }", natives_start)
+            if natives_end < 0:
+                raise RuntimeError(f"Toolbar Natives interface end not found in {path}")
+            natives_body = text[natives_start:natives_end]
+            if TOOLBAR_NATIVES_MARKER not in natives_body:
+                anchor = "        void executeUserAction("
+                if anchor not in natives_body:
+                    raise RuntimeError(f"Toolbar Natives anchor not found in {path}")
+                insertion = TOOLBAR_NATIVES_METHOD + "\n" + anchor
+                text = text[:natives_start] + natives_body.replace(anchor, insertion, 1) + text[natives_end:]
         if text != original:
             path.write_text(text, encoding="utf-8")
             changed = True
