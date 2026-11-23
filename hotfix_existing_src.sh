@@ -1749,6 +1749,7 @@ if ! grep -q 'open-new-links-in-current-tab' "$NAV_POLICY"; then
     sed -i '/case blink::kWebNavigationPolicyNewWindow:/,/return WindowOpenDisposition::NEW_WINDOW;/ s|return WindowOpenDisposition::NEW_WINDOW;|if (base::CommandLine::ForCurrentProcess()->HasSwitch("open-new-links-in-current-tab"))\n        return WindowOpenDisposition::CURRENT_TAB;\n      return WindowOpenDisposition::NEW_WINDOW;|' "$NAV_POLICY"
     sed -i '/case blink::kWebNavigationPolicyNewPopup:/,/return WindowOpenDisposition::NEW_POPUP;/ s|return WindowOpenDisposition::NEW_POPUP;|if (base::CommandLine::ForCurrentProcess()->HasSwitch("open-new-links-in-current-tab"))\n        return WindowOpenDisposition::CURRENT_TAB;\n      return WindowOpenDisposition::NEW_POPUP;|' "$NAV_POLICY"
 fi
+if [ -f "$WINDOW_OPEN_TRAITS" ]; then
 grep -q '#include "base/command_line.h"' "$WINDOW_OPEN_TRAITS" || \
     sed -i '0,/^#include /s|^#include |#include "base/command_line.h"\n#include |' "$WINDOW_OPEN_TRAITS"
 if ! grep -q 'open-new-links-in-current-tab' "$WINDOW_OPEN_TRAITS"; then
@@ -1764,6 +1765,7 @@ if ! grep -q 'open-new-links-in-current-tab' "$WINDOW_OPEN_TRAITS"; then
     sed -i '/case ui::mojom::WindowOpenDisposition::NEW_BACKGROUND_TAB:/,/return true;/ s|return true;|if (base::CommandLine::ForCurrentProcess()->HasSwitch("open-new-links-in-current-tab"))\n          *out = WindowOpenDisposition::CURRENT_TAB;\n        return true;|' "$WINDOW_OPEN_TRAITS"
     sed -i '/case ui::mojom::WindowOpenDisposition::NEW_POPUP:/,/return true;/ s|return true;|if (base::CommandLine::ForCurrentProcess()->HasSwitch("open-new-links-in-current-tab"))\n          *out = WindowOpenDisposition::CURRENT_TAB;\n        return true;|' "$WINDOW_OPEN_TRAITS"
     sed -i '/case ui::mojom::WindowOpenDisposition::NEW_WINDOW:/,/return true;/ s|return true;|if (base::CommandLine::ForCurrentProcess()->HasSwitch("open-new-links-in-current-tab"))\n          *out = WindowOpenDisposition::CURRENT_TAB;\n        return true;|' "$WINDOW_OPEN_TRAITS"
+fi
 fi
 grep -q '#include "base/command_line.h"' "$WEB_CONTENTS_IMPL" || \
     sed -i '0,/^#include /s|^#include |#include "base/command_line.h"\n#include |' "$WEB_CONTENTS_IMPL"
