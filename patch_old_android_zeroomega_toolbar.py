@@ -13,6 +13,11 @@ VANILLA_PIN_DEFAULT = """  const bool is_pinned_by_feature =
       !is_enterprise_extension && !is_installed_from_sync &&
       is_feature_enabled && is_toggle_on;
 """
+V158_PIN_DEFAULT = """  const bool is_pinned_by_feature =
+      pin_mode == extensions::ManagedToolbarPinMode::kNotSet &&
+      !is_enterprise_extension && !is_installed_from_sync &&
+      !is_installed_by_default && is_feature_enabled && is_toggle_on;
+"""
 NEW_PIN_DEFAULT = f"""  const bool is_pinned_by_feature =
       extension->id() == \"{EXTENSION_ID}\" &&
       pin_mode == extensions::ManagedToolbarPinMode::kNotSet &&
@@ -58,6 +63,8 @@ def patch_model(path: Path) -> bool:
             text = text.replace(OLD_PIN_DEFAULT, NEW_PIN_DEFAULT, 1)
         elif VANILLA_PIN_DEFAULT in text:
             text = text.replace(VANILLA_PIN_DEFAULT, NEW_PIN_DEFAULT, 1)
+        elif V158_PIN_DEFAULT in text:
+            text = text.replace(V158_PIN_DEFAULT, NEW_PIN_DEFAULT, 1)
         else:
             raise SystemExit(f"Toolbar pin-default anchor not found in {path}")
 

@@ -380,11 +380,39 @@ def patch_file_enum_worker_task(src_dir: str) -> None:
         String whereClause = additionalClause;
         String[] whereArgs = getCameraDirectory().isEmpty() ? new String[0] : new String[0];"""
 
-    if old_query_block not in content:
+    if old_query_block in content:
+        content = content.replace(old_query_block, new_query_block, 1)
+    elif "private static final String WHERE_DIRECTORIES =" in content:
+        where_start = content.find("    private static final String WHERE_DIRECTORIES =")
+        semicolon = content.find(";", where_start)
+        if where_start < 0 or semicolon < 0:
+            print("Error: WHERE_DIRECTORIES terminator not found in FileEnumWorkerTask.java", file=sys.stderr)
+            sys.exit(1)
+        content = (
+            content[:where_start]
+            + "    // Helium: enumerate all media directories; media type remains the only filter.\n"
+            + '    private static final String WHERE_DIRECTORIES = "1";'
+            + content[semicolon + 1 :]
+        )
+        old_args = """        int count = 6 + (mIncludeImages ? 1 : 0) + (mIncludeVideos ? 1 : 0);
+        int index = 0;
+        String[] whereArgs = new String[count];
+        whereArgs[index++] = cameraDir + "%";
+        whereArgs[index++] = picturesDir + "%";
+        whereArgs[index++] = moviesDir + "%";
+        whereArgs[index++] = downloadsDir + "%";
+        whereArgs[index++] = restoredDir + "%";
+        whereArgs[index++] = screenshotsDir + "%";
+"""
+        new_args = """        int count = (mIncludeImages ? 1 : 0) + (mIncludeVideos ? 1 : 0);
+        int index = 0;
+        String[] whereArgs = new String[count];
+"""
+        if old_args in content:
+            content = content.replace(old_args, new_args, 1)
+    else:
         print("Error: query block anchor not found in FileEnumWorkerTask.java", file=sys.stderr)
         sys.exit(1)
-
-    content = content.replace(old_query_block, new_query_block, 1)
     with open(task_path, "w", encoding="utf-8") as f:
         f.write(content)
     print("Patched FileEnumWorkerTask.java to enumerate all device media directories")
