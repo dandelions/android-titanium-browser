@@ -394,22 +394,16 @@ def patch_file_enum_worker_task(src_dir: str) -> None:
             + '    private static final String WHERE_DIRECTORIES = "1";'
             + content[semicolon + 1 :]
         )
-        old_args = """        int count = 6 + (mIncludeImages ? 1 : 0) + (mIncludeVideos ? 1 : 0);
-        int index = 0;
-        String[] whereArgs = new String[count];
-        whereArgs[index++] = cameraDir + "%";
-        whereArgs[index++] = picturesDir + "%";
-        whereArgs[index++] = moviesDir + "%";
-        whereArgs[index++] = downloadsDir + "%";
-        whereArgs[index++] = restoredDir + "%";
-        whereArgs[index++] = screenshotsDir + "%";
-"""
-        new_args = """        int count = (mIncludeImages ? 1 : 0) + (mIncludeVideos ? 1 : 0);
-        int index = 0;
-        String[] whereArgs = new String[count];
-"""
-        if old_args in content:
-            content = content.replace(old_args, new_args, 1)
+        args_start = content.find("        int count = 6 +", where_start)
+        args_end = content.find("        if (mIncludeImages)", args_start)
+        if args_start >= 0 and args_end > args_start:
+            content = (
+                content[:args_start]
+                + "        int count = (mIncludeImages ? 1 : 0) + (mIncludeVideos ? 1 : 0);\n"
+                + "        int index = 0;\n"
+                + "        String[] whereArgs = new String[count];\n\n"
+                + content[args_end:]
+            )
     else:
         print("Error: query block anchor not found in FileEnumWorkerTask.java", file=sys.stderr)
         sys.exit(1)
