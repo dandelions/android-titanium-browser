@@ -850,26 +850,47 @@ def patch_download_settings_location_prompt(src_dir: str) -> None:
     with open(settings_path, "r", encoding="utf-8") as f:
         content = f.read()
 
-    old_method = """    private static boolean shouldEnableLocationPromptPref(Profile profile) {
+    old_methods = (
+        """    private static boolean shouldEnableLocationPromptPref(Profile profile) {
         return PdfUtils.shouldOpenPdfInline(profile.isOffTheRecord())
                 && DownloadDirectoryProvider.getSecondaryStorageDownloadDirectories().isEmpty();
-    }"""
+    }""",
+        """    private static boolean shouldHideLocationPromptPref(Profile profile) {
+        if (isSystemFileDialogEnabled()) {
+            return false;
+        }
+        return PdfUtils.shouldOpenPdfInline(profile.isOffTheRecord())
+                && DownloadDirectoryProvider.getSecondaryStorageDownloadDirectories().isEmpty();
+    }""",
+    )
 
-    new_method = """    private static boolean shouldEnableLocationPromptPref(Profile profile) {
+    if old_methods[0] in content:
+        content = content.replace(
+            old_methods[0],
+            """    private static boolean shouldEnableLocationPromptPref(Profile profile) {
         return false;
-    }"""
-
-    if old_method not in content:
-        if "return false;" in content and "shouldEnableLocationPromptPref" in content:
-            print("DownloadSettings.java already patched")
-            return
+    }""",
+            1,
+        )
+    elif old_methods[1] in content:
+        content = content.replace(
+            old_methods[1],
+            """    private static boolean shouldHideLocationPromptPref(Profile profile) {
+        return false;
+    }""",
+            1,
+        )
+    elif "return false;" in content and (
+        "shouldEnableLocationPromptPref" in content or "shouldHideLocationPromptPref" in content
+    ):
+        print("DownloadSettings.java already patched")
+        return
+    else:
         print(
-            "Error: shouldEnableLocationPromptPref anchor not found in DownloadSettings.java",
+            "Error: download location prompt anchor not found in DownloadSettings.java",
             file=sys.stderr,
         )
         sys.exit(1)
-
-    content = content.replace(old_method, new_method, 1)
     with open(settings_path, "w", encoding="utf-8") as f:
         f.write(content)
     print("Patched DownloadSettings.java to always show download location prompt preference")
