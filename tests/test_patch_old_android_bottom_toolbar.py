@@ -34,6 +34,13 @@ ACTIVITY_MIGRATED_SOURCE = '''            // Helium: the address-bar position is
                     mBottomBarHostManager != null,
                     this::doRecreateActivity);
 '''
+HOST_METHOD_SOURCE = '''    private @Nullable BottomBarHostManager getBottomBarHostManager() {
+        if (mBottomBarHostManager == null && BottomBarConfigUtils.isBottomBarEnabled(this)) {
+            mBottomBarHostManager = new BottomBarHostManager();
+        }
+        return mBottomBarHostManager;
+    }
+'''
 
 CONFIG_SOURCE = """import org.chromium.base.DeviceInfo;
 import org.chromium.build.annotations.NullMarked;
@@ -72,7 +79,7 @@ class OldAndroidBottomToolbarPatchTest(unittest.TestCase):
             JAVA_FEATURE_SOURCE + DEFAULT_USER_ENABLED_SOURCE
         )
         paths[PATCH.CONFIG_UTILS].write_text(CONFIG_SOURCE)
-        paths[PATCH.CHROME_TABBED_ACTIVITY].write_text(ACTIVITY_SOURCE)
+        paths[PATCH.CHROME_TABBED_ACTIVITY].write_text(ACTIVITY_SOURCE + HOST_METHOD_SOURCE)
         return paths
 
     def test_enables_bottom_bar_for_car_desktop_and_mobile(self):
@@ -104,6 +111,11 @@ class OldAndroidBottomToolbarPatchTest(unittest.TestCase):
             self.assertIn(PATCH.ACTIVITY_OBSERVER_MARKER, activity)
             self.assertNotIn("BottomBarEnabledChangeObserver", activity)
             self.assertNotIn("shouldShowSettingsToggle(this)", activity)
+            self.assertIn(PATCH.BOTTOM_BAR_HOST_METHOD_MARKER, activity)
+            self.assertIn("private @Nullable BottomBarHostManager getBottomBarHostManager() {\n"
+                          "        // Helium: old-android uses the address bar as the only bottom toolbar.\n"
+                          "        return null;", activity)
+            self.assertNotIn("mBottomBarHostManager = new BottomBarHostManager();", activity)
 
     def test_migrates_legacy_enabled_feature_flags(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -140,7 +152,7 @@ class OldAndroidBottomToolbarPatchTest(unittest.TestCase):
                     "        return true;",
                 )
             )
-            paths[PATCH.CHROME_TABBED_ACTIVITY].write_text(ACTIVITY_SOURCE)
+            paths[PATCH.CHROME_TABBED_ACTIVITY].write_text(ACTIVITY_SOURCE + HOST_METHOD_SOURCE)
 
             self.assertTrue(PATCH.patch_source_tree(temp))
             self.assertIn(PATCH.FEATURE_MARKER, paths[PATCH.FEATURE_LIST].read_text())
@@ -153,7 +165,9 @@ class OldAndroidBottomToolbarPatchTest(unittest.TestCase):
     def test_migrates_existing_observer_block(self):
         with tempfile.TemporaryDirectory() as temp:
             paths = self._write_sources(Path(temp))
-            paths[PATCH.CHROME_TABBED_ACTIVITY].write_text(ACTIVITY_MIGRATED_SOURCE)
+            paths[PATCH.CHROME_TABBED_ACTIVITY].write_text(
+                ACTIVITY_MIGRATED_SOURCE + HOST_METHOD_SOURCE
+            )
 
             self.assertTrue(PATCH.patch_source_tree(temp))
             activity = paths[PATCH.CHROME_TABBED_ACTIVITY].read_text()

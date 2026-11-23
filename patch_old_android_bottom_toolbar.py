@@ -49,6 +49,19 @@ CONFIG_UTILS = (
     "bottombar/BottomBarConfigUtils.java"
 )
 CHROME_TABBED_ACTIVITY = "chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java"
+BOTTOM_BAR_HOST_METHOD_MARKER = "Helium: old-android uses the address bar as the only bottom toolbar."
+BOTTOM_BAR_HOST_METHOD_OLD = """    private @Nullable BottomBarHostManager getBottomBarHostManager() {
+        if (mBottomBarHostManager == null && BottomBarConfigUtils.isBottomBarEnabled(this)) {
+            mBottomBarHostManager = new BottomBarHostManager();
+        }
+        return mBottomBarHostManager;
+    }
+"""
+BOTTOM_BAR_HOST_METHOD_NEW = """    private @Nullable BottomBarHostManager getBottomBarHostManager() {
+        // Helium: old-android uses the address bar as the only bottom toolbar.
+        return null;
+    }
+"""
 ELIGIBLE_OLD = """        return !DeviceFormFactor.isNonMultiDisplayContextOnTablet(context)
                 && !DeviceInfo.isAutomotive()
                 && ChromeFeatureList.sAndroidBottomBar.isEnabled();
@@ -267,12 +280,27 @@ def patch_source_tree(src_dir: str) -> bool:
     config_changed = patch_config_utils(src_dir)
     default_changed = patch_default_user_enabled(src_dir)
     observer_changed = patch_activity_observer(src_dir)
+    activity_path = os.path.join(src_dir, CHROME_TABBED_ACTIVITY)
+    with open(activity_path, "r", encoding="utf-8") as handle:
+        activity_content = handle.read()
+    host_changed = False
+    if BOTTOM_BAR_HOST_METHOD_MARKER not in activity_content:
+        if BOTTOM_BAR_HOST_METHOD_OLD not in activity_content:
+            raise RuntimeError(f"bottom bar host method anchor not found in {activity_path}")
+        activity_content = activity_content.replace(
+            BOTTOM_BAR_HOST_METHOD_OLD, BOTTOM_BAR_HOST_METHOD_NEW, 1
+        )
+        with open(activity_path, "w", encoding="utf-8") as handle:
+            handle.write(activity_content)
+        host_changed = True
+        print(f"Disabled old-android BottomBarHostManager creation: {activity_path}")
     return (
         feature_changed
         or java_flag_changed
         or config_changed
         or default_changed
         or observer_changed
+        or host_changed
     )
 
 
