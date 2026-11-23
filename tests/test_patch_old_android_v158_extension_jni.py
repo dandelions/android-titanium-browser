@@ -27,6 +27,12 @@ class OldAndroidV158ExtensionJniPatchTest(unittest.TestCase):
                     "long nativeExtensionsToolbarAndroid\n"
                     "        assert mNative != 0;\n"
                 )
+            toolbar.write_text(
+                "@NativeMethods\ninterface Natives {\n"
+                "        void executeUserAction(\n"
+                "                JniPtr<NativeExtensionsToolbarAndroid> self);\n"
+                "}\n"
+            )
 
             self.assertTrue(PATCH.migrate_source_tree(root))
             for path in (menu, toolbar):

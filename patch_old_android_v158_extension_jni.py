@@ -15,6 +15,12 @@ BRIDGES = (
     ),
 )
 
+TOOLBAR_NATIVES_MARKER = "void setActiveWebContents("
+TOOLBAR_NATIVES_METHOD = """        void setActiveWebContents(
+                JniPtr<NativeExtensionsToolbarAndroid> self,
+                @Nullable @JniType("content::WebContents*") WebContents webContents);
+"""
+
 REPLACEMENTS = (
     ("mNativeExtensionsMenuDelegateAndroid", "mNative"),
     ("mNativeExtensionsToolbarAndroid", "mNative"),
@@ -40,6 +46,11 @@ def migrate_source_tree(source_root: Path) -> bool:
         original = text
         for old, new in REPLACEMENTS:
             text = text.replace(old, new)
+        if path.name == "ExtensionsToolbarBridge.java" and TOOLBAR_NATIVES_MARKER not in text:
+            anchor = "        void executeUserAction("
+            if anchor not in text:
+                raise RuntimeError(f"Toolbar Natives anchor not found in {path}")
+            text = text.replace(anchor, TOOLBAR_NATIVES_METHOD + "\n" + anchor, 1)
         if text != original:
             path.write_text(text, encoding="utf-8")
             changed = True
