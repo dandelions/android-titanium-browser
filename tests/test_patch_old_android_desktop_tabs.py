@@ -52,6 +52,20 @@ public class ToolbarManager
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(text, encoding="utf-8")
 
+    def test_v158_main_settings_keeps_address_bar_option_available(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_sources(root)
+            main_settings = root / patch.MAIN_SETTINGS
+            main_settings.write_text(patch.MAIN_V158_OLD)
+
+            self.assertTrue(patch.patch_main_settings(root))
+            result = main_settings.read_text()
+            self.assertIn(patch.MAIN_MARKER, result)
+            self.assertIn("        return true;", result)
+            self.assertNotIn("shouldMoveToolbarSettingsToAppearance", result)
+            self.assertFalse(patch.patch_main_settings(root))
+
     def test_patches_and_is_idempotent(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

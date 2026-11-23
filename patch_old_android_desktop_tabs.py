@@ -21,6 +21,10 @@ STRINGS = Path("chrome/browser/ui/android/strings/android_chrome_strings.grd")
 MAIN_OLD = """        return !DeviceInfo.isAutomotive()
                 && (DeviceInfo.isFoldable()
                         || !DeviceFormFactor.isNonMultiDisplayContextOnTablet(context));"""
+MAIN_V158_OLD = """        return !BottomBarConfigUtils.shouldMoveToolbarSettingsToAppearance(context)
+                && !DeviceInfo.isAutomotive()
+                && (DeviceInfo.isFoldable()
+                        || !DeviceFormFactor.isNonMultiDisplayContextOnTablet(context));"""
 MAIN_NEW = """        // Helium: address bar position remains configurable in desktop and automotive modes.
         return true;"""
 MAIN_MARKER = "Helium: address bar position remains configurable in desktop and automotive modes."
@@ -194,11 +198,26 @@ def patch_file(root: Path, relative: Path, changes: tuple[tuple[str, str, str], 
     return False
 
 
+def patch_main_settings(root: Path) -> bool:
+    path = root / MAIN_SETTINGS
+    if not path.is_file():
+        raise SystemExit(f"Expected Chromium file not found: {path}")
+    text = path.read_text(encoding="utf-8")
+    if MAIN_MARKER in text:
+        return False
+    if MAIN_V158_OLD in text:
+        text = text.replace(MAIN_V158_OLD, MAIN_NEW, 1)
+    elif MAIN_OLD in text:
+        text = text.replace(MAIN_OLD, MAIN_NEW, 1)
+    else:
+        raise SystemExit(f"Expected one patch anchor in {path}: {MAIN_MARKER}")
+    path.write_text(text, encoding="utf-8")
+    return True
+
+
 def patch_source(root: Path) -> bool:
     changed = False
-    changed |= patch_file(
-        root, MAIN_SETTINGS, ((MAIN_OLD, MAIN_NEW, MAIN_MARKER),)
-    )
+    changed |= patch_main_settings(root)
     changed |= patch_file(
         root,
         ADDRESS_BAR_FRAGMENT,
