@@ -20,13 +20,31 @@ class OldAndroidV158ExtensionJniPatchTest(unittest.TestCase):
             toolbar = root / PATCH.BRIDGES[1]
             for path in (menu, toolbar):
                 path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(
-                    "mNativeExtensionsMenuDelegateAndroid\n"
-                    "mNativeExtensionsToolbarAndroid\n"
-                    "long nativeExtensionsMenuDelegateAndroid\n"
-                    "long nativeExtensionsToolbarAndroid\n"
-                    "        assert mNative != 0;\n"
-                )
+            menu.write_text(
+                "mNativeExtensionsMenuDelegateAndroid\n"
+                "mNativeExtensionsToolbarAndroid\n"
+                "long nativeExtensionsMenuDelegateAndroid\n"
+                "long nativeExtensionsToolbarAndroid\n"
+                "        assert mNative != 0;\n"
+                "    private void openExtensionOptionsFromMenu(String extensionId) {\n"
+                "        String optionsUrl = mMenuBridge.getOptionsPageUrl(extensionId);\n"
+                "        if (optionsUrl != null && !optionsUrl.isEmpty()) {\n"
+                "            openUrlFromMenu(optionsUrl);\n"
+                "            return;\n"
+                "        }\n"
+                "    }\n"
+                "    public List<ExtensionsMenuTypes.MenuEntryState> getMenuEntries() {\n"
+                "    }\n"
+                "    interface Natives {\n"
+                "    }\n"
+            )
+            toolbar.write_text(
+                "mNativeExtensionsMenuDelegateAndroid\n"
+                "mNativeExtensionsToolbarAndroid\n"
+                "long nativeExtensionsMenuDelegateAndroid\n"
+                "long nativeExtensionsToolbarAndroid\n"
+                "        assert mNative != 0;\n"
+            )
             toolbar.write_text(
                 "@NativeMethods\ninterface Natives {\n"
                 "        void executeUserAction(\n"
