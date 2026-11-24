@@ -3132,6 +3132,31 @@ sed -i '/WebContents\* WebContentsImpl::OpenURL(/,/^#if DCHECK_IS_ON()/ { /^#if 
 
 }' content/browser/web_contents/web_contents_impl.cc
 fi
+if grep -q 'kNewForegroundTab' ui/base/mojom/window_open_disposition.mojom 2>/dev/null; then
+    python3 - <<'PYCODE'
+from pathlib import Path
+
+paths = [
+    Path("content/browser/web_contents/web_contents_impl.cc"),
+    Path("content/renderer/render_frame_impl.cc"),
+]
+replacements = {
+    "WindowOpenDisposition::NEW_FOREGROUND_TAB": "WindowOpenDisposition::kNewForegroundTab",
+    "WindowOpenDisposition::NEW_BACKGROUND_TAB": "WindowOpenDisposition::kNewBackgroundTab",
+    "WindowOpenDisposition::NEW_POPUP": "WindowOpenDisposition::kNewPopup",
+    "WindowOpenDisposition::NEW_WINDOW": "WindowOpenDisposition::kNewWindow",
+    "WindowOpenDisposition::CURRENT_TAB": "WindowOpenDisposition::kCurrentTab",
+}
+for path in paths:
+    if path.is_file():
+        text = path.read_text()
+        updated = text
+        for old, new in replacements.items():
+            updated = updated.replace(old, new)
+        if updated != text:
+            path.write_text(updated)
+PYCODE
+fi
 
 # crbug.com/helium: disable tab close undo snackbar
 grep -q 'Helium: disable tab close undo snackbar' chrome/android/java/src/org/chromium/chrome/browser/undo_tab_close_snackbar/UndoBarController.java || sed -i '/if (closedTabs.isEmpty() && savedTabGroupSyncIds.isEmpty()) return;/a\

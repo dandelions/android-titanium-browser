@@ -4373,6 +4373,33 @@ if is_old_version_branch; then
     python3 "$SCRIPT_DIR/patch_old_android_extension_popup.py" "$SRC_DIR"
     python3 "$SCRIPT_DIR/patch_old_android_extension_popup_context.py" "$SRC_DIR"
     python3 "$SCRIPT_DIR/patch_old_android_v158_extension_jni.py" "$SRC_DIR"
+if grep -q 'kNewForegroundTab' "$SRC_DIR/ui/base/mojom/window_open_disposition.mojom" 2>/dev/null; then
+    python3 - "$SRC_DIR" <<'PYCODE'
+from pathlib import Path
+import sys
+
+root = Path(sys.argv[1])
+replacements = {
+    "WindowOpenDisposition::NEW_FOREGROUND_TAB": "WindowOpenDisposition::kNewForegroundTab",
+    "WindowOpenDisposition::NEW_BACKGROUND_TAB": "WindowOpenDisposition::kNewBackgroundTab",
+    "WindowOpenDisposition::NEW_POPUP": "WindowOpenDisposition::kNewPopup",
+    "WindowOpenDisposition::NEW_WINDOW": "WindowOpenDisposition::kNewWindow",
+    "WindowOpenDisposition::CURRENT_TAB": "WindowOpenDisposition::kCurrentTab",
+}
+for relative in (
+    "content/browser/web_contents/web_contents_impl.cc",
+    "content/renderer/render_frame_impl.cc",
+):
+    path = root / relative
+    if path.is_file():
+        text = path.read_text()
+        updated = text
+        for old, new in replacements.items():
+            updated = updated.replace(old, new)
+        if updated != text:
+            path.write_text(updated)
+PYCODE
+fi
 python3 "$SCRIPT_DIR/patch_renderer_mprotect.py" "$SRC_DIR"
 python3 "$SCRIPT_DIR/patch_linker_reservation_size.py" "$SRC_DIR"
 python3 "$SCRIPT_DIR/patch_linker_relro_sharing.py" "$SRC_DIR"
