@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Add selectable address-bar button layout presets to old-android."""
+"""Add selectable address-bar button layout presets to old-android.
+
+The preset is stored in SharedPreferences and applied to the live toolbar, so
+picking a different order updates the buttons without restarting the browser.
+"""
 
 from pathlib import Path
 import sys
@@ -42,6 +46,12 @@ FRAGMENT_IMPORT_NEW = (
     "import org.chromium.chrome.browser.preferences.ChromePreferenceKeys;\n"
     "import org.chromium.chrome.browser.preferences.ChromeSharedPreferences;\n"
     "import org.chromium.chrome.browser.settings.ChromeBaseSettingsFragment;\n"
+    "import org.chromium.chrome.browser.toolbar.top.ToolbarPhone;\n"
+)
+FRAGMENT_LEGACY_IMPORT = (
+    "import org.chromium.chrome.browser.preferences.ChromePreferenceKeys;\n"
+    "import org.chromium.chrome.browser.preferences.ChromeSharedPreferences;\n"
+    "import org.chromium.chrome.browser.settings.ChromeBaseSettingsFragment;\n"
 )
 FRAGMENT_CALL_OLD = "        updateHideDesktopTabsPreference();\n    }\n\n    @Override\n    public void onConfigurationChanged"
 FRAGMENT_CALL_NEW = (
@@ -50,7 +60,9 @@ FRAGMENT_CALL_NEW = (
     "    }\n\n    @Override\n    public void onConfigurationChanged"
 )
 FRAGMENT_MARKER = "setupToolbarLayoutPreference();"
-FRAGMENT_METHODS = """    private void setupToolbarLayoutPreference() {
+FRAGMENT_METHODS_START = "    private void setupToolbarLayoutPreference() {\n"
+FRAGMENT_METHODS_END = "    private void updateHideDesktopTabsPreference() {\n"
+FRAGMENT_METHODS_NEW = """    private void setupToolbarLayoutPreference() {
         Preference preference = findPreference("toolbar_layout_preset");
         if (preference == null) {
             return;
@@ -102,29 +114,38 @@ FRAGMENT_METHODS = """    private void setupToolbarLayoutPreference() {
                             if (preference != null) {
                                 updateToolbarLayoutSummary(preference);
                             }
-                            if (getActivity() != null) {
-                                getActivity().recreate();
-                            }
+                            // The browser activity stays alive behind settings, so drive the
+                            // toolbar directly instead of recreating this fragment.
+                            ToolbarPhone.heliumRefreshLayoutPreset();
                         })
                 .setNegativeButton("取消", null)
                 .show();
     }
 
 """
-FRAGMENT_ANCHOR = "    private void updateHideDesktopTabsPreference() {\n"
 
 TOOLBAR_FIELDS_OLD = "    private View mToolbarBackButton;\n"
-TOOLBAR_IMPORT_OLD = "import android.view.Gravity;\n"
-TOOLBAR_IMPORT_NEW = "import android.view.Gravity;\nimport android.widget.FrameLayout;\n"
-TOOLBAR_FIELDS_NEW = TOOLBAR_FIELDS_OLD + """    // Helium: address-bar button layout presets for old-android.
+TOOLBAR_FIELDS_START = (
+    "    // Helium: address-bar button layout presets for old-android.\n"
+    "    private static final int HELIUM_LAYOUT_CURRENT = 0;\n"
+)
+TOOLBAR_FIELDS_END = (
+    "    private final java.util.ArrayList<View> mHeliumEndOrder = new java.util.ArrayList<>();\n"
+)
+TOOLBAR_FIELDS_NEW = """    // Helium: address-bar button layout presets for old-android.
     private static final int HELIUM_LAYOUT_CURRENT = 0;
     private static final int HELIUM_LAYOUT_START = 1;
     private static final int HELIUM_LAYOUT_REVERSE = 2;
+    private static @Nullable java.lang.ref.WeakReference<ToolbarPhone> sHeliumActiveToolbar;
     private @Nullable ViewGroup mHeliumStartButtons;
     private View mHeliumTabs;
     private View mHeliumMenu;
+    private int mHeliumAppliedPreset = -1;
+    private @Nullable View mHeliumPlacedExtensions;
     private final java.util.ArrayList<View> mHeliumEndOrder = new java.util.ArrayList<>();
 """
+TOOLBAR_IMPORT_OLD = "import android.view.Gravity;\n"
+TOOLBAR_IMPORT_NEW = "import android.view.Gravity;\nimport android.widget.FrameLayout;\n"
 
 TOOLBAR_INFLATE_OLD = """            mToolbarButtonsContainer = findViewById(R.id.toolbar_buttons);
             mHomeButton = findViewById(R.id.home_button);
@@ -145,11 +166,41 @@ TOOLBAR_APPLY_OLD = """            mActiveLocationBarBackgroundView = findViewBy
                 mActiveLocationBarBackgroundView.setVisibility(View.VISIBLE);
             }
 """
-TOOLBAR_APPLY_NEW = TOOLBAR_APPLY_OLD + """            applyHeliumToolbarLayoutPreset();
+TOOLBAR_APPLY_NEW = TOOLBAR_APPLY_OLD + """            maybeApplyHeliumToolbarLayoutPreset();
 """
-TOOLBAR_APPLY_MARKER = "applyHeliumToolbarLayoutPreset();"
+TOOLBAR_APPLY_MARKER = "maybeApplyHeliumToolbarLayoutPreset();"
 
-TOOLBAR_METHODS = """    // Helium: address-bar button layout presets for old-android.
+TOOLBAR_WINDOW_VIS_OLD = """    public void onWindowVisibilityChanged(int visibility) {
+        super.onWindowVisibilityChanged(visibility);
+        updateButtonVisibility();
+    }
+"""
+TOOLBAR_WINDOW_VIS_NEW = """    public void onWindowVisibilityChanged(int visibility) {
+        super.onWindowVisibilityChanged(visibility);
+        updateButtonVisibility();
+        // The preset can change while settings covers the browser, so re-check on return.
+        maybeApplyHeliumToolbarLayoutPreset();
+    }
+"""
+TOOLBAR_WINDOW_VIS_MARKER = "re-check on return"
+
+TOOLBAR_DESTROY_OLD = """    public void destroy() {
+        cancelAnimations();
+"""
+TOOLBAR_DESTROY_NEW = """    public void destroy() {
+        if (sHeliumActiveToolbar != null && sHeliumActiveToolbar.get() == this) {
+            sHeliumActiveToolbar = null;
+        }
+        cancelAnimations();
+"""
+TOOLBAR_DESTROY_MARKER = "sHeliumActiveToolbar.get() == this"
+
+TOOLBAR_METHODS_START = (
+    "    // Helium: address-bar button layout presets for old-android.\n"
+    "    private int heliumToolbarLayoutPreset() {\n"
+)
+TOOLBAR_METHODS_ANCHOR = "    private boolean isBottomToolbar() {\n"
+TOOLBAR_METHODS_NEW = """    // Helium: address-bar button layout presets for old-android.
     private int heliumToolbarLayoutPreset() {
         int preset =
                 org.chromium.chrome.browser.preferences.ChromeSharedPreferences.getInstance()
@@ -162,13 +213,35 @@ TOOLBAR_METHODS = """    // Helium: address-bar button layout presets for old-an
                 : HELIUM_LAYOUT_CURRENT;
     }
 
+    /** Re-applies the stored preset to the toolbar that is currently on screen. */
+    public static void heliumRefreshLayoutPreset() {
+        ToolbarPhone toolbar = sHeliumActiveToolbar != null ? sHeliumActiveToolbar.get() : null;
+        if (toolbar == null || toolbar.mToolbarButtonsContainer == null) {
+            return;
+        }
+        toolbar.applyHeliumToolbarLayoutPreset();
+        toolbar.updateButtonVisibility();
+    }
+
+    private void maybeApplyHeliumToolbarLayoutPreset() {
+        if (mToolbarButtonsContainer == null || mHeliumEndOrder.isEmpty()) {
+            return;
+        }
+        if (heliumToolbarLayoutPreset() == mHeliumAppliedPreset
+                && heliumExtensionsView() == mHeliumPlacedExtensions) {
+            return;
+        }
+        applyHeliumToolbarLayoutPreset();
+    }
+
     private ViewGroup heliumStartButtons() {
         if (mHeliumStartButtons == null) {
             android.widget.LinearLayout container = new android.widget.LinearLayout(getContext());
             container.setOrientation(android.widget.LinearLayout.HORIZONTAL);
             FrameLayout.LayoutParams params =
                     new FrameLayout.LayoutParams(
-                            LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT);
+                            ViewGroup.LayoutParams.WRAP_CONTENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT);
             params.gravity = Gravity.TOP | Gravity.START;
             container.setLayoutParams(params);
             addView(container);
@@ -203,108 +276,123 @@ TOOLBAR_METHODS = """    // Helium: address-bar button layout presets for old-an
         if (view == null) {
             return;
         }
-        if (!(view.getLayoutParams() instanceof android.widget.LinearLayout.LayoutParams)) {
-            view.setLayoutParams(
-                    new android.widget.LinearLayout.LayoutParams(
-                            LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT));
+        ViewGroup.LayoutParams current = view.getLayoutParams();
+        if (current instanceof android.widget.LinearLayout.LayoutParams) {
+            return;
         }
+        int width = current != null ? current.width : ViewGroup.LayoutParams.WRAP_CONTENT;
+        int height = current != null ? current.height : ViewGroup.LayoutParams.WRAP_CONTENT;
+        android.widget.LinearLayout.LayoutParams params =
+                new android.widget.LinearLayout.LayoutParams(width, height);
+        params.gravity = Gravity.CENTER_VERTICAL;
+        view.setLayoutParams(params);
     }
 
     private void heliumUseFrameParams(@Nullable View view) {
         if (view == null) {
             return;
         }
-        if (!(view.getLayoutParams() instanceof FrameLayout.LayoutParams)) {
-            FrameLayout.LayoutParams params =
-                    new FrameLayout.LayoutParams(
-                            LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT);
-            params.gravity = Gravity.TOP | Gravity.START;
-            view.setLayoutParams(params);
+        ViewGroup.LayoutParams current = view.getLayoutParams();
+        if (current instanceof FrameLayout.LayoutParams) {
+            return;
         }
+        int width = current != null ? current.width : ViewGroup.LayoutParams.WRAP_CONTENT;
+        int height = current != null ? current.height : ViewGroup.LayoutParams.MATCH_PARENT;
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(width, height);
+        params.gravity = Gravity.TOP | Gravity.START;
+        view.setLayoutParams(params);
     }
 
     private void applyHeliumToolbarLayoutPreset() {
         if (mToolbarButtonsContainer == null || mHeliumEndOrder.isEmpty()) {
             return;
         }
+        sHeliumActiveToolbar = new java.lang.ref.WeakReference<>(this);
         int preset = heliumToolbarLayoutPreset();
         ViewGroup start = heliumStartButtons();
         View extensions = heliumExtensionsView();
+        View extensionsStub = findViewById(R.id.extensions_toolbar_container_stub);
+
         start.removeAllViews();
         detachHeliumToolbarView(mHomeButton);
         detachHeliumToolbarView(mHeliumTabs);
         detachHeliumToolbarView(mHeliumMenu);
         detachHeliumToolbarView(extensions);
         mToolbarButtonsContainer.removeAllViews();
-        java.util.ArrayList<View> endOrder = new java.util.ArrayList<>();
+
+        // Everything that is not one of the four managed buttons keeps its original order.
+        // The extensions stub is replaced in place once Chromium inflates it, so the recorded
+        // stub reference has to be swapped for the live container.
+        java.util.ArrayList<View> middle = new java.util.ArrayList<>();
+        boolean extensionsPlaced = false;
         for (View child : mHeliumEndOrder) {
-            if (child == mHomeButton || child == mHeliumTabs || child == mHeliumMenu
-                    || child == extensions) {
+            if (child == null || child == mHomeButton || child == mHeliumTabs
+                    || child == mHeliumMenu) {
                 continue;
             }
-            endOrder.add(child);
-        }
-        if (preset == HELIUM_LAYOUT_START) {
-            if (mHomeButton != null) {
-                heliumUseLinearParams(mHomeButton);
-                start.addView(mHomeButton);
-            }
-            if (mHeliumTabs != null) {
-                heliumUseLinearParams(mHeliumTabs);
-                start.addView(mHeliumTabs);
-            }
-            if (extensions != null) {
-                heliumUseLinearParams(extensions);
-                endOrder.add(extensions);
-            }
-            if (mHeliumMenu != null) {
-                heliumUseLinearParams(mHeliumMenu);
-                endOrder.add(mHeliumMenu);
-            }
-        } else if (preset == HELIUM_LAYOUT_REVERSE) {
-            if (mHeliumMenu != null) {
-                heliumUseLinearParams(mHeliumMenu);
-                start.addView(mHeliumMenu);
-            }
-            if (extensions != null) {
-                heliumUseLinearParams(extensions);
-                start.addView(extensions);
-            }
-            if (mHeliumTabs != null) {
-                heliumUseLinearParams(mHeliumTabs);
-                endOrder.add(mHeliumTabs);
-            }
-            if (mHomeButton != null) {
-                heliumUseLinearParams(mHomeButton);
-                endOrder.add(mHomeButton);
-            }
-        } else {
-            endOrder.clear();
-            for (View child : mHeliumEndOrder) {
-                if (child == mHomeButton) {
-                    continue;
+            if (child == extensions || child == extensionsStub) {
+                if (extensions != null && !extensionsPlaced) {
+                    middle.add(extensions);
+                    extensionsPlaced = true;
                 }
-                endOrder.add(child);
+                continue;
             }
-            if (mHomeButton != null) {
-                heliumUseFrameParams(mHomeButton);
-                FrameLayout.LayoutParams params =
-                        (FrameLayout.LayoutParams) mHomeButton.getLayoutParams();
-                params.gravity = Gravity.TOP | Gravity.START;
-                mHomeButton.setLayoutParams(params);
-                addView(mHomeButton);
+            middle.add(child);
+        }
+        if (!extensionsPlaced && extensions != null) {
+            middle.add(extensions);
+        }
+
+        java.util.ArrayList<View> startOrder = new java.util.ArrayList<>();
+        java.util.ArrayList<View> endOrder = new java.util.ArrayList<>(middle);
+        if (preset == HELIUM_LAYOUT_START) {
+            startOrder.add(mHomeButton);
+            startOrder.add(mHeliumTabs);
+            endOrder.add(mHeliumMenu);
+        } else if (preset == HELIUM_LAYOUT_REVERSE) {
+            endOrder.remove(extensions);
+            startOrder.add(mHeliumMenu);
+            startOrder.add(extensions);
+            startOrder.addAll(endOrder);
+            endOrder.clear();
+            endOrder.add(mHeliumTabs);
+            endOrder.add(mHomeButton);
+        } else {
+            endOrder.add(mHeliumTabs);
+            endOrder.add(mHeliumMenu);
+        }
+
+        for (View view : startOrder) {
+            if (view == null) {
+                continue;
             }
+            heliumUseLinearParams(view);
+            start.addView(view);
         }
-        for (View child : endOrder) {
-            mToolbarButtonsContainer.addView(child);
+        for (View view : endOrder) {
+            if (view == null) {
+                continue;
+            }
+            heliumUseLinearParams(view);
+            mToolbarButtonsContainer.addView(view);
         }
+        if (preset == HELIUM_LAYOUT_CURRENT && mHomeButton != null) {
+            heliumUseFrameParams(mHomeButton);
+            FrameLayout.LayoutParams params =
+                    (FrameLayout.LayoutParams) mHomeButton.getLayoutParams();
+            params.gravity = Gravity.TOP | Gravity.START;
+            mHomeButton.setLayoutParams(params);
+            addView(mHomeButton);
+        }
+
         start.setVisibility(mToolbarButtonsContainer.getVisibility());
+        mHeliumAppliedPreset = preset;
+        mHeliumPlacedExtensions = extensions;
         requestLayout();
         invalidate();
     }
 
 """
-TOOLBAR_METHODS_ANCHOR = "    private boolean isBottomToolbar() {\n"
 
 LEFT_BOUNDS_OLD = """    private int getBoundsAfterAccountingForLeftButton() {
         int padding = mToolbarSidePaddingForNtp;
@@ -382,6 +470,28 @@ def _replace_once(text: str, old: str, new: str, marker: str, path: Path) -> tup
     return text.replace(old, new, 1), True
 
 
+def _replace_section(
+    text: str,
+    start_needle: str,
+    end_needle: str,
+    new_section: str,
+    path: Path,
+    include_end: bool = False,
+) -> tuple[str, bool]:
+    """Replace text[start_needle:end_needle] with new_section, upgrading older versions."""
+    start = text.find(start_needle)
+    if start < 0:
+        return text, False
+    end = text.find(end_needle, start)
+    if end < 0:
+        raise RuntimeError(f"Expected section end in {path}: {start_needle.splitlines()[0]}")
+    if include_end:
+        end += len(end_needle)
+    if text[start:end] == new_section:
+        return text, False
+    return text[:start] + new_section + text[end:], True
+
+
 def patch_preference_keys(root: Path) -> bool:
     path = root / PREF_KEYS
     text = path.read_text(encoding="utf-8")
@@ -403,22 +513,34 @@ def patch_settings_xml(root: Path) -> bool:
 def patch_settings_fragment(root: Path) -> bool:
     path = root / SETTINGS_FRAGMENT
     text = path.read_text(encoding="utf-8")
-    text, imports_changed = _replace_once(
-        text, FRAGMENT_IMPORT_OLD, FRAGMENT_IMPORT_NEW, "ChromePreferenceKeys;", path
-    )
-    text, call_changed = _replace_once(
+    changed = False
+    if "ChromePreferenceKeys;" not in text:
+        text, updated = _replace_once(
+            text, FRAGMENT_IMPORT_OLD, FRAGMENT_IMPORT_NEW, "ChromePreferenceKeys;", path
+        )
+        changed = changed or updated
+    elif "import org.chromium.chrome.browser.toolbar.top.ToolbarPhone;" not in text:
+        text = text.replace(FRAGMENT_LEGACY_IMPORT, FRAGMENT_IMPORT_NEW, 1)
+        changed = True
+    text, updated = _replace_once(
         text, FRAGMENT_CALL_OLD, FRAGMENT_CALL_NEW, FRAGMENT_MARKER, path
     )
-    methods_changed = False
-    if "private void setupToolbarLayoutPreference()" not in text:
-        if text.count(FRAGMENT_ANCHOR) != 1:
-            raise RuntimeError(f"Expected one settings anchor in {path}")
-        text = text.replace(FRAGMENT_ANCHOR, FRAGMENT_METHODS + FRAGMENT_ANCHOR, 1)
-        methods_changed = True
-    if imports_changed or call_changed or methods_changed:
+    changed = changed or updated
+    if FRAGMENT_METHODS_START in text:
+        text, updated = _replace_section(
+            text, FRAGMENT_METHODS_START, FRAGMENT_METHODS_END, FRAGMENT_METHODS_NEW, path
+        )
+        changed = changed or updated
+    else:
+        if text.count(FRAGMENT_METHODS_END) != 1:
+            raise RuntimeError(f"Expected one settings methods anchor in {path}")
+        text = text.replace(
+            FRAGMENT_METHODS_END, FRAGMENT_METHODS_NEW + FRAGMENT_METHODS_END, 1
+        )
+        changed = True
+    if changed:
         path.write_text(text, encoding="utf-8")
-        return True
-    return False
+    return changed
 
 
 def patch_toolbar_phone(root: Path) -> bool:
@@ -427,9 +549,10 @@ def patch_toolbar_phone(root: Path) -> bool:
     changed = False
     replacements = (
         (TOOLBAR_IMPORT_OLD, TOOLBAR_IMPORT_NEW, "import android.widget.FrameLayout;"),
-        (TOOLBAR_FIELDS_OLD, TOOLBAR_FIELDS_NEW, "mHeliumStartButtons;"),
         (TOOLBAR_INFLATE_OLD, TOOLBAR_INFLATE_NEW, TOOLBAR_INFLATE_MARKER),
         (TOOLBAR_APPLY_OLD, TOOLBAR_APPLY_NEW, TOOLBAR_APPLY_MARKER),
+        (TOOLBAR_WINDOW_VIS_OLD, TOOLBAR_WINDOW_VIS_NEW, TOOLBAR_WINDOW_VIS_MARKER),
+        (TOOLBAR_DESTROY_OLD, TOOLBAR_DESTROY_NEW, TOOLBAR_DESTROY_MARKER),
         (LEFT_BOUNDS_OLD, LEFT_BOUNDS_NEW, LEFT_BOUNDS_MARKER),
         (TRANSLATION_OLD, TRANSLATION_NEW, TRANSLATION_MARKER),
         (BUTTON_VISIBILITY_OLD, BUTTON_VISIBILITY_NEW, BUTTON_VISIBILITY_MARKER),
@@ -442,11 +565,45 @@ def patch_toolbar_phone(root: Path) -> bool:
     for old, new, marker in replacements:
         text, updated = _replace_once(text, old, new, marker, path)
         changed = changed or updated
-    if "private void applyHeliumToolbarLayoutPreset()" not in text:
+
+    # Older builds called the apply method directly; keep a single entry point.
+    stale_call = (
+        "            maybeApplyHeliumToolbarLayoutPreset();\n"
+        "            applyHeliumToolbarLayoutPreset();\n"
+    )
+    if stale_call in text:
+        text = text.replace(
+            stale_call, "            maybeApplyHeliumToolbarLayoutPreset();\n", 1
+        )
+        changed = True
+
+    if TOOLBAR_FIELDS_START in text:
+        text, updated = _replace_section(
+            text,
+            TOOLBAR_FIELDS_START,
+            TOOLBAR_FIELDS_END,
+            TOOLBAR_FIELDS_NEW,
+            path,
+            include_end=True,
+        )
+        changed = changed or updated
+    else:
+        text, updated = _replace_once(
+            text, TOOLBAR_FIELDS_OLD, TOOLBAR_FIELDS_OLD + TOOLBAR_FIELDS_NEW, "mHeliumStartButtons", path
+        )
+        changed = changed or updated
+
+    if TOOLBAR_METHODS_START in text:
+        text, updated = _replace_section(
+            text, TOOLBAR_METHODS_START, TOOLBAR_METHODS_ANCHOR, TOOLBAR_METHODS_NEW, path
+        )
+        changed = changed or updated
+    else:
         if text.count(TOOLBAR_METHODS_ANCHOR) != 1:
             raise RuntimeError(f"Expected one ToolbarPhone method anchor in {path}")
-        text = text.replace(TOOLBAR_METHODS_ANCHOR, TOOLBAR_METHODS + TOOLBAR_METHODS_ANCHOR, 1)
+        text = text.replace(TOOLBAR_METHODS_ANCHOR, TOOLBAR_METHODS_NEW + TOOLBAR_METHODS_ANCHOR, 1)
         changed = True
+
     if changed:
         path.write_text(text, encoding="utf-8")
     return changed

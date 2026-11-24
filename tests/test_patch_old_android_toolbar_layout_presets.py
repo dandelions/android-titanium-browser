@@ -64,6 +64,18 @@ public class ToolbarPhone extends ToolbarLayout {
         }
     }
 
+    @Override
+    public void onWindowVisibilityChanged(int visibility) {
+        super.onWindowVisibilityChanged(visibility);
+        updateButtonVisibility();
+    }
+
+    @Override
+    public void destroy() {
+        cancelAnimations();
+        super.destroy();
+    }
+
     private boolean isBottomToolbar() {
         return false;
     }
@@ -155,14 +167,66 @@ class ToolbarLayoutPresetsPatchTest(unittest.TestCase):
             fragment = (root / patch.SETTINGS_FRAGMENT).read_text()
             self.assertIn("setupToolbarLayoutPreference();", fragment)
             self.assertIn("ChromePreferenceKeys.HELIUM_TOOLBAR_LAYOUT_PRESET", fragment)
+            self.assertIn("ToolbarPhone.heliumRefreshLayoutPreset();", fragment)
+            self.assertNotIn(".recreate()", fragment)
 
             toolbar = (root / patch.TOOLBAR_PHONE).read_text()
-            self.assertIn("applyHeliumToolbarLayoutPreset();", toolbar)
+            self.assertIn("maybeApplyHeliumToolbarLayoutPreset();", toolbar)
             self.assertIn("HELIUM_LAYOUT_START", toolbar)
             self.assertIn("HELIUM_LAYOUT_REVERSE", toolbar)
+            self.assertIn("public static void heliumRefreshLayoutPreset()", toolbar)
+            self.assertIn("sHeliumActiveToolbar.get() == this", toolbar)
             self.assertIn(patch.LEFT_BOUNDS_MARKER, toolbar)
             self.assertIn(patch.CHILD_LEFT_MARKER, toolbar)
             self.assertEqual(toolbar.count("private void applyHeliumToolbarLayoutPreset()"), 1)
+
+    def test_keeps_extensions_container_when_switching_back_to_current_layout(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self._write_sources(root)
+            patch.patch_source_tree(root)
+
+            toolbar = (root / patch.TOOLBAR_PHONE).read_text()
+            apply_body = toolbar[toolbar.index("private void applyHeliumToolbarLayoutPreset()") :]
+            apply_body = apply_body[: apply_body.index("\n    }\n")]
+
+            # The inflated extensions container replaces the stub, so the recorded stub
+            # reference has to be swapped instead of re-added.
+            self.assertIn("child == extensions || child == extensionsStub", apply_body)
+            self.assertIn("mHeliumPlacedExtensions = extensions;", apply_body)
+            self.assertIn("if (!extensionsPlaced && extensions != null)", apply_body)
+
+    def test_upgrades_stale_preset_sections(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self._write_sources(root)
+            stale = TOOLBAR_PHONE_SOURCE.replace(
+                "    private View mToolbarBackButton;\n",
+                "    private View mToolbarBackButton;\n"
+                + patch.TOOLBAR_FIELDS_START
+                + "    private final java.util.ArrayList<View> mHeliumEndOrder = "
+                + "new java.util.ArrayList<>();\n",
+            ).replace(
+                "    private boolean isBottomToolbar() {\n",
+                patch.TOOLBAR_METHODS_START
+                + "        return 0;\n"
+                + "    }\n\n"
+                + "    private boolean isBottomToolbar() {\n",
+            )
+            (root / patch.TOOLBAR_PHONE).write_text(stale)
+
+            self.assertTrue(patch.patch_source_tree(root))
+
+            toolbar = (root / patch.TOOLBAR_PHONE).read_text()
+            self.assertNotIn("        return 0;\n", toolbar)
+            self.assertIn("maybeApplyHeliumToolbarLayoutPreset()", toolbar)
+            self.assertIn("sHeliumActiveToolbar", toolbar)
+            self.assertEqual(
+                toolbar.count("mHeliumEndOrder = new java.util.ArrayList<>()"), 1
+            )
+            self.assertEqual(toolbar.count("private int heliumToolbarLayoutPreset()"), 1)
+            self.assertEqual(toolbar.count("private void applyHeliumToolbarLayoutPreset()"), 1)
+            self.assertFalse(patch.patch_source_tree(root))
 
     def test_is_idempotent(self):
         with tempfile.TemporaryDirectory() as temp:
