@@ -127,7 +127,20 @@ if [ "$FAST_LOCAL_BUILD" = "1" ]; then
         fi
     fi
 fi
-BUILD_VERSION_INCREMENT="${BUILD_VERSION_INCREMENT:-$((($(date -u +%s) - 1577836800) / 60))}"
+BUILD_VERSION_INCREMENT_TIME=$((($(date -u +%s) - 1577836800) / 60))
+case "$BUILD_VERSION_INCREMENT" in
+    # A FAST_LOCAL_BUILD reuses the increment frozen in args.gn, which would make
+    # every rebuild share one versionCode and block replacing an installed APK
+    # that was built from the same checkout later. Keep the value monotonic.
+    ''|*[!0-9]*) BUILD_VERSION_INCREMENT="$BUILD_VERSION_INCREMENT_TIME" ;;
+    *)
+        if [ "$BUILD_VERSION_INCREMENT" -ge "$BUILD_VERSION_INCREMENT_TIME" ]; then
+            BUILD_VERSION_INCREMENT=$((BUILD_VERSION_INCREMENT + 1))
+        else
+            BUILD_VERSION_INCREMENT="$BUILD_VERSION_INCREMENT_TIME"
+        fi
+        ;;
+esac
 
 if [ "$SKIP_SOURCE_PREPARE" = "1" ] && [ -f "$SCRIPT_DIR/chromium/src/chrome/VERSION" ]; then
     LOCAL_CHROMIUM_VERSION="$(read_chromium_version "$SCRIPT_DIR/chromium/src/chrome/VERSION")"
