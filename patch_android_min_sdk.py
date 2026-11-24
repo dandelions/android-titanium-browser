@@ -2006,7 +2006,34 @@ def patch_bind_isolated_service_compat(src_dir: str) -> None:
             if "android.os.Build.VERSION.SDK_INT >= 29" not in new_content or "bindIsolatedService" in new_content:
                 new_content = re.sub(old_bind_pattern, new_bind_block, new_content)
 
-        # 2. 守卫 updateServiceGroup 调用：API 29+ 引入
+        # 2. Android 9's bindServiceAsUser can register a connection before throwing,
+        # leaving a later fallback bind with a different Handler and crashing in
+        # LoadedApk.ServiceDispatcher. Keep every API 28 bind on the same overload.
+        api28_bind_marker = "Helium API 28 avoids bindServiceAsUser handler mismatch"
+        if api28_bind_marker not in new_content:
+            api28_bind_anchor = """        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.N) {
+            return bindServiceByCall(context, intent, connection, flags);
+        }
+"""
+            api28_bind_replacement = """        // Helium API 28 avoids bindServiceAsUser handler mismatch
+        // by using the same ordinary bind overload for every child service.
+        if (Build.VERSION.SDK_INT < 29) {
+            return bindServiceByCall(context, intent, connection, flags);
+        }
+
+        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.N) {
+            return bindServiceByCall(context, intent, connection, flags);
+        }
+"""
+            if api28_bind_anchor not in new_content:
+                raise RuntimeError(
+                    f"API 28 bind overload anchor not found in {target}"
+                )
+            new_content = new_content.replace(
+                api28_bind_anchor, api28_bind_replacement, 1
+            )
+
+        # 3. 守卫 updateServiceGroup 调用：API 29+ 引入
         if "context.updateServiceGroup(" in new_content:
             over_nested_pattern = (
                 r'([ \t]*)if\s*\(\s*android\.os\.Build\.VERSION\.SDK_INT\s*>=\s*29\s*\)\s*\{\s*\n'

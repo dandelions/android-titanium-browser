@@ -153,6 +153,14 @@ class OldAndroidFeatureConfigurationTest(unittest.TestCase):
             self.assertIn("context.updateServiceGroup", patched_bind)
             self.assertIn("Build.VERSION.SDK_INT < 34", patched_bind)
             self.assertIn("catch (Throwable reflectionException)", patched_bind)
+            self.assertIn(
+                "Helium API 28 avoids bindServiceAsUser handler mismatch", patched_bind
+            )
+            self.assertIn(
+                "if (Build.VERSION.SDK_INT < 29) {\n"
+                "            return bindServiceByCall(context, intent, connection, flags);",
+                patched_bind,
+            )
 
             patched_alloc = allocator_file.read_text(encoding="utf-8")
             self.assertIn("(Build.VERSION.SDK_INT < 29)", patched_alloc)
