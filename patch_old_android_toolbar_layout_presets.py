@@ -199,6 +199,30 @@ TOOLBAR_METHODS = """    // Helium: address-bar button layout presets for old-an
         return mToolbarButtonsContainer;
     }
 
+    private void heliumUseLinearParams(@Nullable View view) {
+        if (view == null) {
+            return;
+        }
+        if (!(view.getLayoutParams() instanceof android.widget.LinearLayout.LayoutParams)) {
+            view.setLayoutParams(
+                    new android.widget.LinearLayout.LayoutParams(
+                            LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT));
+        }
+    }
+
+    private void heliumUseFrameParams(@Nullable View view) {
+        if (view == null) {
+            return;
+        }
+        if (!(view.getLayoutParams() instanceof FrameLayout.LayoutParams)) {
+            FrameLayout.LayoutParams params =
+                    new FrameLayout.LayoutParams(
+                            LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT);
+            params.gravity = Gravity.TOP | Gravity.START;
+            view.setLayoutParams(params);
+        }
+    }
+
     private void applyHeliumToolbarLayoutPreset() {
         if (mToolbarButtonsContainer == null || mHeliumEndOrder.isEmpty()) {
             return;
@@ -222,28 +246,36 @@ TOOLBAR_METHODS = """    // Helium: address-bar button layout presets for old-an
         }
         if (preset == HELIUM_LAYOUT_START) {
             if (mHomeButton != null) {
+                heliumUseLinearParams(mHomeButton);
                 start.addView(mHomeButton);
             }
             if (mHeliumTabs != null) {
+                heliumUseLinearParams(mHeliumTabs);
                 start.addView(mHeliumTabs);
             }
             if (extensions != null) {
+                heliumUseLinearParams(extensions);
                 endOrder.add(extensions);
             }
             if (mHeliumMenu != null) {
+                heliumUseLinearParams(mHeliumMenu);
                 endOrder.add(mHeliumMenu);
             }
         } else if (preset == HELIUM_LAYOUT_REVERSE) {
             if (mHeliumMenu != null) {
+                heliumUseLinearParams(mHeliumMenu);
                 start.addView(mHeliumMenu);
             }
             if (extensions != null) {
+                heliumUseLinearParams(extensions);
                 start.addView(extensions);
             }
             if (mHeliumTabs != null) {
+                heliumUseLinearParams(mHeliumTabs);
                 endOrder.add(mHeliumTabs);
             }
             if (mHomeButton != null) {
+                heliumUseLinearParams(mHomeButton);
                 endOrder.add(mHomeButton);
             }
         } else {
@@ -255,6 +287,7 @@ TOOLBAR_METHODS = """    // Helium: address-bar button layout presets for old-an
                 endOrder.add(child);
             }
             if (mHomeButton != null) {
+                heliumUseFrameParams(mHomeButton);
                 FrameLayout.LayoutParams params =
                         (FrameLayout.LayoutParams) mHomeButton.getLayoutParams();
                 params.gravity = Gravity.TOP | Gravity.START;
