@@ -41,6 +41,12 @@ class OldAndroidFeatureConfigurationTest(unittest.TestCase):
         self.assertIn("enable_mutex_priority_inheritance false", old_android_block)
         self.assertIn("enable_partition_lock_priority_inheritance false", old_android_block)
 
+    def test_hotfixes_allow_removed_window_open_traits_header(self):
+        hotfix = (ROOT / "hotfix_existing_src.sh").read_text()
+        required_files = hotfix[hotfix.index("for file in "):hotfix.index("done\n\nversion_lt()")]
+        self.assertNotIn('"$WINDOW_OPEN_TRAITS"', required_files)
+        self.assertIn('if [ -f "$WINDOW_OPEN_TRAITS" ]; then', hotfix)
+
     def test_hotfixes_require_extension_and_bottom_toolbar_markers(self):
         for name in ("patch.sh", "hotfix_existing_src.sh"):
             with self.subTest(script=name):
