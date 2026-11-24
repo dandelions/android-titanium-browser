@@ -2,6 +2,7 @@
 """Migrate old Android extension bridge injections to Chromium 158 JNI pointers."""
 
 from pathlib import Path
+import re
 import sys
 
 BRIDGES = (
@@ -19,6 +20,22 @@ TOOLBAR_NATIVES_MARKER = "void setActiveWebContents("
 TOOLBAR_NATIVES_METHOD = """        void setActiveWebContents(
                 JniPtr<NativeExtensionsToolbarAndroid> self,
                 @Nullable @JniType("content::WebContents*") WebContents webContents);
+"""
+
+MENU_OVERLOAD_MARKER = "getActionIcon(int actionIndex, @Nullable WebContents webContents)"
+MENU_OVERLOAD_BLOCK = """    public ExtensionsMenuTypes.MenuEntryState getMenuEntry(
+            int actionIndex, @Nullable WebContents webContents) {
+        return ExtensionsMenuBridgeJni.get().getMenuEntry(mNative, actionIndex, webContents);
+    }
+
+    public @Nullable Bitmap getActionIcon(int actionIndex, @Nullable WebContents webContents) {
+        return ExtensionsMenuBridgeJni.get().getActionIcon(mNative, actionIndex, webContents);
+    }
+
+    public void executeAction(String extensionId, @Nullable WebContents webContents) {
+        ExtensionsMenuBridgeJni.get().executeAction(mNative, extensionId, webContents);
+    }
+
 """
 
 REPLACEMENTS = (
@@ -46,6 +63,76 @@ def migrate_source_tree(source_root: Path) -> bool:
         original = text
         for old, new in REPLACEMENTS:
             text = text.replace(old, new)
+        if path.name == "ExtensionsMenuBridge.java":
+            if MENU_OVERLOAD_MARKER not in text:
+                anchor = "    public List<ExtensionsMenuTypes.MenuEntryState> getMenuEntries() {"
+                if anchor not in text:
+                    raise RuntimeError(f"Menu bridge overload anchor not found in {path}")
+                text = text.replace(anchor, MENU_OVERLOAD_BLOCK + anchor, 1)
+            text = re.sub(
+                r"@Nullable Bitmap getActionIcon\(\s*JniPtr<NativeExtensionsMenuDelegateAndroid> self,\s*int actionIndex\);",
+                '@Nullable Bitmap getActionIcon(\n'
+                '                JniPtr<NativeExtensionsMenuDelegateAndroid> self,\n'
+                '                int actionIndex,\n'
+                '                @Nullable @JniType("content::WebContents*") WebContents webContents);',
+                text,
+                count=1,
+                flags=re.S,
+            )
+            text = re.sub(
+                r"void executeAction\(\s*JniPtr<NativeExtensionsMenuDelegateAndroid> self,\s*"
+                r"@JniType\(\"std::string\"\) String extensionId\);",
+                'void executeAction(\n'
+                '                JniPtr<NativeExtensionsMenuDelegateAndroid> self,\n'
+                '                @JniType("std::string") String extensionId,\n'
+                '                @Nullable @JniType("content::WebContents*") WebContents webContents);',
+                text,
+                count=1,
+                flags=re.S,
+            )
+            text = re.sub(
+                r"List<ExtensionsMenuTypes\.MenuEntryState> getMenuEntries\(\s*"
+                r"JniPtr<NativeExtensionsMenuDelegateAndroid> self\);",
+                'List<ExtensionsMenuTypes.MenuEntryState> getMenuEntries(\n'
+                '                JniPtr<NativeExtensionsMenuDelegateAndroid> self,\n'
+                '                @Nullable @JniType("content::WebContents*") WebContents webContents);',
+                text,
+                count=1,
+                flags=re.S,
+            )
+            text = re.sub(
+                r"ExtensionsMenuTypes\.MenuEntryState getMenuEntry\(\s*"
+                r"JniPtr<NativeExtensionsMenuDelegateAndroid> self, int actionIndex\);",
+                'ExtensionsMenuTypes.MenuEntryState getMenuEntry(\n'
+                '                JniPtr<NativeExtensionsMenuDelegateAndroid> self,\n'
+                '                int actionIndex,\n'
+                '                @Nullable @JniType("content::WebContents*") WebContents webContents);',
+                text,
+                count=1,
+                flags=re.S,
+            )
+        if path.name == "ExtensionsMenuBridge.java":
+            method_start = text.find("private void openExtensionOptionsFromMenu(String extensionId)")
+            if method_start >= 0:
+                brace_start = text.find("{", method_start)
+                depth = 0
+                method_end = -1
+                for index in range(brace_start, len(text)):
+                    if text[index] == "{":
+                        depth += 1
+                    elif text[index] == "}":
+                        depth -= 1
+                        if depth == 0:
+                            method_end = index
+                            break
+                if method_end >= 0:
+                    method = text[method_start:method_end]
+                    pattern = re.compile(r"(?ms)^        String optionsUrl = mMenuBridge\.getOptionsPageUrl\(extensionId\);.*?^        }\n")
+                    matches = list(pattern.finditer(method))
+                    if len(matches) > 1:
+                        first_end = matches[0].end()
+                        method = method[:first_end] + pattern.sub("", method[first_end:], count=1)
+                        text = text[:method_start] + method + text[method_end:]
         if path.name == "ExtensionsToolbarBridge.java":
             natives_start = text.find("interface Natives {")
             if natives_start < 0:
