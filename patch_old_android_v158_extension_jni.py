@@ -203,12 +203,19 @@ def migrate_source_tree(source_root: Path) -> bool:
                             break
                 if method_end >= 0:
                     method = text[method_start:method_end]
-                    pattern = re.compile(r"(?ms)^        String optionsUrl = mMenuBridge\.getOptionsPageUrl\(extensionId\);.*?^        }\n")
-                    matches = list(pattern.finditer(method))
-                    if len(matches) > 1:
-                        first_end = matches[0].end()
-                        method = method[:first_end] + pattern.sub("", method[first_end:], count=1)
-                        text = text[:method_start] + method + text[method_end:]
+                    declaration = "        String optionsUrl = mMenuBridge.getOptionsPageUrl(extensionId);"
+                    occurrences = method.count(declaration)
+                    if occurrences > 1:
+                        first = method.find(declaration)
+                        remaining = method[first + len(declaration):]
+                        second = remaining.find(declaration)
+                        if second >= 0:
+                            second += first + len(declaration)
+                            block_start = second
+                            block_end = method.find("        mMenuBridge.executeAction", block_start)
+                            if block_end >= 0:
+                                method = method[:block_start] + method[block_end:]
+                                text = text[:method_start] + method + text[method_end:]
         if path.name == "ExtensionsToolbarBridge.java":
             natives_start = text.find("interface Natives {")
             if natives_start < 0:
