@@ -207,14 +207,11 @@ def migrate_source_tree(source_root: Path) -> bool:
                     occurrences = method.count(declaration)
                     if occurrences > 1:
                         first = method.find(declaration)
-                        remaining = method[first + len(declaration):]
-                        second = remaining.find(declaration)
+                        second = method.find(declaration, first + len(declaration))
                         if second >= 0:
-                            second += first + len(declaration)
-                            block_start = second
-                            block_end = method.find("        mMenuBridge.executeAction", block_start)
+                            block_end = method.find("        mMenuBridge.executeAction", second)
                             if block_end >= 0:
-                                method = method[:block_start] + method[block_end:]
+                                method = method[:second] + method[block_end:]
                                 text = text[:method_start] + method + text[method_end:]
         if path.name == "ExtensionsToolbarBridge.java":
             natives_start = text.find("interface Natives {")
