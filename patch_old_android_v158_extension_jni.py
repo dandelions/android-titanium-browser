@@ -5,6 +5,12 @@ from pathlib import Path
 import re
 import sys
 
+COORDINATOR = Path(
+    "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/"
+    "ExtensionActionListCoordinator.java"
+)
+COORDINATOR_METHOD = "public View getContainerView() { return mContainer; }\n"
+
 BRIDGES = (
     Path(
         "chrome/browser/ui/android/extensions/java/src/org/chromium/chrome/browser/ui/"
@@ -60,6 +66,23 @@ REPLACEMENTS = (
 
 def migrate_source_tree(source_root: Path) -> bool:
     changed = False
+    coordinator = source_root / COORDINATOR
+    if coordinator.is_file():
+        text = coordinator.read_text(encoding="utf-8")
+        lines = text.splitlines(keepends=True)
+        kept = []
+        seen = False
+        for line in lines:
+            if line == COORDINATOR_METHOD:
+                if seen:
+                    continue
+                seen = True
+            kept.append(line)
+        updated = "".join(kept)
+        if updated != text:
+            coordinator.write_text(updated, encoding="utf-8")
+            changed = True
+            print(f"Deduped old-android toolbar container accessor: {coordinator}")
     for relative in BRIDGES:
         path = source_root / relative
         if not path.is_file():
