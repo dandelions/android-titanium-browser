@@ -111,6 +111,46 @@ def migrate_source_tree(source_root: Path) -> bool:
                 count=1,
                 flags=re.S,
             )
+            text = re.sub(
+                r"public void executeAction\(String extensionId\) \{\s*"
+                r"ExtensionsMenuBridgeJni\.get\(\)\.executeAction\(mNative, extensionId\);\s*\}",
+                "public void executeAction(String extensionId) {\n"
+                "        executeAction(extensionId, null);\n"
+                "    }",
+                text,
+                count=1,
+                flags=re.S,
+            )
+            text = re.sub(
+                r"public @Nullable Bitmap getActionIcon\(int actionIndex\) \{\s*"
+                r"return ExtensionsMenuBridgeJni\.get\(\)\.getActionIcon\(mNative, actionIndex\);\s*\}",
+                "public @Nullable Bitmap getActionIcon(int actionIndex) {\n"
+                "        return getActionIcon(actionIndex, null);\n"
+                "    }",
+                text,
+                count=1,
+                flags=re.S,
+            )
+            text = re.sub(
+                r"public List<ExtensionsMenuTypes\.MenuEntryState> getMenuEntries\(\) \{\s*"
+                r"return ExtensionsMenuBridgeJni\.get\(\)\.getMenuEntries\(mNative\);\s*\}",
+                "public List<ExtensionsMenuTypes.MenuEntryState> getMenuEntries() {\n"
+                "        return getMenuEntries(null);\n"
+                "    }",
+                text,
+                count=1,
+                flags=re.S,
+            )
+            text = re.sub(
+                r"public ExtensionsMenuTypes\.MenuEntryState getMenuEntry\(int actionIndex\) \{\s*"
+                r"return ExtensionsMenuBridgeJni\.get\(\)\.getMenuEntry\(mNative, actionIndex\);\s*\}",
+                "public ExtensionsMenuTypes.MenuEntryState getMenuEntry(int actionIndex) {\n"
+                "        return getMenuEntry(actionIndex, null);\n"
+                "    }",
+                text,
+                count=1,
+                flags=re.S,
+            )
         if path.name == "ExtensionsMenuBridge.java":
             method_start = text.find("private void openExtensionOptionsFromMenu(String extensionId)")
             if method_start >= 0:
