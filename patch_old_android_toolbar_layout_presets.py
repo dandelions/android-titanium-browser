@@ -136,7 +136,7 @@ TOOLBAR_FIELDS_NEW = """    // Helium: address-bar button layout presets for old
     private static final int HELIUM_LAYOUT_CURRENT = 0;
     private static final int HELIUM_LAYOUT_START = 1;
     private static final int HELIUM_LAYOUT_REVERSE = 2;
-    private static @Nullable java.lang.ref.WeakReference<ToolbarPhone> sHeliumActiveToolbar;
+    private static @Nullable ToolbarPhone sHeliumActiveToolbar;
     private @Nullable ViewGroup mHeliumStartButtons;
     private View mHeliumTabs;
     private View mHeliumMenu;
@@ -184,16 +184,14 @@ TOOLBAR_WINDOW_VIS_NEW = """    public void onWindowVisibilityChanged(int visibi
 """
 TOOLBAR_WINDOW_VIS_MARKER = "re-check on return"
 
-TOOLBAR_DESTROY_OLD = """    public void destroy() {
-        cancelAnimations();
-"""
+TOOLBAR_DESTROY_START = "    public void destroy() {\n"
+TOOLBAR_DESTROY_END = "        cancelAnimations();\n"
 TOOLBAR_DESTROY_NEW = """    public void destroy() {
-        if (sHeliumActiveToolbar != null && sHeliumActiveToolbar.get() == this) {
+        if (sHeliumActiveToolbar == this) {
             sHeliumActiveToolbar = null;
         }
         cancelAnimations();
 """
-TOOLBAR_DESTROY_MARKER = "sHeliumActiveToolbar.get() == this"
 
 TOOLBAR_METHODS_START = (
     "    // Helium: address-bar button layout presets for old-android.\n"
@@ -215,7 +213,7 @@ TOOLBAR_METHODS_NEW = """    // Helium: address-bar button layout presets for ol
 
     /** Re-applies the stored preset to the toolbar that is currently on screen. */
     public static void heliumRefreshLayoutPreset() {
-        ToolbarPhone toolbar = sHeliumActiveToolbar != null ? sHeliumActiveToolbar.get() : null;
+        ToolbarPhone toolbar = sHeliumActiveToolbar;
         if (toolbar == null || toolbar.mToolbarButtonsContainer == null) {
             return;
         }
@@ -307,7 +305,7 @@ TOOLBAR_METHODS_NEW = """    // Helium: address-bar button layout presets for ol
         if (mToolbarButtonsContainer == null || mHeliumEndOrder.isEmpty()) {
             return;
         }
-        sHeliumActiveToolbar = new java.lang.ref.WeakReference<>(this);
+        sHeliumActiveToolbar = this;
         int preset = heliumToolbarLayoutPreset();
         ViewGroup start = heliumStartButtons();
         View extensions = heliumExtensionsView();
@@ -552,7 +550,6 @@ def patch_toolbar_phone(root: Path) -> bool:
         (TOOLBAR_INFLATE_OLD, TOOLBAR_INFLATE_NEW, TOOLBAR_INFLATE_MARKER),
         (TOOLBAR_APPLY_OLD, TOOLBAR_APPLY_NEW, TOOLBAR_APPLY_MARKER),
         (TOOLBAR_WINDOW_VIS_OLD, TOOLBAR_WINDOW_VIS_NEW, TOOLBAR_WINDOW_VIS_MARKER),
-        (TOOLBAR_DESTROY_OLD, TOOLBAR_DESTROY_NEW, TOOLBAR_DESTROY_MARKER),
         (LEFT_BOUNDS_OLD, LEFT_BOUNDS_NEW, LEFT_BOUNDS_MARKER),
         (TRANSLATION_OLD, TRANSLATION_NEW, TRANSLATION_MARKER),
         (BUTTON_VISIBILITY_OLD, BUTTON_VISIBILITY_NEW, BUTTON_VISIBILITY_MARKER),
@@ -603,6 +600,16 @@ def patch_toolbar_phone(root: Path) -> bool:
             raise RuntimeError(f"Expected one ToolbarPhone method anchor in {path}")
         text = text.replace(TOOLBAR_METHODS_ANCHOR, TOOLBAR_METHODS_NEW + TOOLBAR_METHODS_ANCHOR, 1)
         changed = True
+
+    text, updated = _replace_section(
+        text,
+        TOOLBAR_DESTROY_START,
+        TOOLBAR_DESTROY_END,
+        TOOLBAR_DESTROY_NEW,
+        path,
+        include_end=True,
+    )
+    changed = changed or updated
 
     if changed:
         path.write_text(text, encoding="utf-8")
