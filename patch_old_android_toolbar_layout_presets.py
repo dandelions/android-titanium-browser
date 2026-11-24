@@ -114,6 +114,8 @@ FRAGMENT_METHODS = """    private void setupToolbarLayoutPreference() {
 FRAGMENT_ANCHOR = "    private void updateHideDesktopTabsPreference() {\n"
 
 TOOLBAR_FIELDS_OLD = "    private View mToolbarBackButton;\n"
+TOOLBAR_IMPORT_OLD = "import android.view.Gravity;\n"
+TOOLBAR_IMPORT_NEW = "import android.view.Gravity;\nimport android.widget.FrameLayout;\n"
 TOOLBAR_FIELDS_NEW = TOOLBAR_FIELDS_OLD + """    // Helium: address-bar button layout presets for old-android.
     private static final int HELIUM_LAYOUT_CURRENT = 0;
     private static final int HELIUM_LAYOUT_START = 1;
@@ -391,6 +393,7 @@ def patch_toolbar_phone(root: Path) -> bool:
     text = path.read_text(encoding="utf-8")
     changed = False
     replacements = (
+        (TOOLBAR_IMPORT_OLD, TOOLBAR_IMPORT_NEW, "import android.widget.FrameLayout;"),
         (TOOLBAR_FIELDS_OLD, TOOLBAR_FIELDS_NEW, "mHeliumStartButtons;"),
         (TOOLBAR_INFLATE_OLD, TOOLBAR_INFLATE_NEW, TOOLBAR_INFLATE_MARKER),
         (TOOLBAR_APPLY_OLD, TOOLBAR_APPLY_NEW, TOOLBAR_APPLY_MARKER),

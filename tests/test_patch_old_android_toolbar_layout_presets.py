@@ -41,6 +41,8 @@ public class AddressBarSettingsFragment extends ChromeBaseSettingsFragment {
 
 TOOLBAR_PHONE_SOURCE = """package org.chromium.chrome.browser.toolbar.top;
 
+import android.view.Gravity;
+
 public class ToolbarPhone extends ToolbarLayout {
     private View mToolbarBackButton;
 
