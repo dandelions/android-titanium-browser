@@ -10,9 +10,36 @@ SPEC = importlib.util.spec_from_file_location(
 )
 PATCH = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(PATCH)
+DEVTOOLS_SPEC = importlib.util.spec_from_file_location(
+    "patch_old_android_v158_devtools_jni", ROOT / "patch_old_android_v158_devtools_jni.py"
+)
+DEVTOOLS_PATCH = importlib.util.module_from_spec(DEVTOOLS_SPEC)
+DEVTOOLS_SPEC.loader.exec_module(DEVTOOLS_PATCH)
 
 
 class OldAndroidV158ExtensionJniPatchTest(unittest.TestCase):
+    def test_devtools_declaration_is_inside_natives(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root) / DEVTOOLS_PATCH.TARGET
+            path.parent.mkdir(parents=True)
+            path.write_text(
+                "public class DevToolsWindowAndroid {\n"
+                "    void activateInspectedPage(WebContents webContents);\n"
+                "    @NativeMethods\n"
+                "    interface Natives {\n"
+                "        void openDevTools(WebContents webContents);\n"
+                "        void attachToBrowser(\n"
+                "                WebContents webContents, JniPtr<NativeBrowserWindowInterface> window);\n"
+                "    }\n"
+                "}\n"
+            )
+            self.assertTrue(DEVTOOLS_PATCH.patch_source_tree(Path(root)))
+            text = path.read_text()
+            self.assertEqual(text.count(DEVTOOLS_PATCH.DECL), 1)
+            natives = text[text.index("interface Natives {"):]
+            self.assertIn(DEVTOOLS_PATCH.DECL, natives)
+            self.assertFalse(DEVTOOLS_PATCH.patch_source_tree(Path(root)))
+
     def test_migrates_legacy_bridge_fields_and_is_idempotent(self):
         with tempfile.TemporaryDirectory() as root:
             root = Path(root)

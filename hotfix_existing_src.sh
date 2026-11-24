@@ -4373,6 +4373,7 @@ if is_old_version_branch; then
     python3 "$SCRIPT_DIR/patch_old_android_extension_popup.py" "$SRC_DIR"
     python3 "$SCRIPT_DIR/patch_old_android_extension_popup_context.py" "$SRC_DIR"
     python3 "$SCRIPT_DIR/patch_old_android_v158_extension_jni.py" "$SRC_DIR"
+    python3 "$SCRIPT_DIR/patch_old_android_v158_devtools_jni.py" "$SRC_DIR"
 if grep -q 'kNewForegroundTab' "$SRC_DIR/ui/base/mojom/window_open_disposition.mojom" 2>/dev/null; then
     python3 - "$SRC_DIR" <<'PYCODE'
 from pathlib import Path
