@@ -69,11 +69,19 @@ def migrate_source_tree(source_root: Path) -> bool:
         for old, new in REPLACEMENTS:
             text = text.replace(old, new)
         if path.name == "ExtensionsMenuBridge.java":
+            anchor = "    public List<ExtensionsMenuTypes.MenuEntryState> getMenuEntries() {"
             if MENU_OVERLOAD_MARKER not in text:
-                anchor = "    public List<ExtensionsMenuTypes.MenuEntryState> getMenuEntries() {"
                 if anchor not in text:
                     raise RuntimeError(f"Menu bridge overload anchor not found in {path}")
                 text = text.replace(anchor, MENU_OVERLOAD_BLOCK + anchor, 1)
+            elif "getMenuEntries(\n            @Nullable WebContents webContents)" not in text and anchor in text:
+                menu_entries = """    public List<ExtensionsMenuTypes.MenuEntryState> getMenuEntries(
+            @Nullable WebContents webContents) {
+        return ExtensionsMenuBridgeJni.get().getMenuEntries(mNative, webContents);
+    }
+
+"""
+                text = text.replace(anchor, menu_entries + anchor, 1)
             text = re.sub(
                 r"@Nullable Bitmap getActionIcon\(\s*JniPtr<NativeExtensionsMenuDelegateAndroid> self,\s*int actionIndex\);",
                 '@Nullable Bitmap getActionIcon(\n'
