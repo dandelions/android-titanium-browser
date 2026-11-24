@@ -4134,6 +4134,7 @@ if is_old_version_branch; then
     python3 "$SCRIPT_DIR/patch_old_android_mini_origin.py" .
     python3 "$SCRIPT_DIR/patch_old_android_extension_popup.py" .
     python3 "$SCRIPT_DIR/patch_old_android_extension_popup_context.py" .
+    python3 "$SCRIPT_DIR/patch_old_android_four_square_titanium.py" .
     python3 "$SCRIPT_DIR/patch_old_android_v158_extension_jni.py" .
     python3 "$SCRIPT_DIR/patch_old_android_v158_devtools_jni.py" .
 python3 "$SCRIPT_DIR/patch_renderer_mprotect.py" .
