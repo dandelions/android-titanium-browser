@@ -28,6 +28,11 @@ MENU_OVERLOAD_BLOCK = """    public ExtensionsMenuTypes.MenuEntryState getMenuEn
         return ExtensionsMenuBridgeJni.get().getMenuEntry(mNative, actionIndex, webContents);
     }
 
+    public List<ExtensionsMenuTypes.MenuEntryState> getMenuEntries(
+            @Nullable WebContents webContents) {
+        return ExtensionsMenuBridgeJni.get().getMenuEntries(mNative, webContents);
+    }
+
     public @Nullable Bitmap getActionIcon(int actionIndex, @Nullable WebContents webContents) {
         return ExtensionsMenuBridgeJni.get().getActionIcon(mNative, actionIndex, webContents);
     }
