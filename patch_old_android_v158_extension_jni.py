@@ -10,6 +10,10 @@ COORDINATOR = Path(
     "ExtensionActionListCoordinator.java"
 )
 COORDINATOR_METHOD = "public View getContainerView() { return mContainer; }\n"
+MEDIATOR = Path(
+    "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/"
+    "ExtensionsMenuMediator.java"
+)
 
 BRIDGES = (
     Path(
@@ -83,6 +87,34 @@ def migrate_source_tree(source_root: Path) -> bool:
             coordinator.write_text(updated, encoding="utf-8")
             changed = True
             print(f"Deduped old-android toolbar container accessor: {coordinator}")
+    mediator = source_root / MEDIATOR
+    if mediator.is_file():
+        text = mediator.read_text(encoding="utf-8")
+        method_start = text.find("private void openExtensionOptionsFromMenu(String extensionId)")
+        if method_start >= 0:
+            brace_start = text.find("{", method_start)
+            depth = 0
+            method_end = -1
+            for index in range(brace_start, len(text)):
+                if text[index] == "{":
+                    depth += 1
+                elif text[index] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        method_end = index
+                        break
+            if method_end >= 0:
+                method = text[method_start:method_end]
+                declaration = "        String optionsUrl = mMenuBridge.getOptionsPageUrl(extensionId);"
+                first = method.find(declaration)
+                second = method.find(declaration, first + len(declaration)) if first >= 0 else -1
+                if second >= 0:
+                    block_end = method.find("        mMenuBridge.executeAction", second)
+                    if block_end >= 0:
+                        method = method[:second] + method[block_end:]
+                        mediator.write_text(text[:method_start] + method + text[method_end:], encoding="utf-8")
+                        changed = True
+                        print(f"Deduped old-android extension options helper: {mediator}")
     for relative in BRIDGES:
         path = source_root / relative
         if not path.is_file():
