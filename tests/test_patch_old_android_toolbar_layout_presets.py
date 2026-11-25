@@ -179,7 +179,8 @@ class ToolbarLayoutPresetsPatchTest(unittest.TestCase):
             self.assertNotIn(".recreate()", fragment)
 
             toolbar = (root / patch.TOOLBAR_PHONE).read_text()
-            self.assertIn("post(() -> postOnAnimation(this::maybeApplyHeliumToolbarLayoutPreset));", toolbar)
+            self.assertIn("Keep the original XML hierarchy during cold start", toolbar)
+            self.assertNotIn("post(() -> postOnAnimation(this::maybeApplyHeliumToolbarLayoutPreset));", toolbar)
             self.assertIn("HELIUM_LAYOUT_START", toolbar)
             self.assertIn("HELIUM_LAYOUT_REVERSE", toolbar)
             self.assertIn("public static void heliumRefreshLayoutPreset()", toolbar)
@@ -265,12 +266,13 @@ class ToolbarLayoutPresetsPatchTest(unittest.TestCase):
             self.assertTrue(patch.patch_source_tree(root))
 
             upgraded = toolbar_path.read_text()
-            self.assertIn(
-                "post(() -> postOnAnimation(this::maybeApplyHeliumToolbarLayoutPreset));",
+            self.assertIn("Keep the original XML hierarchy during cold start", upgraded)
+            self.assertNotIn(
+                patch.TOOLBAR_APPLY_OLD + "            maybeApplyHeliumToolbarLayoutPreset();",
                 upgraded,
             )
             self.assertNotIn(
-                patch.TOOLBAR_APPLY_OLD + "            maybeApplyHeliumToolbarLayoutPreset();",
+                "post(() -> postOnAnimation(this::maybeApplyHeliumToolbarLayoutPreset));",
                 upgraded,
             )
             self.assertFalse(patch.patch_source_tree(root))
