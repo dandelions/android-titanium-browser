@@ -27,7 +27,26 @@ OLD_INITIALIZE = """  // Set |pinned_action_ids_| directly to avoid notifying ob
   // have changed even though they haven't.
   pinned_action_ids_ = GetFilteredPinnedActionIds();
 """
-NEW_INITIALIZE = f"""  // Helium: migrate an existing ZeroOmega install to the toolbar once so its
+NEW_MIGRATION = f"""  // Helium: migrate an existing ZeroOmega install to the toolbar once. After
+  // this marker is stored, the user can explicitly unpin the action.
+  constexpr char kZeroOmegaExtensionId[] = \"{EXTENSION_ID}\";
+  if (action_ids_.contains(kZeroOmegaExtensionId) &&
+      extension_prefs_->WasPinnedByDefault(kZeroOmegaExtensionId) != true) {{
+    auto stored_pinned_actions = extension_prefs_->GetPinnedExtensions();
+    if (!std::ranges::contains(stored_pinned_actions, kZeroOmegaExtensionId)) {{
+      stored_pinned_actions.push_back(kZeroOmegaExtensionId);
+      extension_prefs_->SetPinnedExtensions(stored_pinned_actions);
+    }}
+    extension_prefs_->SetWasPinnedByDefault(kZeroOmegaExtensionId, true);
+  }}
+
+"""
+SET_PINNED_ACTIONS = """  // Set |pinned_action_ids_| directly to avoid notifying observers that they
+  // have changed even though they haven't.
+  pinned_action_ids_ = GetFilteredPinnedActionIds();
+"""
+NEW_INITIALIZE = NEW_MIGRATION + SET_PINNED_ACTIONS
+CURRENT_REPEAT_MIGRATION = f"""  // Helium: migrate an existing ZeroOmega install to the toolbar once so its
   // PAC profile status remains visible. A later explicit user unpin is preserved.
   constexpr char kZeroOmegaExtensionId[] = \"{EXTENSION_ID}\";
   if (action_ids_.contains(kZeroOmegaExtensionId)) {{
@@ -41,9 +60,6 @@ NEW_INITIALIZE = f"""  // Helium: migrate an existing ZeroOmega install to the t
     }}
   }}
 
-  // Set |pinned_action_ids_| directly to avoid notifying observers that they
-  // have changed even though they haven't.
-  pinned_action_ids_ = GetFilteredPinnedActionIds();
 """
 
 
@@ -69,7 +85,9 @@ def patch_model(path: Path) -> bool:
 
 '''
     if old_zeroomega_initialize in text:
-        text = text.replace(old_zeroomega_initialize, NEW_INITIALIZE.split("  // Set |pinned_action_ids_|")[0], 1)
+        text = text.replace(old_zeroomega_initialize, NEW_MIGRATION, 1)
+    elif CURRENT_REPEAT_MIGRATION in text:
+        text = text.replace(CURRENT_REPEAT_MIGRATION, NEW_MIGRATION, 1)
     elif "Helium: migrate an existing ZeroOmega install" not in text:
         if OLD_INITIALIZE not in text:
             raise SystemExit(f"Toolbar initialization anchor not found in {path}")
