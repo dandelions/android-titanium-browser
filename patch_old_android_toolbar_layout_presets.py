@@ -323,6 +323,25 @@ TOOLBAR_METHODS_NEW = """    // Helium: address-bar button layout presets for ol
         return order.size();
     }
 
+    private View heliumNewSpacer() {
+        View spacer = new View(getContext());
+        spacer.setLayoutParams(new android.widget.LinearLayout.LayoutParams(0, 1, 1f));
+        return spacer;
+    }
+
+    private void heliumApplyStartWidth(boolean spread) {
+        ViewGroup start = heliumStartButtons();
+        FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) start.getLayoutParams();
+        int width =
+                spread
+                        ? ViewGroup.LayoutParams.MATCH_PARENT
+                        : ViewGroup.LayoutParams.WRAP_CONTENT;
+        if (params.width != width) {
+            params.width = width;
+            start.setLayoutParams(params);
+        }
+    }
+
     private void applyHeliumToolbarLayoutPreset() {
         if (mToolbarButtonsContainer == null || mHeliumEndOrder.isEmpty()) {
             return;
@@ -331,6 +350,9 @@ TOOLBAR_METHODS_NEW = """    // Helium: address-bar button layout presets for ol
         int preset = heliumToolbarLayoutPreset();
         ViewGroup start = heliumStartButtons();
         View extensions = heliumExtensionsView();
+        // The native new tab page hides the omnibox, so the buttons share the whole toolbar
+        // instead of leaving an empty gap where the address bar would be.
+        boolean spreadOnNtp = isLocationBarShownInNtp();
 
         // Chromium inflates the optional, extensions and signin stubs in place, so the order has
         // to come from the live children. Replaying the stub references captured during inflation
@@ -347,20 +369,27 @@ TOOLBAR_METHODS_NEW = """    // Helium: address-bar button layout presets for ol
         // Keep the extensions action where it already sits; re-adding a parented view throws.
         boolean extensionsInEnd = extensions != null && others.contains(extensions);
 
-        for (int heliumIndex = start.getChildCount() - 1; heliumIndex >= 0; heliumIndex--) {
-            View child = start.getChildAt(heliumIndex);
-            if (child == mHomeButton || child == mHeliumTabs || child == mHeliumMenu
-                    || child == extensions) {
-                start.removeViewAt(heliumIndex);
-            }
-        }
+        start.removeAllViews();
         detachHeliumToolbarView(mHomeButton);
         detachHeliumToolbarView(mHeliumTabs);
         detachHeliumToolbarView(mHeliumMenu);
 
         java.util.ArrayList<View> startOrder = new java.util.ArrayList<>();
         java.util.ArrayList<View> endOrder = new java.util.ArrayList<>(others);
-        if (preset == HELIUM_LAYOUT_REVERSE) {
+        if (spreadOnNtp) {
+            endOrder.remove(extensions);
+            if (preset == HELIUM_LAYOUT_REVERSE) {
+                startOrder.add(mHeliumMenu);
+                startOrder.add(extensions);
+                startOrder.add(mHeliumTabs);
+                startOrder.add(mHomeButton);
+            } else {
+                startOrder.add(mHomeButton);
+                startOrder.add(mHeliumTabs);
+                startOrder.add(extensions);
+                startOrder.add(mHeliumMenu);
+            }
+        } else if (preset == HELIUM_LAYOUT_REVERSE) {
             endOrder.remove(extensions);
             startOrder.add(mHeliumMenu);
             startOrder.add(extensions);
@@ -380,16 +409,23 @@ TOOLBAR_METHODS_NEW = """    // Helium: address-bar button layout presets for ol
             }
         }
 
+        heliumApplyStartWidth(spreadOnNtp);
         mToolbarButtonsContainer.removeAllViews();
+        if (spreadOnNtp) {
+            addHeliumToolbarView(start, heliumNewSpacer());
+        }
         for (View view : startOrder) {
             heliumUseLinearParams(view);
             addHeliumToolbarView(start, view);
+            if (spreadOnNtp) {
+                addHeliumToolbarView(start, heliumNewSpacer());
+            }
         }
         for (View view : endOrder) {
             heliumUseLinearParams(view);
             addHeliumToolbarView(mToolbarButtonsContainer, view);
         }
-        if (preset == HELIUM_LAYOUT_CURRENT && mHomeButton != null) {
+        if (!spreadOnNtp && preset == HELIUM_LAYOUT_CURRENT && mHomeButton != null) {
             heliumUseFrameParams(mHomeButton);
             FrameLayout.LayoutParams params =
                     (FrameLayout.LayoutParams) mHomeButton.getLayoutParams();

@@ -11,10 +11,6 @@ LOCATION_BAR_TABLET = Path(
 TOOLBAR_MANAGER = Path(
     "chrome/android/java/src/org/chromium/chrome/browser/toolbar/ToolbarManager.java"
 )
-TOOLBAR_PHONE = Path(
-    "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/top/"
-    "ToolbarPhone.java"
-)
 METHOD_ANCHOR = "    private void adjustBackgroundForSuggestions() {\n"
 GUARD = """        // Helium: desktop-mode activity recreation can briefly leave this view attached
         // with LinearLayout.LayoutParams before it returns to its FrameLayout holder.
@@ -65,27 +61,10 @@ TOOLBAR_TABLET_MARGIN_GUARD = """        // Helium: skip transient desktop-mode 
         }
         var lp = (ViewGroup.MarginLayoutParams) toolbarTabletLayout.getLayoutParams();
 """
-NTP_LOCATION_BAR_MARKER = "keep the toolbar omnibox visible on the native NTP"
-NTP_LOCATION_BAR_ANCHOR = """    @VisibleForTesting
-    boolean isLocationBarShownInNtp() {
-        return getToolbarDataProvider().getNewTabPageDelegate().isLocationBarShown();
-    }
-"""
-NTP_LOCATION_BAR_PATCHED = """    @VisibleForTesting
-    boolean isLocationBarShownInNtp() {
-        // Helium: keep the toolbar omnibox visible on the native NTP. The default home page
-        // used the page's fake search box instead, which left the toolbar without an address
-        // bar, while extension-provided home pages showed one.
-        return false;
-    }
-"""
-
-
 def patch_source(root: Path) -> bool:
     path = root / LOCATION_BAR_TABLET
     toolbar_path = root / TOOLBAR_MANAGER
-    toolbar_phone_path = root / TOOLBAR_PHONE
-    for expected in (path, toolbar_path, toolbar_phone_path):
+    for expected in (path, toolbar_path):
         if not expected.is_file():
             raise SystemExit(f"Expected Chromium file not found: {expected}")
 
@@ -134,16 +113,6 @@ def patch_source(root: Path) -> bool:
 
     if changed:
         toolbar_path.write_text(toolbar_text, encoding="utf-8")
-
-    phone_text = toolbar_phone_path.read_text(encoding="utf-8")
-    if NTP_LOCATION_BAR_MARKER not in phone_text:
-        if phone_text.count(NTP_LOCATION_BAR_ANCHOR) != 1:
-            raise SystemExit(f"Expected one NTP location bar anchor in {toolbar_phone_path}")
-        phone_text = phone_text.replace(
-            NTP_LOCATION_BAR_ANCHOR, NTP_LOCATION_BAR_PATCHED, 1
-        )
-        toolbar_phone_path.write_text(phone_text, encoding="utf-8")
-        changed = True
 
     return changed
 
