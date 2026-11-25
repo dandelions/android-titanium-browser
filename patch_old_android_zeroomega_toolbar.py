@@ -54,7 +54,23 @@ def patch_model(path: Path) -> bool:
     text = path.read_text(encoding="utf-8")
     original = text
 
-    if "Helium: migrate an existing ZeroOmega install" not in text:
+    old_zeroomega_initialize = f'''  // Helium: migrate an existing ZeroOmega install to the toolbar once so its
+  // PAC profile status remains visible. A later explicit user unpin is preserved.
+  constexpr char kZeroOmegaExtensionId[] = \"{EXTENSION_ID}\";
+  if (action_ids_.contains(kZeroOmegaExtensionId) &&
+      extension_prefs_->WasPinnedByDefault(kZeroOmegaExtensionId) != true) {{
+    auto stored_pinned_actions = extension_prefs_->GetPinnedExtensions();
+    if (!std::ranges::contains(stored_pinned_actions, kZeroOmegaExtensionId)) {{
+      stored_pinned_actions.push_back(kZeroOmegaExtensionId);
+      extension_prefs_->SetPinnedExtensions(stored_pinned_actions);
+    }}
+    extension_prefs_->SetWasPinnedByDefault(kZeroOmegaExtensionId, true);
+  }}
+
+'''
+    if old_zeroomega_initialize in text:
+        text = text.replace(old_zeroomega_initialize, NEW_INITIALIZE.split("  // Set |pinned_action_ids_|")[0], 1)
+    elif "Helium: migrate an existing ZeroOmega install" not in text:
         if OLD_INITIALIZE not in text:
             raise SystemExit(f"Toolbar initialization anchor not found in {path}")
         text = text.replace(OLD_INITIALIZE, NEW_INITIALIZE, 1)
