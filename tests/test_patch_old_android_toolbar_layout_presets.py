@@ -202,7 +202,9 @@ class ToolbarLayoutPresetsPatchTest(unittest.TestCase):
             # the detaching helper.
             self.assertIn("addHeliumToolbarView(mToolbarButtonsContainer, view);", apply_body)
             self.assertNotIn("mToolbarButtonsContainer.addView(view);", apply_body)
-            self.assertIn("addHeliumToolbarView(this, mHomeButton);", apply_body)
+            # The omnibox owns the middle stretch, so both groups stay in their containers.
+            self.assertIn("startOrder.add(mHomeButton);", apply_body)
+            self.assertIn("startOrder.add(mHeliumTabs);", apply_body)
 
     def test_upgrades_stale_preset_sections(self):
         with tempfile.TemporaryDirectory() as temp:

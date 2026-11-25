@@ -396,17 +396,14 @@ TOOLBAR_METHODS_NEW = """    // Helium: address-bar button layout presets for ol
             endOrder.add(mHeliumTabs);
             endOrder.add(mHomeButton);
         } else {
+            // The omnibox is visible here, so keep the four buttons split between the two ends
+            // and let the address bar own the middle stretch.
             if (extensions != null && !extensionsInEnd) {
                 endOrder.add(heliumExtensionsEndIndex(endOrder), extensions);
             }
-            if (preset == HELIUM_LAYOUT_START) {
-                startOrder.add(mHomeButton);
-                startOrder.add(mHeliumTabs);
-                endOrder.add(mHeliumMenu);
-            } else {
-                endOrder.add(mHeliumTabs);
-                endOrder.add(mHeliumMenu);
-            }
+            startOrder.add(mHomeButton);
+            startOrder.add(mHeliumTabs);
+            endOrder.add(mHeliumMenu);
         }
 
         heliumApplyStartWidth(spreadOnNtp);
@@ -425,15 +422,6 @@ TOOLBAR_METHODS_NEW = """    // Helium: address-bar button layout presets for ol
             heliumUseLinearParams(view);
             addHeliumToolbarView(mToolbarButtonsContainer, view);
         }
-        if (!spreadOnNtp && preset == HELIUM_LAYOUT_CURRENT && mHomeButton != null) {
-            heliumUseFrameParams(mHomeButton);
-            FrameLayout.LayoutParams params =
-                    (FrameLayout.LayoutParams) mHomeButton.getLayoutParams();
-            params.gravity = Gravity.TOP | Gravity.START;
-            mHomeButton.setLayoutParams(params);
-            addHeliumToolbarView(this, mHomeButton);
-        }
-
         start.setVisibility(mToolbarButtonsContainer.getVisibility());
         mHeliumAppliedPreset = preset;
         mHeliumPlacedExtensions = extensions;
