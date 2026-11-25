@@ -89,6 +89,7 @@ class OldAndroidBottomToolbarPatchTest(unittest.TestCase):
             PATCH.JAVA_FEATURE_LIST: root / PATCH.JAVA_FEATURE_LIST,
             PATCH.CONFIG_UTILS: root / PATCH.CONFIG_UTILS,
             PATCH.CHROME_TABBED_ACTIVITY: root / PATCH.CHROME_TABBED_ACTIVITY,
+            PATCH.TOOLBAR_MANAGER: root / PATCH.TOOLBAR_MANAGER,
         }
         for path in paths.values():
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -98,6 +99,7 @@ class OldAndroidBottomToolbarPatchTest(unittest.TestCase):
         )
         paths[PATCH.CONFIG_UTILS].write_text(CONFIG_SOURCE + V158_MOVE_TOOLBAR_SOURCE)
         paths[PATCH.CHROME_TABBED_ACTIVITY].write_text(ACTIVITY_SOURCE + HOST_METHOD_SOURCE)
+        paths[PATCH.TOOLBAR_MANAGER].write_text(PATCH.ENABLE_BOTTOM_CONTROLS_ANCHOR)
         return paths
 
     def test_enables_bottom_bar_for_car_desktop_and_mobile(self):
@@ -148,6 +150,7 @@ class OldAndroidBottomToolbarPatchTest(unittest.TestCase):
                 PATCH.JAVA_FEATURE_LIST: root / PATCH.JAVA_FEATURE_LIST,
                 PATCH.CONFIG_UTILS: root / PATCH.CONFIG_UTILS,
                 PATCH.CHROME_TABBED_ACTIVITY: root / PATCH.CHROME_TABBED_ACTIVITY,
+                PATCH.TOOLBAR_MANAGER: root / PATCH.TOOLBAR_MANAGER,
             }
             for path in paths.values():
                 path.parent.mkdir(parents=True, exist_ok=True)
@@ -176,6 +179,7 @@ class OldAndroidBottomToolbarPatchTest(unittest.TestCase):
                 )
             )
             paths[PATCH.CHROME_TABBED_ACTIVITY].write_text(ACTIVITY_SOURCE + HOST_METHOD_SOURCE)
+            paths[PATCH.TOOLBAR_MANAGER].write_text(PATCH.ENABLE_BOTTOM_CONTROLS_ANCHOR)
 
             self.assertTrue(PATCH.patch_source_tree(temp))
             self.assertIn(PATCH.FEATURE_MARKER, paths[PATCH.FEATURE_LIST].read_text())

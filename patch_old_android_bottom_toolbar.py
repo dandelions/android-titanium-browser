@@ -50,6 +50,16 @@ CONFIG_UTILS = (
     "bottombar/BottomBarConfigUtils.java"
 )
 CHROME_TABBED_ACTIVITY = "chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java"
+TOOLBAR_MANAGER = "chrome/android/java/src/org/chromium/chrome/browser/toolbar/ToolbarManager.java"
+ENABLE_BOTTOM_CONTROLS_MARKER = "Helium: old-android disables the separate bottom controls host."
+ENABLE_BOTTOM_CONTROLS_ANCHOR = """    public void enableBottomControls() {
+        enableTabGroupUiControls();
+"""
+ENABLE_BOTTOM_CONTROLS_REPLACEMENT = """    public void enableBottomControls() {
+        enableTabGroupUiControls();
+        // Helium: old-android disables the separate bottom controls host.
+        return;
+"""
 BOTTOM_BAR_HOST_METHOD_MARKER = "Helium: old-android uses the address bar as the only bottom toolbar."
 BOTTOM_BAR_HOST_METHOD_OLD = """    private @Nullable BottomBarHostManager getBottomBarHostManager() {
         if (mBottomBarHostManager == null && BottomBarConfigUtils.isBottomBarEnabled(this)) {
@@ -319,6 +329,20 @@ def patch_source_tree(src_dir: str) -> bool:
     config_changed = patch_config_utils(src_dir)
     default_changed = patch_default_user_enabled(src_dir)
     observer_changed = patch_activity_observer(src_dir)
+    toolbar_manager_path = os.path.join(src_dir, TOOLBAR_MANAGER)
+    with open(toolbar_manager_path, "r", encoding="utf-8") as handle:
+        toolbar_manager_content = handle.read()
+    controls_changed = False
+    if ENABLE_BOTTOM_CONTROLS_MARKER not in toolbar_manager_content:
+        if ENABLE_BOTTOM_CONTROLS_ANCHOR not in toolbar_manager_content:
+            raise RuntimeError(f"bottom controls enable anchor not found in {toolbar_manager_path}")
+        toolbar_manager_content = toolbar_manager_content.replace(
+            ENABLE_BOTTOM_CONTROLS_ANCHOR, ENABLE_BOTTOM_CONTROLS_REPLACEMENT, 1
+        )
+        with open(toolbar_manager_path, "w", encoding="utf-8") as handle:
+            handle.write(toolbar_manager_content)
+        controls_changed = True
+
     activity_path = os.path.join(src_dir, CHROME_TABBED_ACTIVITY)
     with open(activity_path, "r", encoding="utf-8") as handle:
         activity_content = handle.read()
@@ -340,6 +364,7 @@ def patch_source_tree(src_dir: str) -> bool:
         or default_changed
         or observer_changed
         or host_changed
+        or controls_changed
     )
 
 
