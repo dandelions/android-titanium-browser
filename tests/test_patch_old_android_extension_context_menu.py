@@ -32,6 +32,8 @@ class ExtensionContextMenuPatchTest(unittest.TestCase):
             self.assertIn(patch.INIT_MARKER, result)
             self.assertIn("Init(extension, /* can_show_icon_in_toolbar= */ false);", result)
             self.assertIn(patch.MARKER, result)
+            self.assertIn("if (IsExtensionForcePinned", result)
+            self.assertNotIn("if (false && IsExtensionForcePinned", result)
             self.assertFalse(patch.patch_source_tree(Path(directory)))
 
 

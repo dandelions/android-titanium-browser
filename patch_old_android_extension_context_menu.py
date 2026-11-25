@@ -17,6 +17,11 @@ ANCHOR = """  if (can_show_icon_in_toolbar) {
 REPLACEMENT = """  if (can_show_icon_in_toolbar) {
     // Helium old-android hides the extension pin-to-toolbar menu command.
     // Extensions are arranged by the browser toolbar layout instead.
+    if (IsExtensionForcePinned(*extension, profile_)) {
+"""
+LEGACY_REPLACEMENT = """  if (can_show_icon_in_toolbar) {
+    // Helium old-android hides the extension pin-to-toolbar menu command.
+    // Extensions are arranged by the browser toolbar layout instead.
     if (false && IsExtensionForcePinned(*extension, profile_)) {
 """
 
@@ -27,6 +32,9 @@ def patch_source_tree(src_dir: Path) -> bool:
         raise SystemExit(f"Extension context menu source not found: {path}")
     text = path.read_text(encoding="utf-8")
     changed = False
+    if LEGACY_REPLACEMENT in text:
+        text = text.replace(LEGACY_REPLACEMENT, REPLACEMENT, 1)
+        changed = True
     if INIT_MARKER not in text:
         if text.count(INIT_ANCHOR) != 1:
             raise SystemExit(f"Extension context menu init anchor not found exactly once: {path}")
