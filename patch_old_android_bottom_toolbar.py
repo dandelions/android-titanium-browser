@@ -51,14 +51,13 @@ CONFIG_UTILS = (
 )
 CHROME_TABBED_ACTIVITY = "chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java"
 TOOLBAR_MANAGER = "chrome/android/java/src/org/chromium/chrome/browser/toolbar/ToolbarManager.java"
-ENABLE_BOTTOM_CONTROLS_MARKER = "Helium: old-android disables the separate bottom controls host."
-ENABLE_BOTTOM_CONTROLS_ANCHOR = """    public void enableBottomControls() {
-        enableTabGroupUiControls();
-"""
+ENABLE_BOTTOM_CONTROLS_MARKER = "Helium: old-android uses the address bar as the only toolbar row."
+ENABLE_BOTTOM_CONTROLS_START = "    public void enableBottomControls() {\n"
+ENABLE_BOTTOM_CONTROLS_END = "    /**\n     * Shows the bottom bar's startup promo, if any:"
 ENABLE_BOTTOM_CONTROLS_REPLACEMENT = """    public void enableBottomControls() {
+        // Helium: old-android uses the address bar as the only toolbar row.
         enableTabGroupUiControls();
-        // Helium: old-android disables the separate bottom controls host.
-        return;
+    }
 """
 BOTTOM_BAR_HOST_METHOD_MARKER = "Helium: old-android uses the address bar as the only bottom toolbar."
 BOTTOM_BAR_HOST_METHOD_OLD = """    private @Nullable BottomBarHostManager getBottomBarHostManager() {
@@ -334,14 +333,19 @@ def patch_source_tree(src_dir: str) -> bool:
         toolbar_manager_content = handle.read()
     controls_changed = False
     if ENABLE_BOTTOM_CONTROLS_MARKER not in toolbar_manager_content:
-        if ENABLE_BOTTOM_CONTROLS_ANCHOR not in toolbar_manager_content:
-            raise RuntimeError(f"bottom controls enable anchor not found in {toolbar_manager_path}")
-        toolbar_manager_content = toolbar_manager_content.replace(
-            ENABLE_BOTTOM_CONTROLS_ANCHOR, ENABLE_BOTTOM_CONTROLS_REPLACEMENT, 1
+        method_start = toolbar_manager_content.find(ENABLE_BOTTOM_CONTROLS_START)
+        method_end = toolbar_manager_content.find(ENABLE_BOTTOM_CONTROLS_END, method_start)
+        if method_start < 0 or method_end < 0:
+            raise RuntimeError(f"bottom controls enable method not found in {toolbar_manager_path}")
+        toolbar_manager_content = (
+            toolbar_manager_content[:method_start]
+            + ENABLE_BOTTOM_CONTROLS_REPLACEMENT
+            + toolbar_manager_content[method_end:]
         )
+        controls_changed = True
+    if controls_changed:
         with open(toolbar_manager_path, "w", encoding="utf-8") as handle:
             handle.write(toolbar_manager_content)
-        controls_changed = True
 
     activity_path = os.path.join(src_dir, CHROME_TABBED_ACTIVITY)
     with open(activity_path, "r", encoding="utf-8") as handle:

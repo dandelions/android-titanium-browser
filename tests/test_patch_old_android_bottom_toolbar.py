@@ -99,7 +99,14 @@ class OldAndroidBottomToolbarPatchTest(unittest.TestCase):
         )
         paths[PATCH.CONFIG_UTILS].write_text(CONFIG_SOURCE + V158_MOVE_TOOLBAR_SOURCE)
         paths[PATCH.CHROME_TABBED_ACTIVITY].write_text(ACTIVITY_SOURCE + HOST_METHOD_SOURCE)
-        paths[PATCH.TOOLBAR_MANAGER].write_text(PATCH.ENABLE_BOTTOM_CONTROLS_ANCHOR)
+        paths[PATCH.TOOLBAR_MANAGER].write_text(
+            PATCH.ENABLE_BOTTOM_CONTROLS_START
+            + "        enableTabGroupUiControls();\n"
+            + "        BottomBarMetrics.maybeRecordEnabledState(mActivity);\n"
+            + "    }\n"
+            + PATCH.ENABLE_BOTTOM_CONTROLS_END
+            + " */\n"
+        )
         return paths
 
     def test_enables_bottom_bar_for_car_desktop_and_mobile(self):
@@ -179,7 +186,14 @@ class OldAndroidBottomToolbarPatchTest(unittest.TestCase):
                 )
             )
             paths[PATCH.CHROME_TABBED_ACTIVITY].write_text(ACTIVITY_SOURCE + HOST_METHOD_SOURCE)
-            paths[PATCH.TOOLBAR_MANAGER].write_text(PATCH.ENABLE_BOTTOM_CONTROLS_ANCHOR)
+            paths[PATCH.TOOLBAR_MANAGER].write_text(
+                PATCH.ENABLE_BOTTOM_CONTROLS_START
+                + "        enableTabGroupUiControls();\n"
+                + "        BottomBarMetrics.maybeRecordEnabledState(mActivity);\n"
+                + "    }\n"
+                + PATCH.ENABLE_BOTTOM_CONTROLS_END
+                + " */\n"
+            )
 
             self.assertTrue(PATCH.patch_source_tree(temp))
             self.assertIn(PATCH.FEATURE_MARKER, paths[PATCH.FEATURE_LIST].read_text())
@@ -230,6 +244,28 @@ class OldAndroidBottomToolbarPatchTest(unittest.TestCase):
 
             self.assertTrue(PATCH.patch_source_tree(temp))
             self.assertIn(PATCH.DEFAULT_USER_ENABLED_MARKER, user_setting.read_text())
+
+    def test_upgrades_unreachable_return_patch(self):
+        with tempfile.TemporaryDirectory() as temp:
+            paths = self._write_sources(Path(temp))
+            legacy = (
+                PATCH.ENABLE_BOTTOM_CONTROLS_START
+                + "        enableTabGroupUiControls();\n"
+                + "        return;\n"
+                + "        enableBottomBar();\n"
+                + "    }\n"
+                + PATCH.ENABLE_BOTTOM_CONTROLS_END
+                + " */\n"
+            )
+            paths[PATCH.TOOLBAR_MANAGER].write_text(legacy)
+
+            self.assertTrue(PATCH.patch_source_tree(temp))
+
+            updated = paths[PATCH.TOOLBAR_MANAGER].read_text()
+            self.assertIn(PATCH.ENABLE_BOTTOM_CONTROLS_MARKER, updated)
+            self.assertNotIn("return;", updated)
+            self.assertNotIn("enableBottomBar();", updated)
+            self.assertFalse(PATCH.patch_source_tree(temp))
 
     def test_is_idempotent(self):
         with tempfile.TemporaryDirectory() as temp:
