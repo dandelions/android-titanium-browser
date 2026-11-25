@@ -101,6 +101,14 @@ public class ToolbarPhone extends ToolbarLayout {
         mToolbarButtonsContainer.setVisibility(toolbarButtonVisibility);
     }
 
+    private void updateVisualsForLocationBarState() {
+        int newVisualState = computeVisualState();
+        if (!visualStateChanged) {
+            TraceEvent.end("ToolbarPhone.updateVisualsForLocationBarState");
+            return;
+        }
+    }
+
     void drawWithoutBackground(Canvas canvas) {
         View extContainer = findViewById(R.id.extensions_toolbar_container);
         if (extContainer != null) {
@@ -178,6 +186,8 @@ class ToolbarLayoutPresetsPatchTest(unittest.TestCase):
             self.assertIn("sHeliumActiveToolbar == this", toolbar)
             self.assertNotIn("WeakReference", toolbar)
             self.assertIn(patch.TOOLBAR_WINDOW_VIS_MARKER, toolbar)
+            self.assertIn(patch.VISUAL_STATE_MARKER, toolbar)
+            self.assertIn("mHeliumAppliedSpread", toolbar)
             self.assertIn(patch.LEFT_BOUNDS_MARKER, toolbar)
             self.assertIn(patch.CHILD_LEFT_MARKER, toolbar)
             self.assertEqual(toolbar.count("private void applyHeliumToolbarLayoutPreset()"), 1)

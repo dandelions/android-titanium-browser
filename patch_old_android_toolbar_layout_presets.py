@@ -143,6 +143,7 @@ TOOLBAR_FIELDS_NEW = """    // Helium: address-bar button layout presets for old
     private View mHeliumMenu;
     private int mHeliumAppliedPreset = -1;
     private @Nullable View mHeliumPlacedExtensions;
+    private boolean mHeliumAppliedSpread;
     private final java.util.ArrayList<View> mHeliumEndOrder = new java.util.ArrayList<>();
 """
 TOOLBAR_IMPORT_OLD = "import android.view.Gravity;\n"
@@ -232,7 +233,8 @@ TOOLBAR_METHODS_NEW = """    // Helium: address-bar button layout presets for ol
             return;
         }
         if (heliumToolbarLayoutPreset() == mHeliumAppliedPreset
-                && heliumExtensionsView() == mHeliumPlacedExtensions) {
+                && heliumExtensionsView() == mHeliumPlacedExtensions
+                && isLocationBarShownInNtp() == mHeliumAppliedSpread) {
             return;
         }
         applyHeliumToolbarLayoutPreset();
@@ -352,8 +354,9 @@ TOOLBAR_METHODS_NEW = """    // Helium: address-bar button layout presets for ol
         int preset = heliumToolbarLayoutPreset();
         ViewGroup start = heliumStartButtons();
         View extensions = heliumExtensionsView();
-        // The native new tab page hides the omnibox, so the buttons share the whole toolbar
-        // instead of leaving an empty gap where the address bar would be.
+        // isLocationBarShownInNtp() reports whether the new tab page owns the address bar; when it
+        // does, the toolbar omnibox stays hidden and the buttons share the whole width instead of
+        // leaving an empty gap. Any other page keeps the omnibox between the two button groups.
         boolean spreadOnNtp = isLocationBarShownInNtp();
 
         // Chromium inflates the optional, extensions and signin stubs in place, so the order has
@@ -427,11 +430,26 @@ TOOLBAR_METHODS_NEW = """    // Helium: address-bar button layout presets for ol
         start.setVisibility(mToolbarButtonsContainer.getVisibility());
         mHeliumAppliedPreset = preset;
         mHeliumPlacedExtensions = extensions;
+        mHeliumAppliedSpread = spreadOnNtp;
         requestLayout();
         invalidate();
     }
 
 """
+
+VISUAL_STATE_ANCHOR = """        if (!visualStateChanged) {
+            TraceEvent.end("ToolbarPhone.updateVisualsForLocationBarState");
+            return;
+        }
+"""
+VISUAL_STATE_NEW = """        // Helium: the address bar can change owner without a preset change (NTP <-> page),
+        // and the toolbar has to stop spreading the buttons once a page owns the omnibox.
+        if (isLocationBarShownInNtp() != mHeliumAppliedSpread) {
+            maybeApplyHeliumToolbarLayoutPreset();
+        }
+
+""" + VISUAL_STATE_ANCHOR
+VISUAL_STATE_MARKER = "the toolbar has to stop spreading the buttons"
 
 LEFT_BOUNDS_OLD = """    private int getBoundsAfterAccountingForLeftButton() {
         int padding = mToolbarSidePaddingForNtp;
@@ -602,6 +620,7 @@ def patch_toolbar_phone(root: Path) -> bool:
         (DRAW_TABS_OLD, DRAW_TABS_NEW, DRAW_TABS_NEW.strip()),
         (DRAW_MENU_OLD, DRAW_MENU_NEW, DRAW_MENU_NEW.strip()),
         (CHILD_LEFT_OLD, CHILD_LEFT_NEW, CHILD_LEFT_MARKER),
+        (VISUAL_STATE_ANCHOR, VISUAL_STATE_NEW, VISUAL_STATE_MARKER),
     )
     for old, new, marker in replacements:
         text, updated = _replace_once(text, old, new, marker, path)
