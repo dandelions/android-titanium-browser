@@ -6,6 +6,12 @@ import patch_old_android_location_bar_layout as patch
 
 
 class OldAndroidLocationBarLayoutPatchTest(unittest.TestCase):
+    def _write_toolbar_phone(self, root: Path, text: str) -> Path:
+        path = root / patch.TOOLBAR_PHONE
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+        return path
+
     def test_migrates_constructor_return_guard(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -13,6 +19,7 @@ class OldAndroidLocationBarLayoutPatchTest(unittest.TestCase):
             toolbar_manager = root / patch.TOOLBAR_MANAGER
             location_bar.parent.mkdir(parents=True)
             toolbar_manager.parent.mkdir(parents=True)
+            self._write_toolbar_phone(root, patch.NTP_ORIGINAL_OMNIBOX)
             location_bar.write_text(
                 patch.METHOD_ANCHOR + "    }\n", encoding="utf-8"
             )
@@ -39,6 +46,7 @@ class OldAndroidLocationBarLayoutPatchTest(unittest.TestCase):
             toolbar_manager = root / patch.TOOLBAR_MANAGER
             location_bar.parent.mkdir(parents=True)
             toolbar_manager.parent.mkdir(parents=True)
+            self._write_toolbar_phone(root, patch.NTP_ORIGINAL_OMNIBOX)
             location_bar.write_text(patch.MARKER + "\n", encoding="utf-8")
             toolbar_manager.write_text(
                 "class ToolbarManager {\n"
@@ -63,6 +71,7 @@ class OldAndroidLocationBarLayoutPatchTest(unittest.TestCase):
             toolbar_manager = root / patch.TOOLBAR_MANAGER
             location_bar.parent.mkdir(parents=True)
             toolbar_manager.parent.mkdir(parents=True)
+            self._write_toolbar_phone(root, patch.NTP_ORIGINAL_OMNIBOX)
             location_bar.write_text(
                 "class LocationBarTablet {\n"
                 "    private void adjustBackgroundForSuggestions() {\n"
@@ -104,6 +113,33 @@ class OldAndroidLocationBarLayoutPatchTest(unittest.TestCase):
             self.assertFalse(patch.patch_source(root))
             self.assertEqual(first_location_bar, location_bar.read_text(encoding="utf-8"))
             self.assertEqual(first_toolbar_manager, toolbar_manager.read_text(encoding="utf-8"))
+
+
+    def test_restores_original_ntp_omnibox_lookup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            location_bar = root / patch.LOCATION_BAR_TABLET
+            toolbar_manager = root / patch.TOOLBAR_MANAGER
+            location_bar.parent.mkdir(parents=True)
+            toolbar_manager.parent.mkdir(parents=True)
+            location_bar.write_text(patch.MARKER + "\n", encoding="utf-8")
+            toolbar_manager.write_text(
+                "class ToolbarManager {\n"
+                + patch.TOOLBAR_MARKER
+                + "\n"
+                + patch.TOOLBAR_TABLET_MARGIN_ANCHOR
+                + patch.TOOLBAR_TABLET_MARGIN_ANCHOR
+                + "}\n",
+                encoding="utf-8",
+            )
+            toolbar_phone = self._write_toolbar_phone(root, patch.NTP_FORCED_OMNIBOX)
+
+            self.assertTrue(patch.patch_source(root))
+            phone = toolbar_phone.read_text(encoding="utf-8")
+            self.assertIn("getNewTabPageDelegate().isLocationBarShown()", phone)
+            self.assertNotIn("return false;", phone)
+
+            self.assertFalse(patch.patch_source(root))
 
 
 if __name__ == "__main__":

@@ -11,6 +11,25 @@ LOCATION_BAR_TABLET = Path(
 TOOLBAR_MANAGER = Path(
     "chrome/android/java/src/org/chromium/chrome/browser/toolbar/ToolbarManager.java"
 )
+TOOLBAR_PHONE = Path(
+    "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/top/"
+    "ToolbarPhone.java"
+)
+# An earlier build forced the toolbar omnibox onto the native NTP. The home page is supposed to
+# keep it hidden and spread the buttons instead, so restore the original delegate lookup.
+NTP_FORCED_OMNIBOX = """    @VisibleForTesting
+    boolean isLocationBarShownInNtp() {
+        // Helium: keep the toolbar omnibox visible on the native NTP. The default home page
+        // used the page's fake search box instead, which left the toolbar without an address
+        // bar, while extension-provided home pages showed one.
+        return false;
+    }
+"""
+NTP_ORIGINAL_OMNIBOX = """    @VisibleForTesting
+    boolean isLocationBarShownInNtp() {
+        return getToolbarDataProvider().getNewTabPageDelegate().isLocationBarShown();
+    }
+"""
 METHOD_ANCHOR = "    private void adjustBackgroundForSuggestions() {\n"
 GUARD = """        // Helium: desktop-mode activity recreation can briefly leave this view attached
         // with LinearLayout.LayoutParams before it returns to its FrameLayout holder.
@@ -64,7 +83,8 @@ TOOLBAR_TABLET_MARGIN_GUARD = """        // Helium: skip transient desktop-mode 
 def patch_source(root: Path) -> bool:
     path = root / LOCATION_BAR_TABLET
     toolbar_path = root / TOOLBAR_MANAGER
-    for expected in (path, toolbar_path):
+    toolbar_phone_path = root / TOOLBAR_PHONE
+    for expected in (path, toolbar_path, toolbar_phone_path):
         if not expected.is_file():
             raise SystemExit(f"Expected Chromium file not found: {expected}")
 
@@ -113,6 +133,12 @@ def patch_source(root: Path) -> bool:
 
     if changed:
         toolbar_path.write_text(toolbar_text, encoding="utf-8")
+
+    phone_text = toolbar_phone_path.read_text(encoding="utf-8")
+    if NTP_FORCED_OMNIBOX in phone_text:
+        phone_text = phone_text.replace(NTP_FORCED_OMNIBOX, NTP_ORIGINAL_OMNIBOX, 1)
+        toolbar_phone_path.write_text(phone_text, encoding="utf-8")
+        changed = True
 
     return changed
 
