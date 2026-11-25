@@ -167,9 +167,11 @@ TOOLBAR_APPLY_OLD = """            mActiveLocationBarBackgroundView = findViewBy
                 mActiveLocationBarBackgroundView.setVisibility(View.VISIBLE);
             }
 """
-TOOLBAR_APPLY_NEW = TOOLBAR_APPLY_OLD + """            maybeApplyHeliumToolbarLayoutPreset();
+TOOLBAR_APPLY_NEW = TOOLBAR_APPLY_OLD + """            // Apply after the first traversal so native NTP startup never reparents toolbar views
+            // while the initial compositor surface is being created.
+            post(() -> postOnAnimation(this::maybeApplyHeliumToolbarLayoutPreset));
 """
-TOOLBAR_APPLY_MARKER = "maybeApplyHeliumToolbarLayoutPreset();"
+TOOLBAR_APPLY_MARKER = "post(() -> postOnAnimation(this::maybeApplyHeliumToolbarLayoutPreset));"
 
 TOOLBAR_WINDOW_VIS_PATTERN = re.compile(
     r"    public void onWindowVisibilityChanged\(int visibility\) \{\n"
@@ -584,6 +586,10 @@ def patch_toolbar_phone(root: Path) -> bool:
     path = root / TOOLBAR_PHONE
     text = path.read_text(encoding="utf-8")
     changed = False
+    legacy_apply = TOOLBAR_APPLY_OLD + "            maybeApplyHeliumToolbarLayoutPreset();\n"
+    if TOOLBAR_APPLY_MARKER not in text and legacy_apply in text:
+        text = text.replace(legacy_apply, TOOLBAR_APPLY_OLD, 1)
+        changed = True
     replacements = (
         (TOOLBAR_IMPORT_OLD, TOOLBAR_IMPORT_NEW, "import android.widget.FrameLayout;"),
         (TOOLBAR_INFLATE_OLD, TOOLBAR_INFLATE_NEW, TOOLBAR_INFLATE_MARKER),

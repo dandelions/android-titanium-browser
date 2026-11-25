@@ -171,7 +171,7 @@ class ToolbarLayoutPresetsPatchTest(unittest.TestCase):
             self.assertNotIn(".recreate()", fragment)
 
             toolbar = (root / patch.TOOLBAR_PHONE).read_text()
-            self.assertIn("maybeApplyHeliumToolbarLayoutPreset();", toolbar)
+            self.assertIn("post(() -> postOnAnimation(this::maybeApplyHeliumToolbarLayoutPreset));", toolbar)
             self.assertIn("HELIUM_LAYOUT_START", toolbar)
             self.assertIn("HELIUM_LAYOUT_REVERSE", toolbar)
             self.assertIn("public static void heliumRefreshLayoutPreset()", toolbar)
@@ -236,6 +236,33 @@ class ToolbarLayoutPresetsPatchTest(unittest.TestCase):
             )
             self.assertEqual(toolbar.count("private int heliumToolbarLayoutPreset()"), 1)
             self.assertEqual(toolbar.count("private void applyHeliumToolbarLayoutPreset()"), 1)
+            self.assertFalse(patch.patch_source_tree(root))
+
+    def test_upgrades_synchronous_first_layout_to_posted_frame(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self._write_sources(root)
+            toolbar_path = root / patch.TOOLBAR_PHONE
+            toolbar = toolbar_path.read_text()
+            toolbar_path.write_text(
+                toolbar.replace(
+                    patch.TOOLBAR_APPLY_OLD,
+                    patch.TOOLBAR_APPLY_OLD + "            maybeApplyHeliumToolbarLayoutPreset();\\n",
+                    1,
+                )
+            )
+
+            self.assertTrue(patch.patch_source_tree(root))
+
+            upgraded = toolbar_path.read_text()
+            self.assertIn(
+                "post(() -> postOnAnimation(this::maybeApplyHeliumToolbarLayoutPreset));",
+                upgraded,
+            )
+            self.assertNotIn(
+                patch.TOOLBAR_APPLY_OLD + "            maybeApplyHeliumToolbarLayoutPreset();",
+                upgraded,
+            )
             self.assertFalse(patch.patch_source_tree(root))
 
     def test_is_idempotent(self):
