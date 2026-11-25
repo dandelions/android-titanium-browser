@@ -181,7 +181,7 @@ class ToolbarLayoutPresetsPatchTest(unittest.TestCase):
             self.assertIn(patch.CHILD_LEFT_MARKER, toolbar)
             self.assertEqual(toolbar.count("private void applyHeliumToolbarLayoutPreset()"), 1)
 
-    def test_keeps_extensions_container_when_switching_back_to_current_layout(self):
+    def test_reads_live_children_instead_of_recorded_stub_references(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             self._write_sources(root)
@@ -191,11 +191,12 @@ class ToolbarLayoutPresetsPatchTest(unittest.TestCase):
             apply_body = toolbar[toolbar.index("private void applyHeliumToolbarLayoutPreset()") :]
             apply_body = apply_body[: apply_body.index("\n    }\n")]
 
-            # The inflated extensions container replaces the stub, so the recorded stub
-            # reference has to be swapped instead of re-added.
-            self.assertIn("child == extensions || child == extensionsStub", apply_body)
+            # Inflated ViewStubs replace themselves, so the ordering must come from the
+            # container's current children.
+            self.assertIn("mToolbarButtonsContainer.getChildAt(heliumIndex)", apply_body)
+            self.assertNotIn("extensionsStub", apply_body)
+            self.assertIn("heliumExtensionsEndIndex(endOrder)", apply_body)
             self.assertIn("mHeliumPlacedExtensions = extensions;", apply_body)
-            self.assertIn("if (!extensionsPlaced && extensions != null)", apply_body)
 
     def test_upgrades_stale_preset_sections(self):
         with tempfile.TemporaryDirectory() as temp:

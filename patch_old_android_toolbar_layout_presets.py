@@ -301,6 +301,16 @@ TOOLBAR_METHODS_NEW = """    // Helium: address-bar button layout presets for ol
         view.setLayoutParams(params);
     }
 
+    private int heliumExtensionsEndIndex(java.util.ArrayList<View> order) {
+        for (int heliumIndex = 0; heliumIndex < order.size(); heliumIndex++) {
+            View child = order.get(heliumIndex);
+            if (child != null && child.getId() == R.id.signin_button_stub) {
+                return heliumIndex;
+            }
+        }
+        return order.size();
+    }
+
     private void applyHeliumToolbarLayoutPreset() {
         if (mToolbarButtonsContainer == null || mHeliumEndOrder.isEmpty()) {
             return;
@@ -309,57 +319,55 @@ TOOLBAR_METHODS_NEW = """    // Helium: address-bar button layout presets for ol
         int preset = heliumToolbarLayoutPreset();
         ViewGroup start = heliumStartButtons();
         View extensions = heliumExtensionsView();
-        View extensionsStub = findViewById(R.id.extensions_toolbar_container_stub);
 
-        start.removeAllViews();
+        // Chromium inflates the optional, extensions and signin stubs in place, so the order has
+        // to come from the live children. Replaying the stub references captured during inflation
+        // would leave the real views behind and break the toolbar's draw translation.
+        java.util.ArrayList<View> others = new java.util.ArrayList<>();
+        for (int heliumIndex = 0; heliumIndex < mToolbarButtonsContainer.getChildCount();
+                heliumIndex++) {
+            View child = mToolbarButtonsContainer.getChildAt(heliumIndex);
+            if (child == mHeliumTabs || child == mHeliumMenu || child == extensions) {
+                continue;
+            }
+            others.add(child);
+        }
+        boolean extensionsInEnd = extensions != null && others.contains(extensions);
+
+        for (int heliumIndex = start.getChildCount() - 1; heliumIndex >= 0; heliumIndex--) {
+            View child = start.getChildAt(heliumIndex);
+            if (child == mHomeButton || child == mHeliumTabs || child == mHeliumMenu
+                    || child == extensions) {
+                start.removeViewAt(heliumIndex);
+            }
+        }
         detachHeliumToolbarView(mHomeButton);
         detachHeliumToolbarView(mHeliumTabs);
         detachHeliumToolbarView(mHeliumMenu);
-        detachHeliumToolbarView(extensions);
-        mToolbarButtonsContainer.removeAllViews();
-
-        // Everything that is not one of the four managed buttons keeps its original order.
-        // The extensions stub is replaced in place once Chromium inflates it, so the recorded
-        // stub reference has to be swapped for the live container.
-        java.util.ArrayList<View> middle = new java.util.ArrayList<>();
-        boolean extensionsPlaced = false;
-        for (View child : mHeliumEndOrder) {
-            if (child == null || child == mHomeButton || child == mHeliumTabs
-                    || child == mHeliumMenu) {
-                continue;
-            }
-            if (child == extensions || child == extensionsStub) {
-                if (extensions != null && !extensionsPlaced) {
-                    middle.add(extensions);
-                    extensionsPlaced = true;
-                }
-                continue;
-            }
-            middle.add(child);
-        }
-        if (!extensionsPlaced && extensions != null) {
-            middle.add(extensions);
-        }
 
         java.util.ArrayList<View> startOrder = new java.util.ArrayList<>();
-        java.util.ArrayList<View> endOrder = new java.util.ArrayList<>(middle);
-        if (preset == HELIUM_LAYOUT_START) {
-            startOrder.add(mHomeButton);
-            startOrder.add(mHeliumTabs);
-            endOrder.add(mHeliumMenu);
-        } else if (preset == HELIUM_LAYOUT_REVERSE) {
+        java.util.ArrayList<View> endOrder = new java.util.ArrayList<>(others);
+        if (preset == HELIUM_LAYOUT_REVERSE) {
             endOrder.remove(extensions);
             startOrder.add(mHeliumMenu);
             startOrder.add(extensions);
-            startOrder.addAll(endOrder);
-            endOrder.clear();
             endOrder.add(mHeliumTabs);
             endOrder.add(mHomeButton);
         } else {
-            endOrder.add(mHeliumTabs);
-            endOrder.add(mHeliumMenu);
+            if (extensions != null && !extensionsInEnd) {
+                endOrder.add(heliumExtensionsEndIndex(endOrder), extensions);
+            }
+            if (preset == HELIUM_LAYOUT_START) {
+                startOrder.add(mHomeButton);
+                startOrder.add(mHeliumTabs);
+                endOrder.add(mHeliumMenu);
+            } else {
+                endOrder.add(mHeliumTabs);
+                endOrder.add(mHeliumMenu);
+            }
         }
 
+        mToolbarButtonsContainer.removeAllViews();
         for (View view : startOrder) {
             if (view == null) {
                 continue;
