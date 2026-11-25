@@ -197,6 +197,11 @@ class ToolbarLayoutPresetsPatchTest(unittest.TestCase):
             self.assertNotIn("extensionsStub", apply_body)
             self.assertIn("heliumExtensionsEndIndex(endOrder)", apply_body)
             self.assertIn("mHeliumPlacedExtensions = extensions;", apply_body)
+            # Re-adding a view that still has a parent throws, so every move goes through
+            # the detaching helper.
+            self.assertIn("addHeliumToolbarView(mToolbarButtonsContainer, view);", apply_body)
+            self.assertNotIn("mToolbarButtonsContainer.addView(view);", apply_body)
+            self.assertIn("addHeliumToolbarView(this, mHomeButton);", apply_body)
 
     def test_upgrades_stale_preset_sections(self):
         with tempfile.TemporaryDirectory() as temp:
