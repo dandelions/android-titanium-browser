@@ -6,6 +6,7 @@ picking a different order updates the buttons without restarting the browser.
 """
 
 from pathlib import Path
+import re
 import sys
 
 
@@ -170,19 +171,22 @@ TOOLBAR_APPLY_NEW = TOOLBAR_APPLY_OLD + """            maybeApplyHeliumToolbarLa
 """
 TOOLBAR_APPLY_MARKER = "maybeApplyHeliumToolbarLayoutPreset();"
 
-TOOLBAR_WINDOW_VIS_OLD = """    public void onWindowVisibilityChanged(int visibility) {
-        super.onWindowVisibilityChanged(visibility);
-        updateButtonVisibility();
-    }
-"""
+TOOLBAR_WINDOW_VIS_PATTERN = re.compile(
+    r"    public void onWindowVisibilityChanged\(int visibility\) \{\n"
+    r"(?:        .*\n)*?"
+    r"    \}\n"
+)
 TOOLBAR_WINDOW_VIS_NEW = """    public void onWindowVisibilityChanged(int visibility) {
         super.onWindowVisibilityChanged(visibility);
         updateButtonVisibility();
-        // The preset can change while settings covers the browser, so re-check on return.
-        maybeApplyHeliumToolbarLayoutPreset();
+        // Re-check after the traversal: re-parenting the toolbar from inside this callback
+        // races the first frame, which the renderer cannot survive in single-process mode.
+        if (visibility == VISIBLE) {
+            post(this::maybeApplyHeliumToolbarLayoutPreset);
+        }
     }
 """
-TOOLBAR_WINDOW_VIS_MARKER = "re-check on return"
+TOOLBAR_WINDOW_VIS_MARKER = "post(this::maybeApplyHeliumToolbarLayoutPreset);"
 
 TOOLBAR_DESTROY_START = "    public void destroy() {\n"
 TOOLBAR_DESTROY_END = "        cancelAnimations();\n"
@@ -560,7 +564,6 @@ def patch_toolbar_phone(root: Path) -> bool:
         (TOOLBAR_IMPORT_OLD, TOOLBAR_IMPORT_NEW, "import android.widget.FrameLayout;"),
         (TOOLBAR_INFLATE_OLD, TOOLBAR_INFLATE_NEW, TOOLBAR_INFLATE_MARKER),
         (TOOLBAR_APPLY_OLD, TOOLBAR_APPLY_NEW, TOOLBAR_APPLY_MARKER),
-        (TOOLBAR_WINDOW_VIS_OLD, TOOLBAR_WINDOW_VIS_NEW, TOOLBAR_WINDOW_VIS_MARKER),
         (LEFT_BOUNDS_OLD, LEFT_BOUNDS_NEW, LEFT_BOUNDS_MARKER),
         (TRANSLATION_OLD, TRANSLATION_NEW, TRANSLATION_MARKER),
         (BUTTON_VISIBILITY_OLD, BUTTON_VISIBILITY_NEW, BUTTON_VISIBILITY_MARKER),
@@ -621,6 +624,12 @@ def patch_toolbar_phone(root: Path) -> bool:
         include_end=True,
     )
     changed = changed or updated
+
+    if TOOLBAR_WINDOW_VIS_MARKER not in text:
+        text, replaced = TOOLBAR_WINDOW_VIS_PATTERN.subn(TOOLBAR_WINDOW_VIS_NEW, text, count=1)
+        if replaced != 1:
+            raise RuntimeError(f"Expected one visibility callback in {path}")
+        changed = True
 
     if changed:
         path.write_text(text, encoding="utf-8")

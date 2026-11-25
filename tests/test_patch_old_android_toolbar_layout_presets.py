@@ -177,6 +177,7 @@ class ToolbarLayoutPresetsPatchTest(unittest.TestCase):
             self.assertIn("public static void heliumRefreshLayoutPreset()", toolbar)
             self.assertIn("sHeliumActiveToolbar == this", toolbar)
             self.assertNotIn("WeakReference", toolbar)
+            self.assertIn(patch.TOOLBAR_WINDOW_VIS_MARKER, toolbar)
             self.assertIn(patch.LEFT_BOUNDS_MARKER, toolbar)
             self.assertIn(patch.CHILD_LEFT_MARKER, toolbar)
             self.assertEqual(toolbar.count("private void applyHeliumToolbarLayoutPreset()"), 1)
