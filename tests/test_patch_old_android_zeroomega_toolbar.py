@@ -36,6 +36,7 @@ class OldAndroidZeroOmegaToolbarPatchTest(unittest.TestCase):
             self.assertIn("is_pinned_by_policy", result)
             self.assertIn("Helium: migrate an existing ZeroOmega install", result)
             self.assertIn("WasPinnedByDefault(kZeroOmegaExtensionId) != true", result)
+            self.assertIn("if (action_ids_.contains(kZeroOmegaExtensionId))", result)
             self.assertIn("SetWasPinnedByDefault(kZeroOmegaExtensionId, true)", result)
             self.assertIn("std::ranges::contains(stored_pinned_actions", result)
 

@@ -30,14 +30,15 @@ OLD_INITIALIZE = """  // Set |pinned_action_ids_| directly to avoid notifying ob
 NEW_INITIALIZE = f"""  // Helium: migrate an existing ZeroOmega install to the toolbar once so its
   // PAC profile status remains visible. A later explicit user unpin is preserved.
   constexpr char kZeroOmegaExtensionId[] = \"{EXTENSION_ID}\";
-  if (action_ids_.contains(kZeroOmegaExtensionId) &&
-      extension_prefs_->WasPinnedByDefault(kZeroOmegaExtensionId) != true) {{
+  if (action_ids_.contains(kZeroOmegaExtensionId)) {{
     auto stored_pinned_actions = extension_prefs_->GetPinnedExtensions();
     if (!std::ranges::contains(stored_pinned_actions, kZeroOmegaExtensionId)) {{
       stored_pinned_actions.push_back(kZeroOmegaExtensionId);
       extension_prefs_->SetPinnedExtensions(stored_pinned_actions);
     }}
-    extension_prefs_->SetWasPinnedByDefault(kZeroOmegaExtensionId, true);
+    if (extension_prefs_->WasPinnedByDefault(kZeroOmegaExtensionId) != true) {{
+      extension_prefs_->SetWasPinnedByDefault(kZeroOmegaExtensionId, true);
+    }}
   }}
 
   // Set |pinned_action_ids_| directly to avoid notifying observers that they
