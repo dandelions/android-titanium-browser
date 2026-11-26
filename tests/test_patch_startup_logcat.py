@@ -118,24 +118,12 @@ class StartupLogcatPatchTest(unittest.TestCase):
             result.index('"Download/HeliumLogs"'),
         )
 
-    def test_reads_diagnostic_switches_from_the_app_files_dir(self):
+    def test_does_not_read_debug_switches_file(self):
         PATCH.patch_source_tree(self.root)
         result = self.hook_path.read_text()
-        gate = result.index("String processName = android.app.Application.getProcessName();")
-        switches = result.index('"helium-switches.txt"')
-        self.assertLess(gate, switches)
-        self.assertLess(switches, result.index("StringBuilder logcatLine"))
-        block = result[
-            result.index("java.io.File externalDir =") : result.index(
-                "catch (Throwable ignored)", switches
-            )
-            + 40
-        ]
-        self.assertIn("CommandLine.isInitialized()", block)
-        self.assertIn("getExternalFilesDir(null)", block)
-        self.assertIn("catch (Throwable ignored)", block)
-        self.assertIn("Applied diagnostic switches from", block)
-        self.assertIn('"Download/helium-switches.txt"', result)
+        self.assertNotIn("helium-switches.txt", result)
+        self.assertNotIn("Applied diagnostic switches from", result)
+        self.assertNotIn("appendSwitch(switchLine)", result)
 
     def test_child_process_service_reports_how_far_startup_reached(self):
         service = (
