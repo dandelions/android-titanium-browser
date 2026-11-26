@@ -14,7 +14,17 @@ DIRECT_SOURCE = """  if (helium_android_popup_direct_query) {
     return RespondNow(WithArguments(std::move(direct_result)));
   }
 """
-OPTIONS_SOURCE = """        if (mToolbarBridge != null) {
+OPTIONS_SOURCE = """import org.chromium.base.lifetime.Destroyable;
+import org.chromium.base.supplier.NullableObservableSupplier;
+
+class ExtensionsMenuMediator implements Destroyable {
+    private final NullableObservableSupplier<Tab> mCurrentTabSupplier;
+        mToolbarBridge = toolbarBridge;
+
+    public void destroy() {
+    }
+
+        if (mToolbarBridge != null) {
             mToolbarBridge.executeUserAction(extensionId, InvocationSource.TOOLBAR_BUTTON);
             return;
         }
@@ -42,7 +52,10 @@ class OldAndroidExtensionPopupContextPatchTest(unittest.TestCase):
             self.assertIn(patch.DIRECT_MARKER, direct)
             self.assertIn("kDontScrubTab", direct)
             self.assertIn(patch.OPTIONS_MARKER, options)
-            self.assertIn("mMenuBridge.getOptionsPageUrl(extensionId)", options)
+            self.assertIn(patch.MENU_TAB_SYNC_MARKER, options)
+            self.assertIn("mCurrentTabSupplier.addSyncObserver(mHeliumTabSupplierObserver)", options)
+            self.assertIn("mToolbarBridge.setActiveWebContents(webContents)", options)
+            self.assertIn("updateMenuEntries();", options)
             self.assertIn("openUrlFromMenu(optionsUrl);", options)
             util = tab_util.read_text(encoding="utf-8")
             self.assertIn(patch.TAB_UTIL_MARKER, util)

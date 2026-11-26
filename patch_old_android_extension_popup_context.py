@@ -27,6 +27,17 @@ MENU_MEDIATOR = Path(
     "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/"
     "ExtensionsMenuMediator.java"
 )
+MENU_TAB_SYNC_MARKER = "Helium: refresh extension menu action titles for the active tab."
+MENU_TAB_SYNC_IMPORT = "import org.chromium.base.Callback;\n"
+MENU_TAB_SYNC_FIELD = """    private final Callback<@Nullable Tab> mHeliumTabSupplierObserver =
+            (tab) -> {
+                WebContents webContents = getCurrentWebContents();
+                mToolbarBridge.setActiveWebContents(webContents);
+                if (getCurrentPage() == ExtensionsMenuProperties.Page.MAIN) {
+                    updateMenuEntries();
+                }
+            };
+"""
 DIRECT_MARKER = "Helium: preserve the Android popup tab context without scrubbing."
 OPTIONS_MARKER = "Helium: open extension options from the extension's declared page URL."
 DIRECT_OLD = """  if (helium_android_popup_direct_query) {
@@ -125,6 +136,54 @@ def patch_direct_query(path: Path) -> bool:
     raise SystemExit(f"Expected one popup context anchor in {path}")
 
 
+def patch_menu_tab_sync(path: Path) -> bool:
+    if not path.is_file():
+        raise SystemExit(f"Expected Chromium file not found: {path}")
+    text = path.read_text(encoding="utf-8")
+    if MENU_TAB_SYNC_MARKER in text:
+        return False
+    if MENU_TAB_SYNC_IMPORT not in text:
+        import_anchor = "import org.chromium.base.lifetime.Destroyable;\n"
+        if import_anchor not in text:
+            raise SystemExit(f"ExtensionsMenuMediator import anchor not found: {path}")
+        text = text.replace(import_anchor, MENU_TAB_SYNC_IMPORT + import_anchor, 1)
+    constructor_anchor = "        mToolbarBridge = toolbarBridge;\n"
+    if constructor_anchor not in text:
+        raise SystemExit(f"ExtensionsMenuMediator constructor anchor not found: {path}")
+    text = text.replace(MENU_TAB_SYNC_IMPORT, MENU_TAB_SYNC_IMPORT, 1)
+    text = text.replace(
+        "import org.chromium.base.Callback;\n",
+        "import org.chromium.base.Callback;\n",
+        1,
+    )
+    # Add the callback field after the current tab supplier declaration.
+    field_anchor = "    private final NullableObservableSupplier<Tab> mCurrentTabSupplier;\n"
+    if field_anchor not in text:
+        raise SystemExit(f"ExtensionsMenuMediator tab supplier anchor not found: {path}")
+    text = text.replace(field_anchor, field_anchor + MENU_TAB_SYNC_FIELD, 1)
+    text = text.replace(
+        constructor_anchor,
+        constructor_anchor + "        mCurrentTabSupplier.addSyncObserver(mHeliumTabSupplierObserver);\n",
+        1,
+    )
+    destroy_anchor = "    public void destroy() {\n"
+    if destroy_anchor not in text:
+        raise SystemExit(f"ExtensionsMenuMediator destroy anchor not found: {path}")
+    text = text.replace(
+        destroy_anchor,
+        destroy_anchor + "        mCurrentTabSupplier.removeObserver(mHeliumTabSupplierObserver);\n",
+        1,
+    )
+    text = text.replace(
+        "        mToolbarBridge = toolbarBridge;\n",
+        "        mToolbarBridge = toolbarBridge;\n"
+        "        // Helium: refresh extension menu action titles for the active tab.\n",
+        1,
+    )
+    path.write_text(text, encoding="utf-8")
+    return True
+
+
 def patch_options_path(path: Path) -> bool:
     if not path.is_file():
         raise SystemExit(f"Expected Chromium file not found: {path}")
@@ -190,6 +249,7 @@ def patch_tab_util(path: Path) -> bool:
 def patch_source(root: Path) -> bool:
     changed = patch_direct_query(root / TABS_API)
     changed |= patch_options_path(root / MENU_MEDIATOR)
+    changed |= patch_menu_tab_sync(root / MENU_MEDIATOR)
     changed |= patch_tab_util(root / TAB_UTIL)
     return changed
 
