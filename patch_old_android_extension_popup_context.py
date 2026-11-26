@@ -29,7 +29,8 @@ MENU_MEDIATOR = Path(
 )
 MENU_TAB_SYNC_MARKER = "Helium: refresh extension menu action titles for the active tab."
 MENU_TAB_SYNC_IMPORT = "import org.chromium.base.Callback;\n"
-MENU_TAB_SYNC_FIELD = """    private final Callback<@Nullable Tab> mHeliumTabSupplierObserver =
+MENU_TAB_SYNC_FIELD = """    // Helium: refresh extension menu action titles for the active tab.
+    private final Callback<@Nullable Tab> mHeliumTabSupplierObserver =
             (tab) -> {
                 WebContents webContents = getCurrentWebContents();
                 mToolbarBridge.setActiveWebContents(webContents);
@@ -140,8 +141,7 @@ def patch_menu_tab_sync(path: Path) -> bool:
     if not path.is_file():
         raise SystemExit(f"Expected Chromium file not found: {path}")
     text = path.read_text(encoding="utf-8")
-    if MENU_TAB_SYNC_MARKER in text:
-        return False
+    changed = False
     if MENU_TAB_SYNC_IMPORT not in text:
         import_anchor = "import org.chromium.base.lifetime.Destroyable;\n"
         if import_anchor not in text:
@@ -160,34 +160,44 @@ def patch_menu_tab_sync(path: Path) -> bool:
     # Java's illegal-forward-reference check for field initializers.
     field_anchor = "    private final NullableObservableSupplier<Tab> mCurrentTabSupplier;\n"
     bridge_anchor = "    private ExtensionsToolbarBridge mToolbarBridge;\n"
-    old_field = field_anchor + MENU_TAB_SYNC_FIELD
-    if old_field in text:
-        text = text.replace(old_field, field_anchor, 1)
+    observer_start = "    private final Callback<@Nullable Tab> mHeliumTabSupplierObserver =\n"
+    observer_end = "    private final ExtensionsMenuBridge mMenuBridge;\n"
     if field_anchor not in text or bridge_anchor not in text:
         raise SystemExit(f"ExtensionsMenuMediator field anchors not found: {path}")
+    observer_start_index = text.find(observer_start)
+    observer_end_index = text.find(observer_end, observer_start_index)
+    bridge_index = text.find(bridge_anchor)
+    if bridge_index < 0:
+        raise SystemExit(f"ExtensionsToolbarBridge field anchor not found: {path}")
+    if observer_start_index >= 0 and observer_start_index < bridge_index:
+        if observer_end_index < 0:
+            raise SystemExit(f"ExtensionsMenuMediator observer end not found: {path}")
+        text = text[:observer_start_index] + text[observer_end_index:]
+        changed = True
+        bridge_index = text.find(bridge_anchor)
     if MENU_TAB_SYNC_FIELD not in text:
-        text = text.replace(bridge_anchor, bridge_anchor + MENU_TAB_SYNC_FIELD, 1)
-    text = text.replace(
-        constructor_anchor,
-        constructor_anchor + "        mCurrentTabSupplier.addSyncObserver(mHeliumTabSupplierObserver);\n",
-        1,
-    )
+        bridge_index = text.find(bridge_anchor)
+        text = text[: bridge_index + len(bridge_anchor)] + MENU_TAB_SYNC_FIELD + text[bridge_index + len(bridge_anchor):]
+        changed = True
+    if "mCurrentTabSupplier.addSyncObserver(mHeliumTabSupplierObserver);" not in text:
+        text = text.replace(
+            constructor_anchor,
+            constructor_anchor + "        mCurrentTabSupplier.addSyncObserver(mHeliumTabSupplierObserver);\n",
+            1,
+        )
+        changed = True
     destroy_anchor = "    public void destroy() {\n"
     if destroy_anchor not in text:
         raise SystemExit(f"ExtensionsMenuMediator destroy anchor not found: {path}")
-    text = text.replace(
-        destroy_anchor,
-        destroy_anchor + "        mCurrentTabSupplier.removeObserver(mHeliumTabSupplierObserver);\n",
-        1,
-    )
-    text = text.replace(
-        "        mToolbarBridge = toolbarBridge;\n",
-        "        mToolbarBridge = toolbarBridge;\n"
-        "        // Helium: refresh extension menu action titles for the active tab.\n",
-        1,
-    )
+    if "mCurrentTabSupplier.removeObserver(mHeliumTabSupplierObserver);" not in text:
+        text = text.replace(
+            destroy_anchor,
+            destroy_anchor + "        mCurrentTabSupplier.removeObserver(mHeliumTabSupplierObserver);\n",
+            1,
+        )
+        changed = True
     path.write_text(text, encoding="utf-8")
-    return True
+    return changed
 
 
 def patch_options_path(path: Path) -> bool:
