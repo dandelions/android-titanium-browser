@@ -11,12 +11,18 @@ class TabRestoreBatchPatchTest(unittest.TestCase):
             root = Path(directory)
             path = root / patch.TARGET
             path.parent.mkdir(parents=True)
-            path.write_text(patch.ANCHOR, encoding="utf-8")
+            path.write_text(
+                patch.ANCHOR + "\n"
+                + patch.COMPLETE_ANCHOR,
+                encoding="utf-8",
+            )
 
             self.assertTrue(patch.patch_source_tree(root))
             result = path.read_text(encoding="utf-8")
             self.assertIn(patch.MARKER, result)
             self.assertIn("BATCH_RESTORE_SIZE = 1", result)
+            self.assertIn(patch.COMPLETE_MARKER, result)
+            self.assertIn("PostTask.postTask(TaskTraits.UI_DEFAULT, this::loadNextTabs)", result)
             self.assertFalse(patch.patch_source_tree(root))
 
 

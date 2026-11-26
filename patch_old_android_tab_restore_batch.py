@@ -13,6 +13,15 @@ REPLACEMENT = """    // Helium: old-android restores one tab-state batch at a ti
     // Multiple WebContents restored concurrently can crash the in-process renderer on VMOS.
     private static final int BATCH_RESTORE_SIZE = 1;
 """
+COMPLETE_MARKER = "Helium: let the first restored WebContents reach an idle frame before the next tab."
+COMPLETE_ANCHOR = """        mTabBatchLoader = null;
+        loadNextTabs();
+"""
+COMPLETE_REPLACEMENT = """        mTabBatchLoader = null;
+        // Helium: let the first restored WebContents reach an idle frame before the next tab.
+        PostTask.postTask(TaskTraits.UI_DEFAULT, () ->
+                PostTask.postTask(TaskTraits.UI_DEFAULT, this::loadNextTabs));
+"""
 
 
 def patch_source_tree(src_dir: Path) -> bool:
@@ -20,12 +29,20 @@ def patch_source_tree(src_dir: Path) -> bool:
     if not path.is_file():
         raise SystemExit(f"TabPersistentStoreImpl not found: {path}")
     text = path.read_text(encoding="utf-8")
-    if MARKER in text:
-        return False
-    if text.count(ANCHOR) != 1:
-        raise SystemExit(f"Restore batch anchor not found exactly once: {path}")
-    path.write_text(text.replace(ANCHOR, REPLACEMENT, 1), encoding="utf-8")
-    return True
+    changed = False
+    if MARKER not in text:
+        if text.count(ANCHOR) != 1:
+            raise SystemExit(f"Restore batch anchor not found exactly once: {path}")
+        text = text.replace(ANCHOR, REPLACEMENT, 1)
+        changed = True
+    if COMPLETE_MARKER not in text:
+        if text.count(COMPLETE_ANCHOR) != 1:
+            raise SystemExit(f"Restore completion anchor not found exactly once: {path}")
+        text = text.replace(COMPLETE_ANCHOR, COMPLETE_REPLACEMENT, 1)
+        changed = True
+    if changed:
+        path.write_text(text, encoding="utf-8")
+    return changed
 
 
 if __name__ == "__main__":
