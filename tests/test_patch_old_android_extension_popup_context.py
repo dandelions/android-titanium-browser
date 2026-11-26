@@ -19,6 +19,7 @@ import org.chromium.base.supplier.NullableObservableSupplier;
 
 class ExtensionsMenuMediator implements Destroyable {
     private final NullableObservableSupplier<Tab> mCurrentTabSupplier;
+    private ExtensionsToolbarBridge mToolbarBridge;
         mToolbarBridge = toolbarBridge;
 
     public void destroy() {

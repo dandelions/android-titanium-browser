@@ -156,11 +156,13 @@ def patch_menu_tab_sync(path: Path) -> bool:
         "import org.chromium.base.Callback;\n",
         1,
     )
-    # Add the callback field after the current tab supplier declaration.
+    # The callback reads mToolbarBridge, so declare it after that field to avoid
+    # Java's illegal-forward-reference check for field initializers.
     field_anchor = "    private final NullableObservableSupplier<Tab> mCurrentTabSupplier;\n"
-    if field_anchor not in text:
-        raise SystemExit(f"ExtensionsMenuMediator tab supplier anchor not found: {path}")
-    text = text.replace(field_anchor, field_anchor + MENU_TAB_SYNC_FIELD, 1)
+    bridge_anchor = "    private ExtensionsToolbarBridge mToolbarBridge;\n"
+    if field_anchor not in text or bridge_anchor not in text:
+        raise SystemExit(f"ExtensionsMenuMediator field anchors not found: {path}")
+    text = text.replace(bridge_anchor, bridge_anchor + MENU_TAB_SYNC_FIELD, 1)
     text = text.replace(
         constructor_anchor,
         constructor_anchor + "        mCurrentTabSupplier.addSyncObserver(mHeliumTabSupplierObserver);\n",
