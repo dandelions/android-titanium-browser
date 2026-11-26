@@ -32,6 +32,9 @@ class OldAndroidExtensionPopupContextPatchTest(unittest.TestCase):
             mediator.parent.mkdir(parents=True, exist_ok=True)
             tabs_api.write_text(DIRECT_SOURCE, encoding="utf-8")
             mediator.write_text(OPTIONS_SOURCE, encoding="utf-8")
+            tab_util = root / patch.TAB_UTIL
+            tab_util.parent.mkdir(parents=True, exist_ok=True)
+            tab_util.write_text(patch.TAB_UTIL_ANCHOR, encoding="utf-8")
 
             self.assertTrue(patch.patch_source(root))
             direct = tabs_api.read_text(encoding="utf-8")
@@ -41,9 +44,13 @@ class OldAndroidExtensionPopupContextPatchTest(unittest.TestCase):
             self.assertIn(patch.OPTIONS_MARKER, options)
             self.assertIn("mMenuBridge.getOptionsPageUrl(extensionId)", options)
             self.assertIn("openUrlFromMenu(optionsUrl);", options)
+            util = tab_util.read_text(encoding="utf-8")
+            self.assertIn(patch.TAB_UTIL_MARKER, util)
+            self.assertIn("if (!target_contents) {", util)
             self.assertFalse(patch.patch_source(root))
             self.assertEqual(direct, tabs_api.read_text(encoding="utf-8"))
             self.assertEqual(options, mediator.read_text(encoding="utf-8"))
+            self.assertEqual(util, tab_util.read_text(encoding="utf-8"))
 
     def test_migrates_options_page_call_from_previous_hotfix(self):
         with tempfile.TemporaryDirectory() as directory:

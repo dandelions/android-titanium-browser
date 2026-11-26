@@ -7,6 +7,22 @@ import sys
 
 
 TABS_API = Path("chrome/browser/extensions/api/tabs/tabs_api.cc")
+TAB_UTIL = Path("chrome/browser/extensions/extension_tab_util.cc")
+TAB_UTIL_MARKER = "Helium: skip restored tabs that have no WebContents yet."
+TAB_UTIL_ANCHOR = """    for (int i = 0; i < window->GetTabCount(); ++i) {
+      WebContents* target_contents = window->GetWebContentsAt(i);
+      int target_tab_id = sessions::SessionTabHelper::IdForTab(target_contents).id();
+"""
+TAB_UTIL_REPLACEMENT = """    for (int i = 0; i < window->GetTabCount(); ++i) {
+      WebContents* target_contents = window->GetWebContentsAt(i);
+      // Helium: skip restored tabs that have no WebContents yet. Multi-tab session
+      // restore starts navigations before every tab is attached, and the null
+      // WebContents used to crash inside SessionTabHelper.
+      if (!target_contents) {
+        continue;
+      }
+      int target_tab_id = sessions::SessionTabHelper::IdForTab(target_contents).id();
+"""
 MENU_MEDIATOR = Path(
     "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/"
     "ExtensionsMenuMediator.java"
@@ -159,9 +175,22 @@ def patch_options_path(path: Path) -> bool:
     return True
 
 
+def patch_tab_util(path: Path) -> bool:
+    if not path.is_file():
+        raise SystemExit(f"ExtensionTabUtil not found: {path}")
+    text = path.read_text(encoding="utf-8")
+    if TAB_UTIL_MARKER in text:
+        return False
+    if text.count(TAB_UTIL_ANCHOR) != 1:
+        raise SystemExit(f"ExtensionTabUtil anchor not found exactly once: {path}")
+    path.write_text(text.replace(TAB_UTIL_ANCHOR, TAB_UTIL_REPLACEMENT, 1), encoding="utf-8")
+    return True
+
+
 def patch_source(root: Path) -> bool:
     changed = patch_direct_query(root / TABS_API)
     changed |= patch_options_path(root / MENU_MEDIATOR)
+    changed |= patch_tab_util(root / TAB_UTIL)
     return changed
 
 
