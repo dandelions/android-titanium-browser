@@ -249,6 +249,23 @@ class ToolbarLayoutPresetsPatchTest(unittest.TestCase):
             self.assertEqual(toolbar.count("private void applyHeliumToolbarLayoutPreset()"), 1)
             self.assertFalse(patch.patch_source_tree(root))
 
+    def test_readds_fields_when_old_source_kept_methods_only(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self._write_sources(root)
+            toolbar_path = root / patch.TOOLBAR_PHONE
+            toolbar = toolbar_path.read_text()
+            toolbar_path.write_text(
+                toolbar.replace(patch.TOOLBAR_FIELDS_NEW, "", 1)
+            )
+
+            self.assertTrue(patch.patch_source_tree(root))
+            upgraded = toolbar_path.read_text()
+            self.assertIn("mHeliumEndOrder = new java.util.ArrayList", upgraded)
+            self.assertIn("mHeliumTabs", upgraded)
+            self.assertEqual(upgraded.count("mHeliumEndOrder = new java.util.ArrayList"), 1)
+            self.assertFalse(patch.patch_source_tree(root))
+
     def test_upgrades_synchronous_first_layout_to_posted_frame(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

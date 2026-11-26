@@ -644,7 +644,7 @@ def patch_toolbar_phone(root: Path) -> bool:
         )
         changed = True
 
-    if TOOLBAR_FIELDS_START in text:
+    if "mHeliumEndOrder = new java.util.ArrayList" in text and TOOLBAR_FIELDS_START in text:
         text, updated = _replace_section(
             text,
             TOOLBAR_FIELDS_START,
@@ -654,11 +654,11 @@ def patch_toolbar_phone(root: Path) -> bool:
             include_end=True,
         )
         changed = changed or updated
-    else:
-        text, updated = _replace_once(
-            text, TOOLBAR_FIELDS_OLD, TOOLBAR_FIELDS_OLD + TOOLBAR_FIELDS_NEW, "mHeliumStartButtons", path
-        )
-        changed = changed or updated
+    elif "mHeliumEndOrder = new java.util.ArrayList" not in text:
+        if text.count(TOOLBAR_FIELDS_OLD) != 1:
+            raise RuntimeError(f"ToolbarPhone field anchor not found in {path}")
+        text = text.replace(TOOLBAR_FIELDS_OLD, TOOLBAR_FIELDS_OLD + TOOLBAR_FIELDS_NEW, 1)
+        changed = True
 
     if TOOLBAR_METHODS_START in text:
         text, updated = _replace_section(
