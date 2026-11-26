@@ -131,11 +131,12 @@ TOGGLE_OLD = """    public static boolean shouldShowSettingsToggle(Context conte
 
 """
 TOGGLE_NEW = """    public static boolean shouldShowSettingsToggle(Context context) {
-        // Helium: the address bar settings own toolbar placement on old-android.
-        return false;
+        // Helium: keep the address bar top/bottom setting visible even though the
+        // separate bottom bar feature is disabled.
+        return true;
     }
 """
-TOGGLE_MARKER = "Helium: the address bar settings own toolbar placement on old-android."
+TOGGLE_MARKER = "Helium: keep the address bar top/bottom setting visible"
 LEGACY_TOGGLE_MARKER = "Helium: keep the bottom toolbar option visible on every old-android device."
 ACTIVITY_OBSERVER_OLD = """            if (BottomBarConfigUtils.shouldShowSettingsToggle(this)) {
                 new BottomBarEnabledChangeObserver(
