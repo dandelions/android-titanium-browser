@@ -57,12 +57,19 @@ ENABLE_BOTTOM_CONTROLS_START = "    public void enableBottomControls() {\n"
 ENABLE_BOTTOM_CONTROLS_END = "    /**\n     * Shows the bottom bar's startup promo, if any:"
 ENABLE_BOTTOM_CONTROLS_REPLACEMENT = """    public void enableBottomControls() {
         // Helium: old-android uses the address bar as the only toolbar row.
+        // Do not inflate tab-group or bottom-bar controls; they overlap the toolbar and consume
+        // touch events on the Android 9 compatibility devices.
+    }
+"""
+ENABLE_BOTTOM_CONTROLS_PREVIOUS = """    public void enableBottomControls() {
+        // Helium: old-android uses the address bar as the only toolbar row.
         enableTabGroupUiControls();
     }
 """
 LEGACY_ENABLE_BOTTOM_CONTROLS_REPLACEMENT = """    public void enableBottomControls() {
-        // Helium: bottom bar legacy enable path.
-        enableTabGroupUiControls();
+        // Helium: old-android uses the address bar as the only toolbar row.
+        // Do not inflate tab-group or bottom-bar controls; they overlap the toolbar and consume
+        // touch events on the Android 9 compatibility devices.
     }
 """
 BOTTOM_BAR_HOST_METHOD_MARKER = "Helium: old-android uses the address bar as the only bottom toolbar."
@@ -338,7 +345,12 @@ def patch_source_tree(src_dir: str) -> bool:
     with open(toolbar_manager_path, "r", encoding="utf-8") as handle:
         toolbar_manager_content = handle.read()
     controls_changed = False
-    if ENABLE_BOTTOM_CONTROLS_MARKER not in toolbar_manager_content:
+    if ENABLE_BOTTOM_CONTROLS_PREVIOUS in toolbar_manager_content:
+        toolbar_manager_content = toolbar_manager_content.replace(
+            ENABLE_BOTTOM_CONTROLS_PREVIOUS, ENABLE_BOTTOM_CONTROLS_REPLACEMENT, 1
+        )
+        controls_changed = True
+    elif ENABLE_BOTTOM_CONTROLS_MARKER not in toolbar_manager_content:
         method_start = toolbar_manager_content.find(ENABLE_BOTTOM_CONTROLS_START)
         method_end = toolbar_manager_content.find(ENABLE_BOTTOM_CONTROLS_END, method_start)
         if method_start < 0 or method_end < 0:

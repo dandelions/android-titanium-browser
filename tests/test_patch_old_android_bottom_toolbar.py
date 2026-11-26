@@ -265,6 +265,7 @@ class OldAndroidBottomToolbarPatchTest(unittest.TestCase):
             self.assertIn(PATCH.ENABLE_BOTTOM_CONTROLS_MARKER, updated)
             self.assertNotIn("return;", updated)
             self.assertNotIn("enableBottomBar();", updated)
+            self.assertNotIn("enableTabGroupUiControls();", updated)
             self.assertFalse(PATCH.patch_source_tree(temp))
 
     def test_is_idempotent(self):
