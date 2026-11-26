@@ -160,9 +160,13 @@ def patch_menu_tab_sync(path: Path) -> bool:
     # Java's illegal-forward-reference check for field initializers.
     field_anchor = "    private final NullableObservableSupplier<Tab> mCurrentTabSupplier;\n"
     bridge_anchor = "    private ExtensionsToolbarBridge mToolbarBridge;\n"
+    old_field = field_anchor + MENU_TAB_SYNC_FIELD
+    if old_field in text:
+        text = text.replace(old_field, field_anchor, 1)
     if field_anchor not in text or bridge_anchor not in text:
         raise SystemExit(f"ExtensionsMenuMediator field anchors not found: {path}")
-    text = text.replace(bridge_anchor, bridge_anchor + MENU_TAB_SYNC_FIELD, 1)
+    if MENU_TAB_SYNC_FIELD not in text:
+        text = text.replace(bridge_anchor, bridge_anchor + MENU_TAB_SYNC_FIELD, 1)
     text = text.replace(
         constructor_anchor,
         constructor_anchor + "        mCurrentTabSupplier.addSyncObserver(mHeliumTabSupplierObserver);\n",
