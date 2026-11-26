@@ -31,7 +31,7 @@ NEW_MIGRATION = f"""  // Helium: migrate an existing ZeroOmega install to the to
   // this marker is stored, the user can explicitly unpin the action.
   constexpr char kZeroOmegaExtensionId[] = \"{EXTENSION_ID}\";
   if (action_ids_.contains(kZeroOmegaExtensionId) &&
-      extension_prefs_->WasPinnedByDefault(kZeroOmegaExtensionId) != true) {{
+      extension_prefs_->WasPinnedByDefault(kZeroOmegaExtensionId) != false) {{
     auto stored_pinned_actions = extension_prefs_->GetPinnedExtensions();
     if (!std::ranges::contains(stored_pinned_actions, kZeroOmegaExtensionId)) {{
       stored_pinned_actions.push_back(kZeroOmegaExtensionId);
@@ -44,6 +44,15 @@ NEW_MIGRATION = f"""  // Helium: migrate an existing ZeroOmega install to the to
 SET_PINNED_ACTIONS = """  // Set |pinned_action_ids_| directly to avoid notifying observers that they
   // have changed even though they haven't.
   pinned_action_ids_ = GetFilteredPinnedActionIds();
+"""
+VISIBILITY_MARKER = "Helium: remember the user's ZeroOmega pin choice."
+VISIBILITY_ANCHOR = """  DCHECK(!profile_->IsOffTheRecord())
+      << \"Changing action pin state is disallowed in incognito.\";
+"""
+VISIBILITY_INSERT = VISIBILITY_ANCHOR + f"""  if (action_id == \"{EXTENSION_ID}\") {{
+    // Helium: remember the user's ZeroOmega pin choice.
+    extension_prefs_->SetWasPinnedByDefault(action_id, is_now_visible);
+  }}
 """
 NEW_INITIALIZE = NEW_MIGRATION + SET_PINNED_ACTIONS
 CURRENT_REPEAT_MIGRATION = f"""  // Helium: migrate an existing ZeroOmega install to the toolbar once so its
@@ -92,6 +101,9 @@ def patch_model(path: Path) -> bool:
         if OLD_INITIALIZE not in text:
             raise SystemExit(f"Toolbar initialization anchor not found in {path}")
         text = text.replace(OLD_INITIALIZE, NEW_INITIALIZE, 1)
+
+    if VISIBILITY_MARKER not in text and VISIBILITY_ANCHOR in text:
+        text = text.replace(VISIBILITY_ANCHOR, VISIBILITY_INSERT, 1)
 
     if f'extension->id() == "{EXTENSION_ID}"' not in text:
         if OLD_PIN_DEFAULT in text:
