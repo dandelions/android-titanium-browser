@@ -11,6 +11,7 @@ import re
 import sys
 
 FEATURE_LIST = "chrome/browser/flags/android/chrome_feature_list.cc"
+LEGACY_ENABLE_MARKER = "Helium: bottom bar legacy enable path"
 FEATURE_OLD = "BASE_FEATURE(kAndroidBottomBar, base::FEATURE_DISABLED_BY_DEFAULT);"
 FEATURE_NEW = """// Helium: keep the separate Android bottom bar disabled; the address bar
 // position setting owns the single toolbar row on old-android.
@@ -56,6 +57,11 @@ ENABLE_BOTTOM_CONTROLS_START = "    public void enableBottomControls() {\n"
 ENABLE_BOTTOM_CONTROLS_END = "    /**\n     * Shows the bottom bar's startup promo, if any:"
 ENABLE_BOTTOM_CONTROLS_REPLACEMENT = """    public void enableBottomControls() {
         // Helium: old-android uses the address bar as the only toolbar row.
+        enableTabGroupUiControls();
+    }
+"""
+LEGACY_ENABLE_BOTTOM_CONTROLS_REPLACEMENT = """    public void enableBottomControls() {
+        // Helium: bottom bar legacy enable path.
         enableTabGroupUiControls();
     }
 """
@@ -340,6 +346,17 @@ def patch_source_tree(src_dir: str) -> bool:
         toolbar_manager_content = (
             toolbar_manager_content[:method_start]
             + ENABLE_BOTTOM_CONTROLS_REPLACEMENT
+            + toolbar_manager_content[method_end:]
+        )
+        controls_changed = True
+    elif "enableBottomBar();" in toolbar_manager_content:
+        method_start = toolbar_manager_content.find(ENABLE_BOTTOM_CONTROLS_START)
+        method_end = toolbar_manager_content.find(ENABLE_BOTTOM_CONTROLS_END, method_start)
+        if method_start < 0 or method_end < 0:
+            raise RuntimeError(f"legacy bottom controls enable method not found in {toolbar_manager_path}")
+        toolbar_manager_content = (
+            toolbar_manager_content[:method_start]
+            + LEGACY_ENABLE_BOTTOM_CONTROLS_REPLACEMENT
             + toolbar_manager_content[method_end:]
         )
         controls_changed = True
