@@ -4367,6 +4367,7 @@ if is_old_version_branch; then
     python3 "$SCRIPT_DIR/patch_old_android_pac_resolver_process.py" "$SRC_DIR"
     python3 "$SCRIPT_DIR/patch_old_android_location_bar_back_button.py" "$SRC_DIR"
     python3 "$SCRIPT_DIR/patch_old_android_bottom_toolbar.py" "$SRC_DIR"
+python3 "$SCRIPT_DIR/patch_old_android_settings_window_extensions.py" "$SRC_DIR"
     python3 "$SCRIPT_DIR/restore_old_android_tab_restore_batch.py" "$SRC_DIR"
     python3 "$SCRIPT_DIR/patch_old_android_zeroomega_toolbar.py" "$SRC_DIR"
     python3 "$SCRIPT_DIR/patch_old_android_extension_context_menu.py" "$SRC_DIR"
