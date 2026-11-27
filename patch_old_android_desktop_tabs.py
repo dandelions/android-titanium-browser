@@ -136,10 +136,9 @@ MANAGER_DESTROY_NEW = """        ContextUtils.getAppSharedPreferences().unregist
 MANAGER_METHOD_ANCHOR = """    /** Call to tear down all of the toolbar dependencies. */
 """
 MANAGER_METHODS = f"""    private boolean shouldHideDesktopTabStrip() {{
-        return org.chromium.ui.base.DeviceFormFactor.getUiMode()
-                        == org.chromium.ui.base.DeviceFormFactor.UI_MODE_DESKTOP
-                && ContextUtils.getAppSharedPreferences()
-                        .getBoolean("{MANAGER_PREF_KEY}", false);
+        // Helium: old-android keeps a single toolbar row. A desktop tab strip would reserve a
+        // second row that is never drawn, leaving blank space above the page.
+        return true;
     }}
 
     @Override
@@ -152,6 +151,32 @@ MANAGER_METHODS = f"""    private boolean shouldHideDesktopTabStrip() {{
 
 """
 MANAGER_MARKER = "private boolean shouldHideDesktopTabStrip()"
+
+TAB_STRIP_LEGACY = f"""    private boolean shouldHideDesktopTabStrip() {{
+        return org.chromium.ui.base.DeviceFormFactor.getUiMode()
+                        == org.chromium.ui.base.DeviceFormFactor.UI_MODE_DESKTOP
+                && ContextUtils.getAppSharedPreferences()
+                        .getBoolean("{MANAGER_PREF_KEY}", false);
+    }}
+"""
+TAB_STRIP_FORCED = """    private boolean shouldHideDesktopTabStrip() {
+        // Helium: old-android keeps a single toolbar row. A desktop tab strip would reserve a
+        // second row that is never drawn, leaving blank space above the page.
+        return true;
+    }
+"""
+
+
+def patch_tab_strip_always_hidden(root: Path) -> bool:
+    path = root / TOOLBAR_MANAGER
+    if not path.is_file():
+        raise SystemExit(f"Expected Chromium file not found: {path}")
+    text = path.read_text(encoding="utf-8")
+    if TAB_STRIP_LEGACY not in text:
+        return False
+    path.write_text(text.replace(TAB_STRIP_LEGACY, TAB_STRIP_FORCED, 1), encoding="utf-8")
+    return True
+
 
 POSITION_CONTROLLER = Path(
     "chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/"
@@ -249,6 +274,7 @@ def patch_source(root: Path) -> bool:
             (MANAGER_METHOD_ANCHOR, MANAGER_METHODS + MANAGER_METHOD_ANCHOR, MANAGER_MARKER),
         ),
     )
+    changed |= patch_tab_strip_always_hidden(root)
     changed |= patch_file(root, STRINGS, ((STRING_ANCHOR, STRING_NEW, STRING_MARKER),))
     changed |= patch_file(root, POSITION_CONTROLLER, ((POSITION_OLD, POSITION_NEW, POSITION_MARKER),))
     return changed

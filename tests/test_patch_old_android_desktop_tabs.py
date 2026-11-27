@@ -52,6 +52,16 @@ public class ToolbarManager
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(text, encoding="utf-8")
 
+    def test_forces_desktop_tab_strip_hidden(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_sources(root)
+            self.assertTrue(patch.patch_source(root))
+            manager = (root / patch.TOOLBAR_MANAGER).read_text()
+            self.assertIn(patch.TAB_STRIP_FORCED, manager)
+            self.assertNotIn(patch.TAB_STRIP_LEGACY, manager)
+            self.assertFalse(patch.patch_source(root))
+
     def test_v158_main_settings_keeps_address_bar_option_available(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
