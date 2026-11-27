@@ -21,6 +21,8 @@ class ExtensionsMenuMediator implements Destroyable {
     private final NullableObservableSupplier<Tab> mCurrentTabSupplier;
     private ExtensionsToolbarBridge mToolbarBridge;
         mToolbarBridge = toolbarBridge;
+        mMenuBridge =
+                new ExtensionsMenuBridge(mTask, mProfile, toolbarBridge, /* observer= */ this);
 
     public void destroy() {
     }
@@ -55,6 +57,7 @@ class OldAndroidExtensionPopupContextPatchTest(unittest.TestCase):
             self.assertIn(patch.OPTIONS_MARKER, options)
             self.assertIn(patch.MENU_TAB_SYNC_MARKER, options)
             self.assertIn("mCurrentTabSupplier.addSyncObserver(mHeliumTabSupplierObserver)", options)
+            self.assertIn("mHeliumTabSupplierObserver.onResult(mCurrentTabSupplier.get());", options)
             self.assertIn("mToolbarBridge.setActiveWebContents(webContents)", options)
             self.assertIn("updateMenuEntries();", options)
             self.assertIn("openUrlFromMenu(optionsUrl);", options)

@@ -186,6 +186,19 @@ def patch_menu_tab_sync(path: Path) -> bool:
             1,
         )
         changed = True
+    menu_bridge_anchor = "        mMenuBridge =\n                new ExtensionsMenuBridge(mTask, mProfile, toolbarBridge, /* observer= */ this);\n"
+    seed_marker = "mHeliumTabSupplierObserver.onResult(mCurrentTabSupplier.get());"
+    if seed_marker not in text:
+        if text.count(menu_bridge_anchor) != 1:
+            raise SystemExit(f"ExtensionsMenuBridge constructor anchor not found: {path}")
+        text = text.replace(
+            menu_bridge_anchor,
+            menu_bridge_anchor
+            + "        // Seed the active WebContents before the extensions panel reads dynamic action titles.\n"
+            + "        mHeliumTabSupplierObserver.onResult(mCurrentTabSupplier.get());\n",
+            1,
+        )
+        changed = True
     destroy_anchor = "    public void destroy() {\n"
     if destroy_anchor not in text:
         raise SystemExit(f"ExtensionsMenuMediator destroy anchor not found: {path}")
