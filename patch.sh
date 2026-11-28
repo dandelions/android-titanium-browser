@@ -2700,7 +2700,8 @@ perl -0pi -e 's~        if \(ntpShowing
             newControlsPosition = ControlsPosition.BOTTOM;
         }~' "$TOOLBAR_POSITION_CONTROLLER"
 fi
-if ! grep -q 'Helium: follow the toolbar preference on the NTP and while editing' "$TOOLBAR_POSITION_CONTROLLER"; then
+if ! grep -q 'Helium: follow the toolbar preference on the NTP and while editing' "$TOOLBAR_POSITION_CONTROLLER" \
+    && ! grep -q 'Helium: preserve the configured toolbar position during Picture-in-Picture' "$TOOLBAR_POSITION_CONTROLLER"; then
 echo "NTP and omnibox toolbar position patch did not apply: $TOOLBAR_POSITION_CONTROLLER" >&2
 exit 1
 fi
