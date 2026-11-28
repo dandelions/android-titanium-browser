@@ -560,10 +560,29 @@ def patch_preference_keys(root: Path) -> bool:
 def patch_settings_xml(root: Path) -> bool:
     path = root / SETTINGS_XML
     text = path.read_text(encoding="utf-8")
-    text, changed = _replace_once(text, XML_OLD, XML_NEW, XML_MARKER, path)
-    if changed:
-        path.write_text(text, encoding="utf-8")
-    return changed
+    if XML_MARKER in text:
+        return False
+    if XML_OLD in text:
+        text = text.replace(XML_OLD, XML_NEW, 1)
+    else:
+        address_bar_anchor = """    <org.chromium.chrome.browser.toolbar.settings.AddressBarPreference
+        android:key="address_bar_preference"
+        android:selectable="false"
+        app:allowDividerAbove="false"
+        app:allowDividerBelow="false" />
+"""
+        if address_bar_anchor not in text:
+            raise RuntimeError(f"Address bar preference anchor not found in {path}")
+        text = text.replace(
+            address_bar_anchor,
+            address_bar_anchor
+            + "\n    <org.chromium.components.browser_ui.settings.ChromeBasePreference\n"
+            + "        android:key=\"toolbar_layout_preset\"\n"
+            + "        android:title=\"地址栏按钮布局\" />\n",
+            1,
+        )
+    path.write_text(text, encoding="utf-8")
+    return True
 
 
 def patch_settings_fragment(root: Path) -> bool:

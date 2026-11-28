@@ -193,6 +193,25 @@ class ToolbarLayoutPresetsPatchTest(unittest.TestCase):
             self.assertIn(patch.CHILD_LEFT_MARKER, toolbar)
             self.assertEqual(toolbar.count("private void applyHeliumToolbarLayoutPreset()"), 1)
 
+    def test_adds_setting_to_lemur_xml_without_desktop_tab_preference(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self._write_sources(root)
+            xml = """<PreferenceScreen>
+    <org.chromium.chrome.browser.toolbar.settings.AddressBarPreference
+        android:key="address_bar_preference"
+        android:selectable="false"
+        app:allowDividerAbove="false"
+        app:allowDividerBelow="false" />
+</PreferenceScreen>
+"""
+            (root / patch.SETTINGS_XML).write_text(xml)
+
+            self.assertTrue(patch.patch_settings_xml(root))
+            result = (root / patch.SETTINGS_XML).read_text()
+            self.assertIn(patch.XML_MARKER, result)
+            self.assertFalse(patch.patch_settings_xml(root))
+
     def test_reads_live_children_instead_of_recorded_stub_references(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
