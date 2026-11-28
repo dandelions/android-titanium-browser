@@ -595,6 +595,7 @@ def patch_settings_fragment(root: Path) -> bool:
         "import org.chromium.chrome.browser.preferences.ChromePreferenceKeys;",
         "import org.chromium.chrome.browser.preferences.ChromeSharedPreferences;",
         "import org.chromium.chrome.browser.toolbar.top.ToolbarPhone;",
+        "import androidx.preference.Preference;",
     )
     missing_imports = [line for line in required_fragment_imports if line not in text]
     if missing_imports:
