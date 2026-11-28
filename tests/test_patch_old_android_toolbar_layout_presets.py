@@ -313,6 +313,32 @@ class ToolbarLayoutPresetsPatchTest(unittest.TestCase):
             )
             self.assertFalse(patch.patch_source_tree(root))
 
+    def test_patches_compact_extension_draw_statement(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            toolbar = root / patch.TOOLBAR_PHONE
+            toolbar.parent.mkdir(parents=True)
+            source = TOOLBAR_PHONE_SOURCE.replace(
+                "        View extContainer = findViewById(R.id.extensions_toolbar_container);\n"
+                "        if (extContainer != null) {\n"
+                "            canvas.save();\n"
+                "            ViewUtils.translateCanvasToView(mToolbarButtonsContainer, extContainer, canvas);\n"
+                "            extContainer.draw(canvas);\n"
+                "            canvas.restore();\n"
+                "        }\n",
+                "        { View extContainer = findViewById(R.id.extensions_toolbar_container); "
+                "if (extContainer != null) { canvas.save(); "
+                "ViewUtils.translateCanvasToView(mToolbarButtonsContainer, extContainer, canvas); "
+                "extContainer.draw(canvas); canvas.restore(); } }\n",
+            )
+            toolbar.write_text(source)
+
+            self.assertTrue(patch.patch_toolbar_phone(root))
+            result = toolbar.read_text()
+            self.assertIn(patch.DRAW_EXT_COMPACT_NEW, result)
+            self.assertNotIn(patch.DRAW_EXT_COMPACT_OLD, result)
+            self.assertFalse(patch.patch_toolbar_phone(root))
+
     def test_patches_lemur_address_bar_fragment_shape(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

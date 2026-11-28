@@ -485,6 +485,8 @@ DRAW_EXT_OLD = "            ViewUtils.translateCanvasToView(mToolbarButtonsConta
 DRAW_EXT_NEW = (
     "            ViewUtils.translateCanvasToView(heliumContainerFor(extContainer), extContainer, canvas);"
 )
+DRAW_EXT_COMPACT_OLD = "ViewUtils.translateCanvasToView(mToolbarButtonsContainer, extContainer, canvas);"
+DRAW_EXT_COMPACT_NEW = "ViewUtils.translateCanvasToView(heliumContainerFor(extContainer), extContainer, canvas);"
 
 DRAW_SIGNIN_OLD = (
     "                ViewUtils.translateCanvasToView(mToolbarButtonsContainer, signinButtonView, canvas);"
@@ -682,8 +684,15 @@ def patch_toolbar_phone(root: Path) -> bool:
         (VISUAL_STATE_ANCHOR, VISUAL_STATE_NEW, VISUAL_STATE_MARKER),
     )
     for old, new, marker in replacements:
+        if old == DRAW_EXT_OLD and DRAW_EXT_COMPACT_OLD in text:
+            continue
         text, updated = _replace_once(text, old, new, marker, path)
         changed = changed or updated
+    if DRAW_EXT_NEW not in text and DRAW_EXT_COMPACT_NEW not in text:
+        if DRAW_EXT_COMPACT_OLD not in text:
+            raise RuntimeError(f"Expected extension draw anchor in {path}: {DRAW_EXT_COMPACT_NEW}")
+        text = text.replace(DRAW_EXT_COMPACT_OLD, DRAW_EXT_COMPACT_NEW, 1)
+        changed = True
 
     # Older builds called the apply method directly; keep a single entry point.
     stale_call = (
