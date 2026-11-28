@@ -5044,6 +5044,7 @@ PYCODE
 
 python3 "$SCRIPT_DIR/patch_omnibox_dropdown.py" "$SRC_DIR"
 python3 "$SCRIPT_DIR/patch_toolbar_phone.py" "$SRC_DIR"
+python3 "$SCRIPT_DIR/patch_old_android_toolbar_layout_presets.py" "$SRC_DIR"
 python3 "$SCRIPT_DIR/patch_titanium_visibility.py" "$SRC_DIR"
 
 # Reapply Titanium after the modern Android baseline restore, which resets BUILD.gn.
