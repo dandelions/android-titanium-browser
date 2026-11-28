@@ -2687,16 +2687,14 @@ perl -0pi -e 's~        if \(ntpShowing
                 \|\| tabSwitcherShowing
                 \|\| isOmniboxFocused
                 \|\| isFindInPageShowing
-                ((?:\|\| \(isPictureInPictureShowing
+                \|\| \(isPictureInPictureShowing
                         && ChromeFeatureList\.sPictureInPictureMovesToolbarAndroid\.isEnabled\(\)\)
-                )?)\|\| doesUserPreferTopToolbar\) \{
+                \|\| doesUserPreferTopToolbar\) \{
             newControlsPosition = ControlsPosition\.TOP;
         \} else \{
             newControlsPosition = ControlsPosition\.BOTTOM;
-        \}~        // Helium: follow the toolbar preference on the NTP and while editing.
-        if (tabSwitcherShowing
-                || isFindInPageShowing
-                $1|| doesUserPreferTopToolbar) {
+        \}~        // Helium: preserve the configured toolbar position during Picture-in-Picture.
+        if (tabSwitcherShowing || isFindInPageShowing || doesUserPreferTopToolbar) {
             newControlsPosition = ControlsPosition.TOP;
         } else {
             newControlsPosition = ControlsPosition.BOTTOM;
