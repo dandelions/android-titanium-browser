@@ -313,6 +313,29 @@ class ToolbarLayoutPresetsPatchTest(unittest.TestCase):
             )
             self.assertFalse(patch.patch_source_tree(root))
 
+    def test_patches_lemur_address_bar_fragment_shape(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self._write_sources(root)
+            fragment = root / patch.SETTINGS_FRAGMENT
+            fragment.write_text(
+                "import org.chromium.chrome.browser.settings.ChromeBaseSettingsFragment;\\n"
+                "class AddressBarSettingsFragment extends ChromeBaseSettingsFragment {\\n"
+                "    public void onCreatePreferences() {\\n"
+                "        overrideDescriptionIfFoldable();\\n"
+                "    }\\n"
+                "    private void overrideDescriptionIfFoldable() {\\n"
+                "    }\\n"
+                "}\\n"
+            )
+
+            self.assertTrue(patch.patch_settings_fragment(root))
+            result = fragment.read_text()
+            self.assertIn("setupToolbarLayoutPreference();", result)
+            self.assertIn("private void setupToolbarLayoutPreference()", result)
+            self.assertIn("ToolbarPhone.heliumRefreshLayoutPreset();", result)
+            self.assertFalse(patch.patch_settings_fragment(root))
+
     def test_is_idempotent(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

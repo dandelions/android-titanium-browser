@@ -589,30 +589,63 @@ def patch_settings_fragment(root: Path) -> bool:
     path = root / SETTINGS_FRAGMENT
     text = path.read_text(encoding="utf-8")
     changed = False
-    if "ChromePreferenceKeys;" not in text:
-        text, updated = _replace_once(
-            text, FRAGMENT_IMPORT_OLD, FRAGMENT_IMPORT_NEW, "ChromePreferenceKeys;", path
-        )
-        changed = changed or updated
-    elif "import org.chromium.chrome.browser.toolbar.top.ToolbarPhone;" not in text:
-        text = text.replace(FRAGMENT_LEGACY_IMPORT, FRAGMENT_IMPORT_NEW, 1)
-        changed = True
-    text, updated = _replace_once(
-        text, FRAGMENT_CALL_OLD, FRAGMENT_CALL_NEW, FRAGMENT_MARKER, path
+    required_fragment_imports = (
+        "import org.chromium.chrome.browser.preferences.ChromePreferenceKeys;",
+        "import org.chromium.chrome.browser.preferences.ChromeSharedPreferences;",
+        "import org.chromium.chrome.browser.toolbar.top.ToolbarPhone;",
     )
-    changed = changed or updated
-    if FRAGMENT_METHODS_START in text:
-        text, updated = _replace_section(
-            text, FRAGMENT_METHODS_START, FRAGMENT_METHODS_END, FRAGMENT_METHODS_NEW, path
-        )
-        changed = changed or updated
-    else:
-        if text.count(FRAGMENT_METHODS_END) != 1:
-            raise RuntimeError(f"Expected one settings methods anchor in {path}")
-        text = text.replace(
-            FRAGMENT_METHODS_END, FRAGMENT_METHODS_NEW + FRAGMENT_METHODS_END, 1
-        )
+    missing_imports = [line for line in required_fragment_imports if line not in text]
+    if missing_imports:
+        package_start = text.find("package ")
+        package_end = text.find(";", package_start) if package_start >= 0 else -1
+        insertion = "\n".join(missing_imports) + "\n"
+        if package_end >= 0:
+            text = text[: package_end + 1] + "\n" + insertion + text[package_end + 1 :]
+        else:
+            text = insertion + text
         changed = True
+    if FRAGMENT_MARKER not in text:
+        if FRAGMENT_CALL_OLD in text:
+            text = text.replace(FRAGMENT_CALL_OLD, FRAGMENT_CALL_NEW, 1)
+            changed = True
+        else:
+            lemur_call_old = "        overrideDescriptionIfFoldable();\n    }\n\n    @Override\n    public void onConfigurationChanged"
+            lemur_call_new = "        overrideDescriptionIfFoldable();\n        setupToolbarLayoutPreference();\n    }\n\n    @Override\n    public void onConfigurationChanged"
+            if lemur_call_old in text:
+                text = text.replace(lemur_call_old, lemur_call_new, 1)
+                changed = True
+            else:
+                call_anchor = "overrideDescriptionIfFoldable();"
+                if text.count(call_anchor) != 1:
+                    raise RuntimeError(f"AddressBarSettingsFragment preference call anchor not found in {path}")
+                line_start = text.rfind("\n", 0, text.index(call_anchor)) + 1
+                indent = text[line_start : text.index(call_anchor)]
+                text = text.replace(
+                    call_anchor,
+                    call_anchor + "\n" + indent + "setupToolbarLayoutPreference();",
+                    1,
+                )
+                changed = True
+    if FRAGMENT_METHODS_START in text:
+        if FRAGMENT_METHODS_NEW not in text:
+            text, updated = _replace_section(
+                text, FRAGMENT_METHODS_START, FRAGMENT_METHODS_END, FRAGMENT_METHODS_NEW, path
+            )
+            changed = changed or updated
+    else:
+        if text.count(FRAGMENT_METHODS_END) == 1:
+            text = text.replace(
+                FRAGMENT_METHODS_END, FRAGMENT_METHODS_NEW + FRAGMENT_METHODS_END, 1
+            )
+            changed = True
+        else:
+            lemur_method_anchor = "private void overrideDescriptionIfFoldable() {"
+            if text.count(lemur_method_anchor) != 1:
+                raise RuntimeError(f"Expected one settings methods anchor in {path}")
+            method_start = text.rfind("\n", 0, text.index(lemur_method_anchor)) + 1
+            indent = text[method_start : text.index(lemur_method_anchor)]
+            text = text[:method_start] + FRAGMENT_METHODS_NEW + text[method_start:]
+            changed = True
     if changed:
         path.write_text(text, encoding="utf-8")
     return changed
