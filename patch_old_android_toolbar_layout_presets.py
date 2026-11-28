@@ -153,13 +153,26 @@ TOOLBAR_INFLATE_OLD = """            mToolbarButtonsContainer = findViewById(R.i
             mHomeButton = findViewById(R.id.home_button);
             mToolbarBackButton = findViewById(R.id.back_button);
 """
-TOOLBAR_INFLATE_NEW = TOOLBAR_INFLATE_OLD + """            mHeliumTabs = findViewById(R.id.tab_switcher_button);
+TOOLBAR_INFLATE_NEW = TOOLBAR_INFLATE_OLD + """            sHeliumActiveToolbar = this;
+            mHeliumTabs = findViewById(R.id.tab_switcher_button);
             mHeliumMenu = findViewById(R.id.menu_button_wrapper);
             mHeliumEndOrder.clear();
             for (int heliumIndex = 0; heliumIndex < mToolbarButtonsContainer.getChildCount();
                     heliumIndex++) {
                 mHeliumEndOrder.add(mToolbarButtonsContainer.getChildAt(heliumIndex));
             }
+            mToolbarButtonsContainer.setOnHierarchyChangeListener(
+                    new ViewGroup.OnHierarchyChangeListener() {
+                        @Override
+                        public void onChildViewAdded(View parent, View child) {
+                            post(ToolbarPhone.this::maybeApplyHeliumToolbarLayoutPreset);
+                        }
+
+                        @Override
+                        public void onChildViewRemoved(View parent, View child) {
+                            post(ToolbarPhone.this::maybeApplyHeliumToolbarLayoutPreset);
+                        }
+                    });
 """
 TOOLBAR_INFLATE_MARKER = "mHeliumEndOrder.clear();"
 
@@ -224,6 +237,7 @@ TOOLBAR_METHODS_NEW = """    // Helium: address-bar button layout presets for ol
             return;
         }
         toolbar.applyHeliumToolbarLayoutPreset();
+        toolbar.post(toolbar::maybeApplyHeliumToolbarLayoutPreset);
         toolbar.updateButtonVisibility();
     }
 

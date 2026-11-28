@@ -326,6 +326,19 @@ class ToolbarLayoutPresetsPatchTest(unittest.TestCase):
             self.assertIn("container.setLayoutDirection(View.LAYOUT_DIRECTION_LTR);", toolbar)
             self.assertIn("toolbarParams.gravity", toolbar)
 
+    def test_refresh_reapplies_after_traversal_and_hierarchy_changes(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self._write_sources(root)
+
+            self.assertTrue(patch.patch_source_tree(root))
+            toolbar = (root / patch.TOOLBAR_PHONE).read_text()
+            self.assertIn("sHeliumActiveToolbar = this;", toolbar)
+            self.assertIn("toolbar.post(toolbar::maybeApplyHeliumToolbarLayoutPreset);", toolbar)
+            self.assertIn("setOnHierarchyChangeListener(", toolbar)
+            self.assertIn("ToolbarPhone.this::maybeApplyHeliumToolbarLayoutPreset", toolbar)
+            self.assertFalse(patch.patch_source_tree(root))
+
     def test_patches_compact_extension_draw_statement(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
