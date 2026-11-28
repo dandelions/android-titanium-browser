@@ -313,6 +313,19 @@ class ToolbarLayoutPresetsPatchTest(unittest.TestCase):
             )
             self.assertFalse(patch.patch_source_tree(root))
 
+    def test_keeps_current_layout_home_before_window_and_sets_direction(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self._write_sources(root)
+
+            self.assertTrue(patch.patch_source_tree(root))
+            toolbar = (root / patch.TOOLBAR_PHONE).read_text()
+            self.assertIn("if (preset == HELIUM_LAYOUT_CURRENT)", toolbar)
+            self.assertIn("startOrder.add(mHomeButton);", toolbar)
+            self.assertIn("endOrder.add(mHeliumTabs);", toolbar)
+            self.assertIn("container.setLayoutDirection(View.LAYOUT_DIRECTION_LTR);", toolbar)
+            self.assertIn("toolbarParams.gravity", toolbar)
+
     def test_patches_compact_extension_draw_statement(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

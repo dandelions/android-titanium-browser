@@ -247,8 +247,16 @@ TOOLBAR_METHODS_NEW = """    // Helium: address-bar button layout presets for ol
                     new FrameLayout.LayoutParams(
                             ViewGroup.LayoutParams.WRAP_CONTENT,
                             ViewGroup.LayoutParams.WRAP_CONTENT);
-            params.gravity = Gravity.TOP | Gravity.START;
+            params.gravity =
+                    Gravity.TOP | (isLayoutRtl() ? Gravity.END : Gravity.START);
             container.setLayoutParams(params);
+            container.setLayoutDirection(View.LAYOUT_DIRECTION_LTR);
+            mToolbarButtonsContainer.setLayoutDirection(View.LAYOUT_DIRECTION_LTR);
+            FrameLayout.LayoutParams toolbarParams =
+                    (FrameLayout.LayoutParams) mToolbarButtonsContainer.getLayoutParams();
+            toolbarParams.gravity =
+                    Gravity.TOP | (isLayoutRtl() ? Gravity.START : Gravity.END);
+            mToolbarButtonsContainer.setLayoutParams(toolbarParams);
             addView(container);
             mHeliumStartButtons = container;
         }
@@ -400,14 +408,22 @@ TOOLBAR_METHODS_NEW = """    // Helium: address-bar button layout presets for ol
             endOrder.add(mHeliumTabs);
             endOrder.add(mHomeButton);
         } else {
-            // The omnibox is visible here, so keep the four buttons split between the two ends
-            // and let the address bar own the middle stretch.
-            if (extensions != null && !extensionsInEnd) {
-                endOrder.add(heliumExtensionsEndIndex(endOrder), extensions);
+            // The omnibox is visible here, so keep the address bar between the button groups.
+            if (preset == HELIUM_LAYOUT_CURRENT) {
+                startOrder.add(mHomeButton);
+                if (extensions != null && !extensionsInEnd) {
+                    endOrder.add(heliumExtensionsEndIndex(endOrder), extensions);
+                }
+                endOrder.add(mHeliumTabs);
+                endOrder.add(mHeliumMenu);
+            } else {
+                startOrder.add(mHomeButton);
+                startOrder.add(mHeliumTabs);
+                if (extensions != null && !extensionsInEnd) {
+                    endOrder.add(heliumExtensionsEndIndex(endOrder), extensions);
+                }
+                endOrder.add(mHeliumMenu);
             }
-            startOrder.add(mHomeButton);
-            startOrder.add(mHeliumTabs);
-            endOrder.add(mHeliumMenu);
         }
 
         heliumApplyStartWidth(spreadOnNtp);
